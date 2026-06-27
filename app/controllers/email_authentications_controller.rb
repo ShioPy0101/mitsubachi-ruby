@@ -56,15 +56,17 @@ class EmailAuthenticationsController < ApplicationController
 
     # invite_code をstand-byにする
     # パスワードを設定していない仮ユーザーを作成する（メール専用のため）
-    invite.update!(
-        stand_by_at: Time.current, 
-        stand_by_user: User.find_or_create_by!(
-                                      email: email, 
-                                      organization: invite.organization
-                                    ) 
-        do |new_user|
+    stand_by_user = User.find_or_create_by!(
+      email: email,
+      organization: invite.organization
+    ) do |new_user|
       new_user.password = SecureRandom.base64(32)
-    end)
+    end
+
+    invite.update!(
+      stand_by_at: Time.current,
+      stand_by_user: stand_by_user
+    )
 
     # EmailAuthentication モデルに保存する
     EmailAuthentication.create!(
