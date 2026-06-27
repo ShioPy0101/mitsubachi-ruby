@@ -1,5 +1,5 @@
 Rails.application.routes.draw do
-  devise_for :users, skip: [:sessions, :registrations]
+  devise_for :users, skip: [ :sessions, :registrations ]
 
   # 認証コードを発行・メール送信（アカウント作成用）
   post "/auth/create", to: "email_authentications#create"

@@ -1,5 +1,4 @@
 class EmailAuthenticationsController < ApplicationController
-
   # ユーザー作成
   def create
     email = params[:email]
@@ -182,7 +181,7 @@ class EmailAuthenticationsController < ApplicationController
 }, status: :ok
       return
     end
-    
+
 
     ActiveRecord::Base.transaction do
       authentication.lock!
