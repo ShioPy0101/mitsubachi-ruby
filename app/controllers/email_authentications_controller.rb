@@ -158,44 +158,75 @@ class EmailAuthenticationsController < ApplicationController
     invite = authentication.organization_invite
 
     if invite.nil?
-      authentication.update!(used_at: Time.current)
+      ActiveRecord::Base.transaction do
+        authentication.lock!
+        authentication.reload
+
+        if authentication.used_at.present?
+          render json: { error: "このリンクは既に使用されています" }, status: :unauthorized
+          raise ActiveRecord::Rollback
+        end
+
+        authentication.update!(used_at: Time.current)
+      end
+
+      return if performed?
+
       sign_in(user)
-
       render json: {
-        message: "ログインに成功しました",
-        user: {
-          id: user.id,
-          email: user.email
-        }
-      }, status: :ok
+  message: "ログインに成功しました",
+  user: {
+    id: user.id,
+    email: user.email
+  }
+}, status: :ok
       return
     end
     
 
-    if invite.stand_by_user != user
-      render json: { error: "このユーザーは stand-by ではありません" }, status: :unauthorized
-      return
+    ActiveRecord::Base.transaction do
+      authentication.lock!
+      invite.lock!
+
+      authentication.reload
+      invite.reload
+
+      if authentication.used_at.present?
+        render json: { error: "このリンクは既に使用されています" }, status: :unauthorized
+        raise ActiveRecord::Rollback
+      end
+
+      if authentication.expires_at < Time.current
+        render json: { error: "リンクの有効期限が切れています" }, status: :unauthorized
+        raise ActiveRecord::Rollback
+      end
+
+      if invite.stand_by_user != user
+        render json: { error: "このユーザーは stand-by ではありません" }, status: :unauthorized
+        raise ActiveRecord::Rollback
+      end
+
+      if invite.used_at.present?
+        render json: { error: "この invite_code は既に使用されています" }, status: :unauthorized
+        raise ActiveRecord::Rollback
+      end
+
+      if invite.expires_at < Time.current
+        render json: { error: "この invite_code の有効期限が切れています" }, status: :unauthorized
+        raise ActiveRecord::Rollback
+      end
+
+      invite.update!(
+        used_at: Time.current,
+        used_by_user: user,
+        stand_by_at: nil,
+        stand_by_user: nil
+      )
+
+      authentication.update!(used_at: Time.current)
     end
 
-    if invite.used_at.present?
-      render json: { error: "この invite_code は既に使用されています" }, status: :unauthorized
-      return
-    end
-
-    if invite.expires_at < Time.current
-      render json: { error: "この invite_code の有効期限が切れています" }, status: :unauthorized
-      return
-    end
-    
-    # 仮ユーザーを本登録ユーザーに変換する
-    invite.update!(used_at: Time.current,
-                    used_by_user: user, 
-                    stand_by_at: nil,
-                    stand_by_user: nil
-                    )
-                    
-    # 認証が成功した場合、ユーザーをログインさせる
-    authentication.update!(used_at: Time.current)
+    return if performed?
 
     # ログイン状態を作る
     sign_in(user)
