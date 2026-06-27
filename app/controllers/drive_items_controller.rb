@@ -93,7 +93,7 @@ class DriveItemsController < ApplicationController
         # レスポンス
         render json: @drive_item, status: :created
       else
-        File.delete(Rails.root.join("storage", blob_path))
+        FileUtils.rm_f(Rails.root.join("storage", blob_path))
         render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
       end
       
