@@ -12,4 +12,11 @@ class User < ApplicationRecord
   has_many :organization_invites,
            foreign_key: :used_by_user_id,
            dependent: :restrict_with_error
+
+  # このユーザーが作成した招待コード
+  devise :database_authenticatable,
+         :registerable,
+         :recoverable,
+         :rememberable,
+         :validatable
 end
