@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_27_215158) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_27_215638) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -32,6 +32,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_215158) do
   create_table "drive_items", force: :cascade do |t|
     t.string "blob_path"
     t.datetime "created_at", null: false
+    t.datetime "deleted_at"
     t.string "extension"
     t.string "file_hash"
     t.integer "item_type"
@@ -40,6 +41,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_215158) do
     t.bigint "owner_user_id", null: false
     t.bigint "parent_id"
     t.datetime "updated_at", null: false
+    t.index ["deleted_at"], name: "index_drive_items_on_deleted_at"
     t.index ["organization_id", "parent_id", "name", "extension"], name: "index_drive_items_on_org_parent_name_extension", unique: true
     t.index ["organization_id"], name: "index_drive_items_on_organization_id"
     t.index ["owner_user_id"], name: "index_drive_items_on_owner_user_id"
