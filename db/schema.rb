@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_27_214538) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_27_215158) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -22,8 +22,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_214538) do
     t.bigint "organization_id", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.index ["drive_item_id", "accessed_at"], name: "index_access_logs_on_item_and_accessed_at"
     t.index ["drive_item_id"], name: "index_drive_item_access_logs_on_drive_item_id"
     t.index ["organization_id"], name: "index_drive_item_access_logs_on_organization_id"
+    t.index ["user_id", "accessed_at"], name: "index_access_logs_on_user_and_accessed_at"
     t.index ["user_id"], name: "index_drive_item_access_logs_on_user_id"
   end
 
@@ -38,6 +40,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_214538) do
     t.bigint "owner_user_id", null: false
     t.bigint "parent_id"
     t.datetime "updated_at", null: false
+    t.index ["organization_id", "parent_id", "name", "extension"], name: "index_drive_items_on_org_parent_name_extension", unique: true
     t.index ["organization_id"], name: "index_drive_items_on_organization_id"
     t.index ["owner_user_id"], name: "index_drive_items_on_owner_user_id"
     t.index ["parent_id"], name: "index_drive_items_on_parent_id"
