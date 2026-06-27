@@ -1,21 +1,12 @@
 Rails.application.routes.draw do
-  # Deviseはログイン状態の管理のみ使用
   devise_for :users, skip: [:sessions, :registrations]
 
-  # メールアドレス入力画面
-  get  "/auth/email", to: "email_authentications#new"
-
-  # 6桁コードを発行してメール送信
+  # 認証コードを発行・メール送信
   post "/auth/email", to: "email_authentications#create"
 
-  # 6桁コード入力画面
-  get  "/auth/verify", to: "email_authentications#verify_form"
-
-  # 6桁コードを確認してログインする
+  # 認証コードを照合してログイン
   post "/auth/verify", to: "email_authentications#verify"
 
-  # Devise標準のログアウト処理を使う
-  devise_scope :user do
-    delete "/logout", to: "devise/sessions#destroy"
-  end
+  # ログアウト
+  delete "/logout", to: "sessions#destroy"
 end
