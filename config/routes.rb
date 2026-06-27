@@ -14,6 +14,8 @@ Rails.application.routes.draw do
   # 6桁コードを確認してログインする
   post "/auth/verify", to: "email_authentications#verify"
 
-  # ログアウト
-  delete "/logout", to: "sessions#destroy"
+  # Devise標準のログアウト処理を使う
+  devise_scope :user do
+    delete "/logout", to: "devise/sessions#destroy"
+  end
 end
