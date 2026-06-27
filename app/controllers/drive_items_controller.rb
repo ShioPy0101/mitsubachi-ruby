@@ -58,6 +58,11 @@ class DriveItemsController < ApplicationController
         render json: { error: "指定された親フォルダが見つかりません" }, status: :not_found
         return
       end 
+
+      unless parent.directory?
+        render json: { error: "親にはディレクトリを指定してください" }, status: :unprocessable_entity
+        return
+      end
     end
 
     if current_user.organization.drive_items.exists?(parent_id: parent_id, name: name, extension: item_type == "file" ? File.extname(params[:file].original_filename).delete_prefix(".") : nil)
@@ -79,10 +84,15 @@ class DriveItemsController < ApplicationController
 
       blob_path, extension = save_uploaded_file(uploaded_file)
 
+      @drive_item.blob_path = blob_path
+      @drive_item.extension = extension
+      @drive_item.file_hash = nil
+
       if  @drive_item.save
         # レスポンス
         render json: @drive_item, status: :created
       else
+        File.delete(Rails.root.join("storage", blob_path))
         render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
       end
       
