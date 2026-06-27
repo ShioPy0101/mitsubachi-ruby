@@ -10,6 +10,7 @@ class CreateOrganizationInvites < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
+    # organization_invitesテーブルのcodeカラムに一意制約を追加する
     add_index :organization_invites, :code, unique: true
   end
 end
