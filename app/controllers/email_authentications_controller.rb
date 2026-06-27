@@ -59,12 +59,15 @@ class EmailAuthenticationsController < ApplicationController
       return
     end
 
-    user = User.find_or_create_by!(email: authentication.email)
+    # パスワードを設定していないユーザーを作成する（メール専用のため）
+    user = User.find_or_create_by!(email: authentication.email) do |new_user|
+      new_user.password = SecureRandom.base64(32)
+    end
 
     authentication.update!(used_at: Time.current)
 
-    # ここで最終的にログイン状態を作る
-    # sign_in(user)
+    # ログイン状態を作る
+    sign_in(user)
 
     render json: {
       message: "ログインに成功しました",
