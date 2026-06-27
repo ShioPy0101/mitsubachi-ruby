@@ -1,42 +1,27 @@
 class EmailAuthenticationsController < ApplicationController
   def create
-    # POST /auth/email
-    # JSONで受けた email を使って
-    # 6桁コードを作り、DB保存し、メール送信する
     email = params[:email]
 
-    # 1. email がない
     unless email.present?
-      render json: {
-        error: "email は必須です"
-      }, status: :bad_request
+      render json: { error: "email は必須です" }, status: :bad_request
       return
     end
 
-    # 2. email の形式がざっくりおかしい
-    unless email.include?("@")
-      render json: {
-        error: "email の形式が正しくありません"
-      }, status: :unprocessable_entity
-      return
-    end
+    token = SecureRandom.urlsafe_base64(32)
 
-    code = rand(100_000..999_999).to_s
-
-    # 3. DB保存
     EmailAuthentication.create!(
       email: email,
-      code: code
+      token: token,
+      expires_at: 15.minutes.from_now
     )
 
-    # 4. メール送信
     EmailAuthenticationMailer
-      .with(email: email, code: code)
-      .send_code
+      .with(email: email, token: token)
+      .send_magic_link
       .deliver_later
 
     render json: {
-      message: "認証コードを送信しました"
+      message: "認証リンクを送信しました"
     }, status: :ok
   end
 end
