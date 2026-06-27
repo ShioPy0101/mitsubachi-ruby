@@ -23,11 +23,8 @@ class EmailAuthenticationsController < ApplicationController
       return
     end
 
-    # invite_code をハッシュ化する
-    hash_invite_code = Digest::SHA256.hexdigest(invite_code)
-
     # Invitation code を使って OrganizationInvite を検索する
-    invite = OrganizationInvite.find_by(code: hash_invite_code)
+    invite = OrganizationInvite.find_by(code: invite_code)
 
     # invite_code が有効かどうかをチェックする
     if invite.nil?
@@ -58,7 +55,6 @@ class EmailAuthenticationsController < ApplicationController
         stand_by_at: Time.current, 
         stand_by_user: User.find_or_create_by!(
                                       email: email, 
-                                      is_temporary: true,
                                       organization: invite.organization
                                     ) 
         do |new_user|
@@ -151,12 +147,34 @@ class EmailAuthenticationsController < ApplicationController
       return
     end
 
-    if user.is_temporary
-      # 仮ユーザーを本登録ユーザーに変換する
-      user.update!(is_temporary: false)
+    # OrganizationInvite の stand_by_user が user であることを確認する
+    invite = OrganizationInvite.find_by(stand_by_user: user, organization: user.organization)
 
+    # invite が存在しない場合はエラーを返す
+    if invite.nil?
+      render json: { error: "このユーザーは stand-by ではありません" }, status: :unauthorized
+      return
+    end
+
+    if invite.stand_by_user != user
+      render json: { error: "このユーザーは stand-by ではありません" }, status: :unauthorized
+      return
+    end
+
+    if invite.used_at.present?
+      render json: { error: "この invite_code は既に使用されています" }, status: :unauthorized
+      return
+    end
+
+    if invite.expires_at < Time.current
+      render json: { error: "この invite_code の有効期限が切れています" }, status: :unauthorized
+      return
+    end
+    
+    # 仮ユーザーを本登録ユーザーに変換する
+    # 条件：stand_by_user が user であり、used_at が nil であり、expires_at が現在時刻より後であること
+    if invite.stand_by_user == user && invite.used_at.nil? && invite.expires_at >= Time.current
       # invite_code を使用済みにする
-      invite = OrganizationInvite.find_by(stand_by_user: user, organization: user.organization)
       invite.update!(used_at: Time.current, used_by_user: user)
     end
 
