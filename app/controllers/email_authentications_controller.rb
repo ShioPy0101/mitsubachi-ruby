@@ -44,6 +44,12 @@ class EmailAuthenticationsController < ApplicationController
       return
     end
 
+    # invite_code が現在 stand-by 状態かどうかをチェックする
+    if invite.stand_by_user.present? && invite.stand_by_at.present? && invite.stand_by_at > 15.minutes.ago
+      render json: { error: "この invite_code は現在検証中です" }, status: :conflict
+      return
+    end
+
     # 認証用 token を生成して、EmailAuthentication モデルに保存する
     email_auth_token = SecureRandom.urlsafe_base64(32)
 
@@ -66,6 +72,7 @@ class EmailAuthenticationsController < ApplicationController
       email: email,
       token: hash_email_auth_token,
       expires_at: 15.minutes.from_now,
+      organization_invite: invite
     )
 
     # メールを送信する
@@ -148,13 +155,22 @@ class EmailAuthenticationsController < ApplicationController
     end
 
     # OrganizationInvite の stand_by_user が user であることを確認する
-    invite = OrganizationInvite.find_by(stand_by_user: user, organization: user.organization)
+    invite = authentication.organization_invite
 
-    # invite が存在しない場合はエラーを返す
     if invite.nil?
-      render json: { error: "このユーザーは stand-by ではありません" }, status: :unauthorized
+      authentication.update!(used_at: Time.current)
+      sign_in(user)
+
+      render json: {
+        message: "ログインに成功しました",
+        user: {
+          id: user.id,
+          email: user.email
+        }
+      }, status: :ok
       return
     end
+    
 
     if invite.stand_by_user != user
       render json: { error: "このユーザーは stand-by ではありません" }, status: :unauthorized
@@ -172,12 +188,12 @@ class EmailAuthenticationsController < ApplicationController
     end
     
     # 仮ユーザーを本登録ユーザーに変換する
-    # 条件：stand_by_user が user であり、used_at が nil であり、expires_at が現在時刻より後であること
-    if invite.stand_by_user == user && invite.used_at.nil? && invite.expires_at >= Time.current
-      # invite_code を使用済みにする
-      invite.update!(used_at: Time.current, used_by_user: user)
-    end
-
+    invite.update!(used_at: Time.current,
+                    used_by_user: user, 
+                    stand_by_at: nil,
+                    stand_by_user: nil
+                    )
+                    
     # 認証が成功した場合、ユーザーをログインさせる
     authentication.update!(used_at: Time.current)
 
