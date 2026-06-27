@@ -1,3 +1,8 @@
+
+require "fileutils"
+require "securerandom"
+
+
 class DriveItemsController < ApplicationController
   # ログインしていない利用者は、このコントローラの操作をできない
   before_action :authenticate_user!
@@ -27,6 +32,72 @@ class DriveItemsController < ApplicationController
   # POST /drive_items
   # フォルダ作成・ファイル登録
   def create
+    name = params[:name] #ファイル名またはフォルダ名
+    parent_id = params[:parent_id] #親フォルダのID。ルート直下の場合は nil
+    item_type = params[:item_type] #file or directory
+
+    if item_type != "file" && item_type != "directory"
+      render json: { error: "ファイルタイプは file または directory のいずれかである必要があります" }, status: :unprocessable_entity
+      return
+    end
+
+    if item_type == "file" && params[:file].nil?
+      render json: { error: "ファイルが指定されていません" }, status:unprocessable_entity
+      return
+    end
+
+    if item_type == "directory" && params[:file].present?
+      render json: { error: "ディレクトリ作成時にファイルは指定できません" }, status: :unprocessable_entity
+      return
+    end
+
+    if parent_id.present?
+      # 組織内の親フォルダを検索する。親フォルダが見つからない場合はエラーを返す
+      parent = current_user.organization.drive_items.find_by(id: parent_id)
+      if parent.nil?
+        render json: { error: "指定された親フォルダが見つかりません" }, status: :not_found
+        return
+      end 
+    end
+
+    if current_user.organization.drive_items.exists?(parent_id: parent_id, name: name, extension: item_type == "file" ? File.extname(params[:file].original_filename).delete_prefix(".") : nil)
+      render json: { error: "同じ名前のファイルまたはフォルダが既に存在します" }, status: :unprocessable_entity
+      return
+    end
+
+    @drive_item = current_user.organization.drive_items.new(
+      name: name,
+      item_type: item_type,
+      parent_id: parent_id,
+      owner_user: current_user,
+    )
+
+    # ファイルの場合は、拡張子・保存先パス・ハッシュを設定する
+    if item_type == "file"
+      # ActionDispatch::Http::UploadedFile
+      uploaded_file = params[:file]
+
+      blob_path, extension = save_uploaded_file(uploaded_file)
+
+      if  @drive_item.save
+        # レスポンス
+        render json: @drive_item, status: :created
+      else
+        render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+      end
+      
+    else
+      # ディレクトリの場合は、拡張子・保存先パスは不要
+      @drive_item.extension = nil
+      @drive_item.blob_path = nil
+      @drive_item.file_hash = nil
+
+      if @drive_item.save
+        render json: @drive_item, status: :created
+      else
+        render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+      end
+    end
   end
 
   # GET /drive_items/:id
@@ -94,4 +165,29 @@ class DriveItemsController < ApplicationController
                   .drive_items
                   .find(params[:id])
   end
+
+  def save_uploaded_file(uploaded_file)
+    # ファイルの拡張子を取得し、保存先のパスを生成する
+    extension =
+      File.extname(uploaded_file.original_filename)
+          .delete_prefix(".")
+          .downcase
+
+    # 保存先のパスを生成する。UUIDを使って一意にする
+    blob_path = "drive_items/#{SecureRandom.uuid}.#{extension}"
+    destination_path = Rails.root.join("storage", blob_path)
+
+    # storage/drive_items がまだなければ作る
+    FileUtils.mkdir_p(destination_path.dirname)
+
+    # 一時ファイルから保存先へコピーする。
+    # ファイル全体をRubyのメモリに載せない。
+    uploaded_file.tempfile.rewind
+    File.open(destination_path, "wb") do |file|
+      IO.copy_stream(uploaded_file.tempfile, file)
+    end
+
+    [blob_path, extension]
+  end
+
 end
