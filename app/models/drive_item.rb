@@ -39,6 +39,14 @@ class DriveItem < ApplicationRecord
   validate :parent_belongs_to_same_organization
   validate :file_fields_match_item_type
 
+  # スコープの定義
+
+  # activeなDriveItemを取得するスコープ
+  scope :active, -> { where(deleted_at: nil) }
+
+  # deletedなDriveItemを取得するスコープ
+  scope :deleted, -> { where.not(deleted_at: nil) }
+
   private
 
   # 親DriveItemが同じ組織に属しているかを検査する
