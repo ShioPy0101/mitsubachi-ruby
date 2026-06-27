@@ -66,7 +66,7 @@ class DriveItemsController < ApplicationController
       end
     end
 
-    if current_user.organization.drive_items.exists?(parent_id: parent_id, name: name, extension: item_type == "file" ? File.extname(params[:file].original_filename).delete_prefix(".") : nil)
+    if current_user.organization.drive_items.exists?(parent_id: parent_id, name: name, extension: item_type == "file" ? get_extension_from_filename(params[:file].original_filename) : nil)
       render json: { error: "同じ名前のファイルまたはフォルダが既に存在します" }, status: :unprocessable_entity
       return
     end
@@ -177,12 +177,13 @@ class DriveItemsController < ApplicationController
                   .find(params[:id])
   end
 
+  def get_extension_from_filename(filename)
+    File.extname(filename).delete_prefix(".").downcase
+  end
+
   def save_uploaded_file(uploaded_file)
     # ファイルの拡張子を取得し、保存先のパスを生成する
-    extension =
-      File.extname(uploaded_file.original_filename)
-          .delete_prefix(".")
-          .downcase
+    extension = get_extension_from_filename(uploaded_file.original_filename)
 
     # 保存先のパスを生成する。UUIDを使って一意にする
     blob_path = "drive_items/#{SecureRandom.uuid}.#{extension}"
