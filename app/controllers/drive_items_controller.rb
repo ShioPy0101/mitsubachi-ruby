@@ -53,7 +53,8 @@ class DriveItemsController < ApplicationController
 
     if parent_id.present?
       # 組織内の親フォルダを検索する。親フォルダが見つからない場合はエラーを返す
-      parent = current_user.organization.drive_items.find_by(id: parent_id)
+      parent = current_user.organization.drive_items.active.find_by(id: parent_id)
+
       if parent.nil?
         render json: { error: "指定された親フォルダが見つかりません" }, status: :not_found
         return
