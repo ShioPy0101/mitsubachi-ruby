@@ -1,10 +1,19 @@
 Rails.application.routes.draw do
-  # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
+  # Deviseはログイン状態の管理のみ使用
+  devise_for :users, skip: [:sessions, :registrations]
 
-  # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
-  # Can be used by load balancers and uptime monitors to verify that the app is live.
-  get "up" => "rails/health#show", as: :rails_health_check
+  # メールアドレス入力画面
+  get  "/auth/email", to: "email_authentications#new"
 
-  # Defines the root path route ("/")
-  # root "posts#index"
+  # 6桁コードを発行してメール送信
+  post "/auth/email", to: "email_authentications#create"
+
+  # 6桁コード入力画面
+  get  "/auth/verify", to: "email_authentications#verify_form"
+
+  # 6桁コードを確認してログインする
+  post "/auth/verify", to: "email_authentications#verify"
+
+  # ログアウト
+  delete "/logout", to: "sessions#destroy"
 end
