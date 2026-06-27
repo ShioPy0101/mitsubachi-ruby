@@ -11,10 +11,12 @@ class EmailAuthenticationsController < ApplicationController
     # token を生成して、EmailAuthentication モデルに保存する
     token = SecureRandom.urlsafe_base64(32)
 
+    hash_token = Digest::SHA256.hexdigest(token)
+
     # EmailAuthentication モデルに保存する
     EmailAuthentication.create!(
       email: email,
-      token: token,
+      token: hash_token,
       expires_at: 15.minutes.from_now
     )
 
@@ -33,7 +35,9 @@ end
   def verify
     token = params[:token]
 
-    authentication = EmailAuthentication.find_by(token: token)
+    hash_token = Digest::SHA256.hexdigest(token)
+
+    authentication = EmailAuthentication.find_by(token: hash_token)
 
     if authentication.nil?
       render json: { error: "リンクが正しくありません" }, status: :unauthorized
