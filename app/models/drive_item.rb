@@ -72,7 +72,6 @@ class DriveItem < ApplicationRecord
       # ファイルの場合、extension, blob_path, file_hashは必須である
       errors.add(:extension, "is required") if extension.blank?
       errors.add(:blob_path, "is required") if blob_path.blank?
-      errors.add(:file_hash, "is required") if file_hash.blank?
     end
   end
 end
