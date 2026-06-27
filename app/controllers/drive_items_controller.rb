@@ -15,6 +15,8 @@ class DriveItemsController < ApplicationController
   # GET /drive_items
   # ルート直下、または指定フォルダ直下の一覧を返す
   def index
+    @drive_items = current_user.organization.drive_items
+    render json: @drive_items
   end
 
   # POST /drive_items
