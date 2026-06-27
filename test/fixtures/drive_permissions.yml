@@ -1,0 +1,11 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  drive_item: one
+  user: one
+  permission: 1
+
+two:
+  drive_item: two
+  user: two
+  permission: 1
