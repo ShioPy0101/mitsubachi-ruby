@@ -33,11 +33,26 @@ id
 organization_id
 parent_id
 name
-item_type
+item_type ディレクトリ or ファイルフラグ
+extension ファイル拡張子(ディレクトリはdir)
 blob_path
 hash
 created_at
 updated_at
+```
+
+### drive_item_access_logs
+
+閲覧日関係
+
+```text
+id
+organization_id
+user_id
+drive_item_id
+action view / download / preview
+accessed_at
+created_at
 ```
 
 ### organization_invites
