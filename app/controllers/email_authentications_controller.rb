@@ -30,10 +30,15 @@ class EmailAuthenticationsController < ApplicationController
       message: "認証リンクを送信しました"
     }, status: :ok
   end
-end
 
   def verify
     token = params[:token]
+
+    # バリテーション
+    unless token.present?
+      render json: { error: "token は必須です" }, status: :bad_request
+      return
+    end
 
     hash_token = Digest::SHA256.hexdigest(token)
 
