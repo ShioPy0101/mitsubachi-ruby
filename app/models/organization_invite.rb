@@ -4,4 +4,7 @@ class OrganizationInvite < ApplicationRecord
 
   # この招待を使用したUser
   belongs_to :used_by_user, class_name: "User", optional: true
+
+  # この招待を仮ユーザーとして使用するUser
+  belongs_to :stand_by_user, class_name: "User", optional: true
 end
