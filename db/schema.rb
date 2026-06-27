@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_27_205102) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_27_210235) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -43,9 +43,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_205102) do
     t.datetime "created_at", null: false
     t.string "email"
     t.datetime "expires_at"
+    t.bigint "organization_invite_id"
     t.string "token"
     t.datetime "updated_at", null: false
     t.datetime "used_at"
+    t.index ["organization_invite_id"], name: "index_email_authentications_on_organization_invite_id"
   end
 
   create_table "email_verification_codes", force: :cascade do |t|
@@ -100,6 +102,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_205102) do
   add_foreign_key "drive_items", "users", column: "owner_user_id"
   add_foreign_key "drive_permissions", "drive_items"
   add_foreign_key "drive_permissions", "users"
+  add_foreign_key "email_authentications", "organization_invites"
   add_foreign_key "email_verification_codes", "users"
   add_foreign_key "organization_invites", "organizations"
   add_foreign_key "organization_invites", "users", column: "stand_by_user_id"
