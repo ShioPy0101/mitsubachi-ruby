@@ -1,0 +1,13 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  email: MyString
+  token: MyString
+  expires_at: 2026-06-28 03:59:39
+  used_at: 2026-06-28 03:59:39
+
+two:
+  email: MyString
+  token: MyString
+  expires_at: 2026-06-28 03:59:39
+  used_at: 2026-06-28 03:59:39

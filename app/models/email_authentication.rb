@@ -1,0 +1,2 @@
+class EmailAuthentication < ApplicationRecord
+end
