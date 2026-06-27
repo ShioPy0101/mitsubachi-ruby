@@ -10,13 +10,27 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_27_210235) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_27_214538) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "drive_item_access_logs", force: :cascade do |t|
+    t.datetime "accessed_at"
+    t.string "action"
+    t.datetime "created_at", null: false
+    t.bigint "drive_item_id", null: false
+    t.bigint "organization_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["drive_item_id"], name: "index_drive_item_access_logs_on_drive_item_id"
+    t.index ["organization_id"], name: "index_drive_item_access_logs_on_organization_id"
+    t.index ["user_id"], name: "index_drive_item_access_logs_on_user_id"
+  end
 
   create_table "drive_items", force: :cascade do |t|
     t.string "blob_path"
     t.datetime "created_at", null: false
+    t.string "extension"
     t.string "file_hash"
     t.integer "item_type"
     t.string "name"
@@ -97,6 +111,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_210235) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
+  add_foreign_key "drive_item_access_logs", "drive_items"
+  add_foreign_key "drive_item_access_logs", "organizations"
+  add_foreign_key "drive_item_access_logs", "users"
   add_foreign_key "drive_items", "drive_items", column: "parent_id"
   add_foreign_key "drive_items", "organizations"
   add_foreign_key "drive_items", "users", column: "owner_user_id"
