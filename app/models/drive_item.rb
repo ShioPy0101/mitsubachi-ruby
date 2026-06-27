@@ -32,8 +32,8 @@ class DriveItem < ApplicationRecord
   # nameは必須である
   validates :name, presence: true
 
-  # extensionは必須である
-  validates :extension, presence: true
+  # extensionは、item_typeがfileの場合に必須である
+  validates :extension, presence: true, if: :file?
 
   # 保存する直前に、検査
   validate :parent_belongs_to_same_organization
@@ -52,13 +52,17 @@ class DriveItem < ApplicationRecord
   # item_typeに応じて、必要なフィールドが正しく設定されているかを検査する
   def file_fields_match_item_type
     if directory?
-      errors.add(:extension, "must be dir") unless extension == "dir"
+
+      # ディレクトリの場合、extension, blob_path, file_hashは空であるべき
+      errors.add(:extension, "must be blank") if extension.present?
       errors.add(:blob_path, "must be blank") if blob_path.present?
       errors.add(:file_hash, "must be blank") if file_hash.present?
     end
 
     if file?
-      errors.add(:extension, "cannot be dir") if extension == "dir"
+
+      # ファイルの場合、extension, blob_path, file_hashは必須である
+      errors.add(:extension, "is required") if extension.blank?
       errors.add(:blob_path, "is required") if blob_path.blank?
       errors.add(:file_hash, "is required") if file_hash.blank?
     end
