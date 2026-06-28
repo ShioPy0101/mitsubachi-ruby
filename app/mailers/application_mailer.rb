@@ -1,11 +1,12 @@
 class ApplicationMailer < ActionMailer::Base
-  default from: mail_from
-
-  private
-
   def self.mail_from
-    Rails.env.production? ?
-      ENV.fetch("MAIL_FROM") :
+    if Rails.env.production?
+      ENV.fetch("MAIL_FROM")
+    else
       ENV.fetch("MAIL_FROM", "test@example.com")
+    end
   end
+
+  default from: mail_from
+  layout "mailer"
 end
