@@ -1,13 +1,13 @@
 require "test_helper"
 
 class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
-  test "should get new" do
-    get email_authentications_new_url
-    assert_response :success
+  test "should require params for create" do
+    post auth_create_url
+    assert_response :bad_request
   end
 
-  test "should get verify_form" do
-    get email_authentications_verify_form_url
-    assert_response :success
+  test "should require params for verify" do
+    post auth_verify_url
+    assert_response :bad_request
   end
 end

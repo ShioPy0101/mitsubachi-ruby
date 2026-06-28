@@ -10,13 +10,30 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_27_210235) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_28_074938) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "drive_item_access_logs", force: :cascade do |t|
+    t.datetime "accessed_at"
+    t.string "action"
+    t.datetime "created_at", null: false
+    t.bigint "drive_item_id", null: false
+    t.bigint "organization_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["drive_item_id", "accessed_at"], name: "index_access_logs_on_item_and_accessed_at"
+    t.index ["drive_item_id"], name: "index_drive_item_access_logs_on_drive_item_id"
+    t.index ["organization_id"], name: "index_drive_item_access_logs_on_organization_id"
+    t.index ["user_id", "accessed_at"], name: "index_access_logs_on_user_and_accessed_at"
+    t.index ["user_id"], name: "index_drive_item_access_logs_on_user_id"
+  end
 
   create_table "drive_items", force: :cascade do |t|
     t.string "blob_path"
     t.datetime "created_at", null: false
+    t.datetime "deleted_at"
+    t.string "extension"
     t.string "file_hash"
     t.integer "item_type"
     t.string "name"
@@ -24,6 +41,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_210235) do
     t.bigint "owner_user_id", null: false
     t.bigint "parent_id"
     t.datetime "updated_at", null: false
+    t.index ["deleted_at"], name: "index_drive_items_on_deleted_at"
+    t.index ["organization_id", "parent_id", "name", "extension"], name: "index_drive_items_on_org_parent_name_extension", unique: true
     t.index ["organization_id"], name: "index_drive_items_on_organization_id"
     t.index ["owner_user_id"], name: "index_drive_items_on_owner_user_id"
     t.index ["parent_id"], name: "index_drive_items_on_parent_id"
@@ -48,16 +67,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_210235) do
     t.datetime "updated_at", null: false
     t.datetime "used_at"
     t.index ["organization_invite_id"], name: "index_email_authentications_on_organization_invite_id"
-  end
-
-  create_table "email_verification_codes", force: :cascade do |t|
-    t.string "code_digest"
-    t.datetime "created_at", null: false
-    t.datetime "expires_at"
-    t.datetime "updated_at", null: false
-    t.datetime "used_at"
-    t.bigint "user_id", null: false
-    t.index ["user_id"], name: "index_email_verification_codes_on_user_id"
   end
 
   create_table "organization_invites", force: :cascade do |t|
@@ -97,13 +106,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_27_210235) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
+  add_foreign_key "drive_item_access_logs", "drive_items"
+  add_foreign_key "drive_item_access_logs", "organizations"
+  add_foreign_key "drive_item_access_logs", "users"
   add_foreign_key "drive_items", "drive_items", column: "parent_id"
   add_foreign_key "drive_items", "organizations"
   add_foreign_key "drive_items", "users", column: "owner_user_id"
   add_foreign_key "drive_permissions", "drive_items"
   add_foreign_key "drive_permissions", "users"
   add_foreign_key "email_authentications", "organization_invites"
-  add_foreign_key "email_verification_codes", "users"
   add_foreign_key "organization_invites", "organizations"
   add_foreign_key "organization_invites", "users", column: "stand_by_user_id"
   add_foreign_key "organization_invites", "users", column: "used_by_user_id"

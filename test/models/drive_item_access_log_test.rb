@@ -1,6 +1,6 @@
 require "test_helper"
 
-class EmailVerificationCodeTest < ActiveSupport::TestCase
+class DriveItemAccessLogTest < ActiveSupport::TestCase
   # test "the truth" do
   #   assert true
   # end

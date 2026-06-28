@@ -33,11 +33,26 @@ id
 organization_id
 parent_id
 name
-item_type
+item_type ディレクトリ or ファイルフラグ
+extension ファイル拡張子(ディレクトリはdir)
 blob_path
 hash
 created_at
 updated_at
+```
+
+### drive_item_access_logs
+
+閲覧日関係
+
+```text
+id
+organization_id
+user_id
+drive_item_id
+action view / download / preview
+accessed_at
+created_at
 ```
 
 ### organization_invites
@@ -106,7 +121,7 @@ id | parent_id | name       | item_type
 /大学/レポート/report.pdf
 ```
 
-## フルパスを保存しない理由
+## フルパスを保存しない設計
 
 パスの変更時に効率をよくするため
 たとえば
@@ -115,4 +130,35 @@ id | parent_id | name       | item_type
 UPDATE drive_items
 SET name = '課題'
 WHERE id = 2;
+```
+
+## ファイルAPI移動設計
+
+```
+GET    /drive_items                 一覧
+POST   /drive_items                 フォルダ作成・ファイル登録
+
+GET    /drive_items/:id             詳細
+PATCH  /drive_items/:id             名前変更・移動
+DELETE /drive_items/:id             ゴミ箱へ移動
+
+GET    /drive_items/:id/preview     ブラウザ内表示
+GET    /drive_items/:id/download    ダウンロード
+POST   /drive_items/:id/restore     ゴミ箱から復元
+
+GET    /drive_items/trash           ゴミ箱一覧
+```
+
+```
+POST /drive_items/bulk_move
+  複数のファイル・ディレクトリを指定フォルダへ移動
+
+POST /drive_items/bulk_delete
+  複数のファイル・ディレクトリをゴミ箱へ移動
+
+POST /drive_items/bulk_restore
+  複数のファイル・ディレクトリをゴミ箱から復元
+
+POST /drive_items/bulk_download
+  複数ファイルを ZIP にまとめてダウンロード
 ```
