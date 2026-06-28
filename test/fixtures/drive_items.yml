@@ -1,0 +1,22 @@
+one:
+  organization: one
+  owner_user: one
+  name: root_folder
+  item_type: directory
+
+two:
+  organization: two
+  owner_user: two
+  name: sample.pdf
+  item_type: file
+  extension: pdf
+  blob_path: /tmp/sample.pdf
+
+child_file:
+  organization: one
+  owner_user: one
+  parent: one
+  name: report.pdf
+  item_type: file
+  extension: pdf
+  blob_path: /tmp/report.pdf
