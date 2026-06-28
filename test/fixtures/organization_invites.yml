@@ -2,12 +2,12 @@
 
 one:
   organization: one
-  code: MyString
+  code: invite_code_one
   expires_at: 2026-06-27 21:58:33
   used_at: 2026-06-27 21:58:33
 
 two:
   organization: two
-  code: MyString
+  code: invite_code_two
   expires_at: 2026-06-27 21:58:33
   used_at: 2026-06-27 21:58:33
