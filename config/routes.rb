@@ -1,5 +1,4 @@
 Rails.application.routes.draw do
-
   # /drive_items を中心に、DriveItemsController のCRUDルートを作成
   # 自動生成されるルート:
   # GET    /drive_items          -> drive_items#index
@@ -8,7 +7,6 @@ Rails.application.routes.draw do
   # PATCH  /drive_items/:id      -> drive_items#update
   # DELETE /drive_items/:id      -> drive_items#destroy
   resources :drive_items do
-
     # collection は「特定の1件ではなく、drive_items 全体」を対象にする操作
     # URLに :id は付かない
     collection do

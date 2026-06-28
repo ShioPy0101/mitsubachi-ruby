@@ -32,9 +32,9 @@ class DriveItemsController < ApplicationController
   # POST /drive_items
   # フォルダ作成・ファイル登録
   def create
-    name = params[:name] #ファイル名またはフォルダ名
-    parent_id = params[:parent_id] #親フォルダのID。ルート直下の場合は nil
-    item_type = params[:item_type] #file or directory
+    name = params[:name] # ファイル名またはフォルダ名
+    parent_id = params[:parent_id] # 親フォルダのID。ルート直下の場合は nil
+    item_type = params[:item_type] # file or directory
 
     if item_type != "file" && item_type != "directory"
       render json: { error: "ファイルタイプは file または directory のいずれかである必要があります" }, status: :unprocessable_entity
@@ -42,7 +42,7 @@ class DriveItemsController < ApplicationController
     end
 
     if item_type == "file" && params[:file].nil?
-      render json: { error: "ファイルが指定されていません" }, status:unprocessable_entity
+      render json: { error: "ファイルが指定されていません" }, status: unprocessable_entity
       return
     end
 
@@ -58,7 +58,7 @@ class DriveItemsController < ApplicationController
       if parent.nil?
         render json: { error: "指定された親フォルダが見つかりません" }, status: :not_found
         return
-      end 
+      end
 
       unless parent.directory?
         render json: { error: "親にはディレクトリを指定してください" }, status: :unprocessable_entity
@@ -96,7 +96,7 @@ class DriveItemsController < ApplicationController
         FileUtils.rm_f(Rails.root.join("storage", blob_path))
         render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
       end
-      
+
     else
       # ディレクトリの場合は、拡張子・保存先パスは不要
       @drive_item.extension = nil
@@ -199,7 +199,6 @@ class DriveItemsController < ApplicationController
       IO.copy_stream(uploaded_file.tempfile, file)
     end
 
-    [blob_path, extension]
+    [ blob_path, extension ]
   end
-
 end

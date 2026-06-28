@@ -1,6 +1,5 @@
 # app/models/drive_item.rb
 class DriveItem < ApplicationRecord
-
   # DriveItemは一つの組織に属する
   belongs_to :organization
 
@@ -28,7 +27,7 @@ class DriveItem < ApplicationRecord
   }
 
   # ここから下はバリデーションの定義
-  
+
   # nameは必須である
   validates :name, presence: true
 
