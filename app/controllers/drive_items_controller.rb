@@ -256,11 +256,28 @@ class DriveItemsController < ApplicationController
   # POST /drive_items/bulk_download
   # 複数ファイルを ZIP にまとめる
   def bulk_download
+    
   end
 
   # GET /drive_items/:id/preview
-  # ブラウザ内プレビュー
+  # ブラウザ内プレビュー(動画を返す)
   def preview
+    drive_item_id = params[:id]
+
+    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
+    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
+
+    if @drive_item.nil?
+      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
+      return
+    end
+
+    unless @drive_item.file?
+      render json: { error: "プレビューはファイルに対してのみ可能です" }, status: :unprocessable_entity
+      return
+    end
+
+
   end
 
   # GET /drive_items/:id/download
