@@ -114,46 +114,170 @@ class DriveItemsController < ApplicationController
   # GET /drive_items/:id
   # ファイルまたはフォルダの詳細を返す
   def show
+    drive_item_id = params[:id]
+
+    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
+    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
+
+    if @drive_item.nil?
+      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
+    else
+      render json: @drive_item
+    end
   end
 
   # PATCH /drive_items/:id
   # 名前変更・単体移動など
   def update
+
+    drive_item_id = params[:id]
+    new_name = params[:name]
+    new_parent_id = params[:parent_id]
+
+    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
+    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
+
+    if @drive_item.nil?
+      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
+      return
+    end
+
+    if new_name.present?
+      # 名前変更
+      @drive_item.name = new_name
+    end
+
+    if new_parent_id.present?
+      # 移動先の親フォルダを検索する。見つからない場合はエラーを返す
+      new_parent = current_user.organization.drive_items.active.find_by(id: new_parent_id)
+
+      if new_parent.nil?
+        render json: { error: "指定された新しい親フォルダが見つかりません" }, status: :not_found
+        return
+      end
+
+      unless new_parent.directory?
+        # unprocessable_entityは422エラー。リクエストは正しいが、処理できない場合に使う
+
+        render json: { error: "新しい親にはディレクトリを指定してください" }, status: :unprocessable_entity
+        return
+      end
+
+      @drive_item.parent_id = new_parent_id
+    end
+
+    if @drive_item.save
+      render json: @drive_item
+    else
+      render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+    end
   end
 
   # DELETE /drive_items/:id
   # 論理削除してゴミ箱へ移動
   def destroy
+    drive_item_id = params[:id]
+
+    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
+    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
+
+    if @drive_item.nil?
+      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
+      return
+    end
+
+    # 論理削除（ゴミ箱へ移動）
+    @drive_item.update(deleted_at: Time.current)
+
+    render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
   end
 
   # GET /drive_items/trash
   # ゴミ箱一覧
   def trash
+    @drive_items =
+      current_user.organization
+                  .drive_items
+                  .deleted
+                  .order(deleted_at: :desc)
+    render json: @drive_items
   end
 
   # POST /drive_items/bulk_move
   # 複数項目を指定フォルダへ移動
   def bulk_move
+    drive_item_ids = params[:drive_item_ids]
+    new_parent_id = params[:parent_id]
+
+    # 移動先の親フォルダを検索する。見つからない場合はエラーを返す
+    new_parent = current_user.organization.drive_items.active.find_by(id: new_parent_id)
+
+    if new_parent.nil?
+      render json: { error: "指定された新しい親フォルダが見つかりません" }, status: :not_found
+      return
+    end
+
+    unless new_parent.directory?
+      render json: { error: "新しい親にはディレクトリを指定してください" }, status: :unprocessable_entity
+      return
+    end
+
+    # 指定された DriveItem を検索し、親フォルダを更新する
+    @drive_items = current_user.organization.drive_items.active.where(id: drive_item_ids)
+    @drive_items.update_all(parent_id: new_parent_id)
+
+    render json: { message: "ファイルまたはフォルダを移動しました" }
   end
 
   # POST /drive_items/bulk_delete
   # 複数項目をまとめて論理削除
   def bulk_delete
+    drive_item_ids = params[:drive_item_ids]
+
+    # 指定された DriveItem を検索し、論理削除（ゴミ箱へ移動）する
+    @drive_items = current_user.organization.drive_items.active.where(id: drive_item_ids)
+    @drive_items.update_all(deleted_at: Time.current)
+
+    render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
   end
 
   # POST /drive_items/bulk_restore
   # 複数項目をまとめて復元
   def bulk_restore
+    drive_item_ids = params[:drive_item_ids]
+
+    # 指定された DriveItem を検索し、論理削除を解除（復元）する
+    @drive_items = current_user.organization.drive_items.deleted.where(id: drive_item_ids)
+    @drive_items.update_all(deleted_at: nil)
+
+    render json: { message: "ファイルまたはフォルダを復元しました" }
   end
 
   # POST /drive_items/bulk_download
   # 複数ファイルを ZIP にまとめる
   def bulk_download
+    
   end
 
   # GET /drive_items/:id/preview
-  # ブラウザ内プレビュー
+  # ブラウザ内プレビュー(動画を返す)
   def preview
+    drive_item_id = params[:id]
+
+    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
+    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
+
+    if @drive_item.nil?
+      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
+      return
+    end
+
+    unless @drive_item.file?
+      render json: { error: "プレビューはファイルに対してのみ可能です" }, status: :unprocessable_entity
+      return
+    end
+
+
   end
 
   # GET /drive_items/:id/download
@@ -177,6 +301,19 @@ class DriveItemsController < ApplicationController
                   .find(params[:id])
   end
 
+  # multipart/form-dataかチェック
+  def check_file_type(file)
+    # multipart/form-data で送信されたファイルかどうかをチェックする
+    unless file.is_a?(ActionDispatch::Http::UploadedFile)
+      render json: { error: "ファイルが正しく送信されていません" }, status: :unprocessable_entity
+      return false
+    end
+    true
+  end
+
+  
+
+  # 拡張子取得
   def get_extension_from_filename(filename)
     File.extname(filename).delete_prefix(".").downcase
   end
