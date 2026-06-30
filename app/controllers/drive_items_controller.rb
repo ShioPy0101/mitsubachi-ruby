@@ -244,6 +244,13 @@ class DriveItemsController < ApplicationController
   # POST /drive_items/bulk_restore
   # 複数項目をまとめて復元
   def bulk_restore
+    drive_item_ids = params[:drive_item_ids]
+
+    # 指定された DriveItem を検索し、論理削除を解除（復元）する
+    @drive_items = current_user.organization.drive_items.deleted.where(id: drive_item_ids)
+    @drive_items.update_all(deleted_at: nil)
+
+    render json: { message: "ファイルまたはフォルダを復元しました" }
   end
 
   # POST /drive_items/bulk_download
