@@ -176,6 +176,20 @@ class DriveItemsController < ApplicationController
   # DELETE /drive_items/:id
   # 論理削除してゴミ箱へ移動
   def destroy
+    drive_item_id = params[:id]
+
+    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
+    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
+
+    if @drive_item.nil?
+      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
+      return
+    end
+
+    # 論理削除（ゴミ箱へ移動）
+    @drive_item.update(deleted_at: Time.current)
+
+    render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
   end
 
   # GET /drive_items/trash
