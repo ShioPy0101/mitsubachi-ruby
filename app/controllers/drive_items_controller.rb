@@ -206,6 +206,27 @@ class DriveItemsController < ApplicationController
   # POST /drive_items/bulk_move
   # 複数項目を指定フォルダへ移動
   def bulk_move
+    drive_item_ids = params[:drive_item_ids]
+    new_parent_id = params[:parent_id]
+
+    # 移動先の親フォルダを検索する。見つからない場合はエラーを返す
+    new_parent = current_user.organization.drive_items.active.find_by(id: new_parent_id)
+
+    if new_parent.nil?
+      render json: { error: "指定された新しい親フォルダが見つかりません" }, status: :not_found
+      return
+    end
+
+    unless new_parent.directory?
+      render json: { error: "新しい親にはディレクトリを指定してください" }, status: :unprocessable_entity
+      return
+    end
+
+    # 指定された DriveItem を検索し、親フォルダを更新する
+    @drive_items = current_user.organization.drive_items.active.where(id: drive_item_ids)
+    @drive_items.update_all(parent_id: new_parent_id)
+
+    render json: { message: "ファイルまたはフォルダを移動しました" }
   end
 
   # POST /drive_items/bulk_delete
