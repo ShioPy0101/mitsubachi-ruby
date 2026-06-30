@@ -195,6 +195,12 @@ class DriveItemsController < ApplicationController
   # GET /drive_items/trash
   # ゴミ箱一覧
   def trash
+    @drive_items =
+      current_user.organization
+                  .drive_items
+                  .deleted
+                  .order(deleted_at: :desc)
+    render json: @drive_items
   end
 
   # POST /drive_items/bulk_move
