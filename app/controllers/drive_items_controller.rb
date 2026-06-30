@@ -301,6 +301,19 @@ class DriveItemsController < ApplicationController
                   .find(params[:id])
   end
 
+  # multipart/form-dataかチェック
+  def check_file_type(file)
+    # multipart/form-data で送信されたファイルかどうかをチェックする
+    unless file.is_a?(ActionDispatch::Http::UploadedFile)
+      render json: { error: "ファイルが正しく送信されていません" }, status: :unprocessable_entity
+      return false
+    end
+    true
+  end
+
+  
+
+  # 拡張子取得
   def get_extension_from_filename(filename)
     File.extname(filename).delete_prefix(".").downcase
   end
