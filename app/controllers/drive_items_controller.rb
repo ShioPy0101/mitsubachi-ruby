@@ -232,6 +232,13 @@ class DriveItemsController < ApplicationController
   # POST /drive_items/bulk_delete
   # 複数項目をまとめて論理削除
   def bulk_delete
+    drive_item_ids = params[:drive_item_ids]
+
+    # 指定された DriveItem を検索し、論理削除（ゴミ箱へ移動）する
+    @drive_items = current_user.organization.drive_items.active.where(id: drive_item_ids)
+    @drive_items.update_all(deleted_at: Time.current)
+
+    render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
   end
 
   # POST /drive_items/bulk_restore
