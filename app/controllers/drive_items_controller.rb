@@ -114,11 +114,63 @@ class DriveItemsController < ApplicationController
   # GET /drive_items/:id
   # ファイルまたはフォルダの詳細を返す
   def show
+    drive_item_id = params[:id]
+
+    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
+    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
+
+    if @drive_item.nil?
+      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
+    else
+      render json: @drive_item
+    end
   end
 
   # PATCH /drive_items/:id
   # 名前変更・単体移動など
   def update
+
+    drive_item_id = params[:id]
+    new_name = params[:name]
+    new_parent_id = params[:parent_id]
+
+    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
+    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
+
+    if @drive_item.nil?
+      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
+      return
+    end
+
+    if new_name.present?
+      # 名前変更
+      @drive_item.name = new_name
+    end
+
+    if new_parent_id.present?
+      # 移動先の親フォルダを検索する。見つからない場合はエラーを返す
+      new_parent = current_user.organization.drive_items.active.find_by(id: new_parent_id)
+
+      if new_parent.nil?
+        render json: { error: "指定された新しい親フォルダが見つかりません" }, status: :not_found
+        return
+      end
+
+      unless new_parent.directory?
+        # unprocessable_entityは422エラー。リクエストは正しいが、処理できない場合に使う
+
+        render json: { error: "新しい親にはディレクトリを指定してください" }, status: :unprocessable_entity
+        return
+      end
+
+      @drive_item.parent_id = new_parent_id
+    end
+
+    if @drive_item.save
+      render json: @drive_item
+    else
+      render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+    end
   end
 
   # DELETE /drive_items/:id
