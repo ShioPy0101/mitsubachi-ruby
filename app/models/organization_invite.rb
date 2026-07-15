@@ -7,4 +7,6 @@ class OrganizationInvite < ApplicationRecord
 
   # この招待を仮ユーザーとして使用するUser
   belongs_to :stand_by_user, class_name: "User", optional: true
+
+  has_many :email_authentications, dependent: :restrict_with_error
 end
