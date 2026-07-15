@@ -334,7 +334,7 @@ class DriveItemsController < ApplicationController
       response.headers[key] = value
     end
 
-    head :ok
+    head result.status
   end
 
   def render_not_found
