@@ -1,4 +1,10 @@
 class User < ApplicationRecord
+  enum :role, {
+    member: 0,
+    organization_admin: 1,
+    system_admin: 2
+  }
+
   # このユーザーは1つのOrganizationに所属する
   belongs_to :organization
 
@@ -13,9 +19,24 @@ class User < ApplicationRecord
            foreign_key: :used_by_user_id,
            dependent: :restrict_with_error
 
+  has_many :admin_audit_logs,
+           foreign_key: :actor_user_id,
+           dependent: :restrict_with_error
+
+  scope :active, -> { where(suspended_at: nil) }
+  scope :suspended, -> { where.not(suspended_at: nil) }
+
   devise :database_authenticatable,
          :registerable,
          :recoverable,
          :rememberable,
          :validatable
+
+  def suspended?
+    suspended_at.present?
+  end
+
+  def active_for_authentication?
+    super && !suspended?
+  end
 end

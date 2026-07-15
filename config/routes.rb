@@ -9,6 +9,23 @@ Rails.application.routes.draw do
     namespace :v1 do
       resource :csrf_token, only: :show
 
+      namespace :admin do
+        resource :dashboard, only: :show
+        resources :organizations, only: %i[index show update]
+        resources :users, only: %i[index show update] do
+          member do
+            patch :suspend
+            patch :unsuspend
+          end
+        end
+        resources :drive_items, only: %i[index show destroy] do
+          member do
+            patch :restore
+          end
+        end
+        resources :audit_logs, only: %i[index show]
+      end
+
       post "auth/create", to: "email_authentications#create"
       post "auth/login", to: "email_authentications#login"
       post "auth/verify", to: "email_authentications#verify"
