@@ -12,10 +12,17 @@
 - `Api::V1::EmailAuthenticationsController` - メール認証リンクの発行と検証を扱う
 - `Api::V1::CsrfTokensController` - 同一オリジン frontend が状態変更リクエスト前に使う CSRF token を返す
 - `Api::V1::SessionsController` - logout を扱う
+- `Api::V1::Admin::BaseController` - 管理 API 共通の認証、role 認可、テナント scope、ページネーション、エラーレスポンス、管理監査ログ記録を扱う
+- `Api::V1::Admin::DashboardsController` - 管理画面ダッシュボード集計を扱う
+- `Api::V1::Admin::OrganizationsController` - organization 管理を扱う
+- `Api::V1::Admin::UsersController` - user 管理、role 変更、停止・停止解除を扱う
+- `Api::V1::Admin::DriveItemsController` - drive item の管理用一覧、論理削除、復元を扱う
+- `Api::V1::Admin::AuditLogsController` - 管理監査ログ閲覧を扱う
 
 ## API Boundary
 - Rails は API 専用プロセスとして起動し、フロントエンドの view、Importmap、Turbo、Stimulus、asset 配信を担当しない
 - 公開 API は `/api/v1` 配下、health check は `/api/health` 配下に置く
+- 管理 API は通常ユーザー API と分離し、`/api/v1/admin` 配下に置く
 - 本番は `https://drive.shiosalt.com/` の同一オリジン構成を前提とし、`/` は frontend、`/api/*` は Rails に reverse proxy する
 - Rails の内部ポートは `127.0.0.1:3001` などに bind し、インターネットへ直接公開しない
 - Devise の Cookie セッションを使い、Bearer Token や JWT へは変更しない
@@ -24,12 +31,29 @@
 ## Models
 - `Organization` - ユーザー、招待、ドライブ項目を束ねる組織
 - `User` - Devise 認証を持つ組織所属ユーザー
+- `AdminAuditLog` - 管理操作の監査ログ
 - `DriveItem` - ファイル/ディレクトリを表す階層オブジェクト
 - `DrivePermission` - ユーザーとドライブ項目の権限付与
 - `DriveItemAccessLog` - ドライブ項目アクセスの記録
 - `OrganizationInvite` - 組織招待と stand-by 状態の管理
 - `EmailAuthentication` - メール認証トークンと有効期限の管理
 - `ApplicationRecord` - Active Record 共通ベース
+
+## Admin Authorization
+- `User#role` は `member`、`organization_admin`、`system_admin` の enum
+- `member` は管理 API を利用できない
+- `system_admin` は全 organization の管理データを扱える
+- `organization_admin` は `current_user.organization_id` を起点にした scope だけを扱える
+- テナント境界外の管理リソースは存在推測を避けるため `404 Not Found` を返す
+- `organization_admin` による `system_admin` 変更、別 organization への user 移動は禁止する
+- 最後の active な `system_admin` の降格・停止は禁止する
+- User 停止は `suspended_at` による論理停止で、Devise 認証時にも停止ユーザーを拒否する
+
+## Admin Audit Logs
+- 管理操作の監査ログは `admin_audit_logs` に保存する
+- 対象操作は organization 更新、user 更新、role 変更、user 停止・停止解除、drive item 削除・復元
+- 保存項目は actor user、organization、action、target type / id、change_set、IP、User-Agent
+- パスワード、認証トークン、Cookie、生ファイル内容は保存しない
 
 ## Services
 - `AuditLogs::Recorder` - preview / download / stream の監査ログ記録を集約する。動画の Range リクエストで `stream` ログが増え続けないよう、同一 organization / user / drive_item は 5 分間重複記録を抑制する

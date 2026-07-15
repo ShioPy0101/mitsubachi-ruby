@@ -239,6 +239,149 @@ active な 1 件を返します。
 - `Content-Disposition: attachment`
 - `Content-Length`
 
+## 管理 API
+
+管理 API は `/api/v1/admin` 配下で公開します。認証必須で、`member` は `403 Forbidden` になります。
+
+role:
+
+- `member`
+- `organization_admin`
+- `system_admin`
+
+権限範囲:
+
+- `system_admin` は全 organization の管理データを参照・更新できます
+- `organization_admin` は自 organization の管理データだけを参照・更新できます
+- テナント境界外のリソースは原則 `404 Not Found` を返します
+
+一覧レスポンス:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "current_page": 1,
+    "per_page": 20,
+    "total_pages": 1,
+    "total_count": 0
+  }
+}
+```
+
+エラーレスポンス:
+
+```json
+{
+  "error": {
+    "code": "forbidden",
+    "message": "この操作を実行する権限がありません"
+  }
+}
+```
+
+### `GET /api/v1/admin/dashboard`
+
+organization、user、drive_item、容量、直近 user / drive_item の集計を返します。`organization_admin` では自 organization の範囲に限定されます。
+
+### Organization 管理
+
+```text
+GET   /api/v1/admin/organizations
+GET   /api/v1/admin/organizations/:id
+PATCH /api/v1/admin/organizations/:id
+```
+
+一覧クエリ:
+
+- `page`
+- `per_page` 最大 100
+- `q` 名前検索
+- `sort` は `created_at` / `name`
+- `direction` は `asc` / `desc`
+
+更新可能な属性:
+
+- `name`
+
+### User 管理
+
+```text
+GET   /api/v1/admin/users
+GET   /api/v1/admin/users/:id
+PATCH /api/v1/admin/users/:id
+PATCH /api/v1/admin/users/:id/suspend
+PATCH /api/v1/admin/users/:id/unsuspend
+```
+
+一覧クエリ:
+
+- `page`
+- `per_page` 最大 100
+- `q` 名前またはメールアドレス検索
+- `organization_id`
+- `role`
+- `status` は `active` / `suspended`
+- `sort` は `created_at` / `last_sign_in_at` / `email` / `name`
+- `direction` は `asc` / `desc`
+
+制約:
+
+- `organization_admin` は `system_admin` を変更できません
+- `organization_admin` はユーザーを別 organization へ移動できません
+- 最後の active な `system_admin` は降格・停止できません
+- 停止は `suspended_at` による論理停止で、物理削除しません
+
+### DriveItem 管理
+
+```text
+GET    /api/v1/admin/drive_items
+GET    /api/v1/admin/drive_items/:id
+DELETE /api/v1/admin/drive_items/:id
+PATCH  /api/v1/admin/drive_items/:id/restore
+```
+
+一覧クエリ:
+
+- `page`
+- `per_page` 最大 100
+- `q` ファイル名検索
+- `organization_id`
+- `user_id` 所有者 ID
+- `item_type` は `file` / `directory`
+- `content_type`
+- `deleted` は `active` / `deleted` / `true` / `false`
+- `sort` は `created_at` / `size` / `name`
+- `direction` は `asc` / `desc`
+
+管理 API の JSON レスポンスにファイル本体や実保存パスは含めません。削除・復元は `deleted_at` による既存の論理削除を使います。
+
+### 管理監査ログ
+
+```text
+GET /api/v1/admin/audit_logs
+GET /api/v1/admin/audit_logs/:id
+```
+
+記録対象:
+
+- Organization 更新
+- User 更新
+- role 変更
+- User 停止・停止解除
+- DriveItem 削除・復元
+
+一覧クエリ:
+
+- `actor_user_id`
+- `organization_id`
+- `action`
+- `target_type`
+- `created_from`
+- `created_to`
+
+`organization_admin` は自 organization の管理監査ログだけを閲覧できます。
+
 ## 配信 API
 
 以下は active なファイルのみを対象にします。
