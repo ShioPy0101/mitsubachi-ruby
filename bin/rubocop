@@ -2,6 +2,8 @@
 require "rubygems"
 require "bundler/setup"
 
+ENV["RUBOCOP_CACHE_ROOT"] ||= File.expand_path("../tmp/rubocop_cache", __dir__)
+
 # Explicit RuboCop config increases performance slightly while avoiding config confusion.
 ARGV.unshift("--config", File.expand_path("../.rubocop.yml", __dir__))
 

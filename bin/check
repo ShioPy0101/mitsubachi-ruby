@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$APP_ROOT"
+
+echo "== Tests =="
+bin/rails test
+
+echo
+echo "== RuboCop =="
+bin/rubocop
+
+echo
+echo "== Brakeman =="
+bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error

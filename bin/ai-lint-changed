@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$APP_ROOT"
+
+source bin/ai-common
+
+LOG_FILE="tmp/ai-lint-changed.log"
+mkdir -p tmp
+
+mapfile -t ruby_files < <(ai_list_changed_ruby_files)
+
+if [[ ${#ruby_files[@]} -eq 0 ]]; then
+  echo "PASS: no changed Ruby files"
+  exit 0
+fi
+
+set +e
+bin/rubocop "${ruby_files[@]}" >"$LOG_FILE" 2>&1
+status=$?
+set -e
+
+if [[ $status -eq 0 ]]; then
+  echo "PASS: lint (${#ruby_files[@]} files)"
+  exit 0
+fi
+
+echo "FAIL: lint"
+sed -n "1,40p" "$LOG_FILE"
+echo "Log: $LOG_FILE"
+exit "$status"
