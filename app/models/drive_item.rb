@@ -40,6 +40,8 @@ class DriveItem < ApplicationRecord
 
   # 保存する直前に、検査
   validate :parent_belongs_to_same_organization
+  validate :parent_is_directory
+  validate :parent_does_not_create_cycle
   validate :file_fields_match_item_type
   validate :storage_key_format
 
@@ -102,6 +104,42 @@ class DriveItem < ApplicationRecord
     return if parent.organization_id == organization_id
 
     errors.add(:parent, "must belong to the same organization")
+  end
+
+  def parent_is_directory
+    return unless parent
+    return if parent.directory?
+
+    errors.add(:parent, "must be a directory")
+  end
+
+  def parent_does_not_create_cycle
+    return if parent_id.blank? || id.blank?
+
+    if parent_id == id
+      errors.add(:parent, "cannot be self")
+      return
+    end
+
+    return unless descendant_ids.include?(parent_id)
+
+    errors.add(:parent, "cannot be a descendant")
+  end
+
+  def descendant_ids
+    ids = []
+    current_parent_ids = [ id ]
+
+    loop do
+      child_ids = self.class.where(parent_id: current_parent_ids).pluck(:id)
+      child_ids -= ids
+      break if child_ids.empty?
+
+      ids.concat(child_ids)
+      current_parent_ids = child_ids
+    end
+
+    ids
   end
 
   # item_typeに応じて、必要なフィールドが正しく設定されているかを検査する

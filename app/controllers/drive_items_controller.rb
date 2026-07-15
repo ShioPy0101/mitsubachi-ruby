@@ -3,7 +3,8 @@ require "securerandom"
 
 class DriveItemsController < ApplicationController
   before_action :authenticate_user!
-  before_action :set_drive_item, only: %i[show update destroy restore]
+  before_action :set_active_drive_item, only: %i[show update destroy]
+  before_action :set_deleted_drive_item, only: %i[restore]
   before_action :set_deliverable_drive_item, only: %i[preview download stream]
 
   def index
@@ -19,39 +20,29 @@ class DriveItemsController < ApplicationController
 
   def create
     name = params[:name]
-    parent_id = params[:parent_id]
+    parent_id = normalized_parent_id
     item_type = params[:item_type]
 
-    if item_type != "file" && item_type != "directory"
+    unless valid_item_type?(item_type)
       render json: { error: "ファイルタイプは file または directory のいずれかである必要があります" }, status: :unprocessable_entity
       return
     end
 
-    if item_type == "file" && params[:file].nil?
+    if file_item_without_upload?(item_type)
       render json: { error: "ファイルが指定されていません" }, status: :unprocessable_entity
       return
     end
 
-    if item_type == "directory" && params[:file].present?
+    if directory_item_with_upload?(item_type)
       render json: { error: "ディレクトリ作成時にファイルは指定できません" }, status: :unprocessable_entity
       return
     end
 
-    if parent_id.present?
-      parent = current_user.organization.drive_items.active.find_by(id: parent_id)
+    return unless validate_parent_id(parent_id, not_found_message: "指定された親フォルダが見つかりません", invalid_message: "親にはディレクトリを指定してください")
 
-      if parent.nil?
-        render json: { error: "指定された親フォルダが見つかりません" }, status: :not_found
-        return
-      end
+    extension = item_type == "file" ? get_extension_from_filename(params[:file].original_filename) : nil
 
-      unless parent.directory?
-        render json: { error: "親にはディレクトリを指定してください" }, status: :unprocessable_entity
-        return
-      end
-    end
-
-    if current_user.organization.drive_items.exists?(parent_id: parent_id, name: name, extension: item_type == "file" ? get_extension_from_filename(params[:file].original_filename) : nil)
+    if duplicate_active_item?(parent_id:, name:, extension:)
       render json: { error: "同じ名前のファイルまたはフォルダが既に存在します" }, status: :unprocessable_entity
       return
     end
@@ -65,21 +56,31 @@ class DriveItemsController < ApplicationController
 
     if item_type == "file"
       uploaded_file = params[:file]
-      extension = get_extension_from_filename(uploaded_file.original_filename)
       generated_storage_key = build_storage_key(extension)
-      stored_file = save_uploaded_file(uploaded_file, generated_storage_key)
+      file_saved = false
+      saved = false
 
-      @drive_item.storage_key = stored_file.storage_key
-      @drive_item.extension = extension
-      @drive_item.file_hash = stored_file.sha256
-      @drive_item.file_size = stored_file.byte_size
-      @drive_item.content_type = stored_file.content_type
+      begin
+        stored_file = save_uploaded_file(uploaded_file, generated_storage_key)
+        file_saved = true
 
-      if @drive_item.save
-        render json: @drive_item, status: :created
-      else
-        cleanup_uploaded_file!(generated_storage_key)
-        render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+        @drive_item.storage_key = stored_file.storage_key
+        @drive_item.extension = extension
+        @drive_item.file_hash = stored_file.sha256
+        @drive_item.file_size = stored_file.byte_size
+        @drive_item.content_type = stored_file.content_type
+
+        saved = @drive_item.save
+        if saved
+          render json: @drive_item, status: :created
+        else
+          render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+        end
+      rescue ActiveRecord::ActiveRecordError => error
+        Rails.logger.error("[drive_items.create] failed to save drive_item error=#{error.class}: #{error.message}")
+        render json: { error: "ファイルを保存できませんでした" }, status: :unprocessable_entity
+      ensure
+        cleanup_uploaded_file!(generated_storage_key) if file_saved && !saved
       end
     else
       @drive_item.extension = nil
@@ -98,39 +99,18 @@ class DriveItemsController < ApplicationController
   end
 
   def show
-    @drive_item = current_user.organization.drive_items.active.find_by(id: params[:id])
-
-    if @drive_item.nil?
-      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
-    else
-      render json: @drive_item
-    end
+    render json: @drive_item
   end
 
   def update
-    @drive_item = current_user.organization.drive_items.active.find_by(id: params[:id])
-
-    if @drive_item.nil?
-      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
-      return
-    end
-
     @drive_item.name = params[:name] if params[:name].present?
 
-    if params[:parent_id].present?
-      new_parent = current_user.organization.drive_items.active.find_by(id: params[:parent_id])
+    if params.key?(:parent_id)
+      new_parent_id = normalized_parent_id
 
-      if new_parent.nil?
-        render json: { error: "指定された新しい親フォルダが見つかりません" }, status: :not_found
-        return
-      end
+      return unless validate_parent_id(new_parent_id, not_found_message: "指定された新しい親フォルダが見つかりません", invalid_message: "新しい親にはディレクトリを指定してください")
 
-      unless new_parent.directory?
-        render json: { error: "新しい親にはディレクトリを指定してください" }, status: :unprocessable_entity
-        return
-      end
-
-      @drive_item.parent_id = params[:parent_id]
+      @drive_item.parent_id = new_parent_id
     end
 
     if @drive_item.save
@@ -141,15 +121,11 @@ class DriveItemsController < ApplicationController
   end
 
   def destroy
-    @drive_item = current_user.organization.drive_items.active.find_by(id: params[:id])
-
-    if @drive_item.nil?
-      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
-      return
+    if @drive_item.update(deleted_at: Time.current)
+      render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
+    else
+      render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
     end
-
-    @drive_item.update(deleted_at: Time.current)
-    render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
   end
 
   def trash
@@ -162,36 +138,32 @@ class DriveItemsController < ApplicationController
   end
 
   def bulk_move
-    new_parent = current_user.organization.drive_items.active.find_by(id: params[:parent_id])
+    new_parent_id = normalized_parent_id
+    return unless validate_parent_id(new_parent_id, not_found_message: "指定された新しい親フォルダが見つかりません", invalid_message: "新しい親にはディレクトリを指定してください")
 
-    if new_parent.nil?
-      render json: { error: "指定された新しい親フォルダが見つかりません" }, status: :not_found
-      return
+    update_drive_items!(active_drive_items_for_bulk) do |drive_item|
+      drive_item.update!(parent_id: new_parent_id)
     end
 
-    unless new_parent.directory?
-      render json: { error: "新しい親にはディレクトリを指定してください" }, status: :unprocessable_entity
-      return
-    end
-
-    @drive_items = current_user.organization.drive_items.active.where(id: params[:drive_item_ids])
-    @drive_items.update_all(parent_id: params[:parent_id])
-
-    render json: { message: "ファイルまたはフォルダを移動しました" }
+    render json: { message: "ファイルまたはフォルダを移動しました" } unless performed?
   end
 
   def bulk_delete
-    @drive_items = current_user.organization.drive_items.active.where(id: params[:drive_item_ids])
-    @drive_items.update_all(deleted_at: Time.current)
+    deleted_at = Time.current
 
-    render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
+    update_drive_items!(active_drive_items_for_bulk) do |drive_item|
+      drive_item.update!(deleted_at: deleted_at)
+    end
+
+    render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" } unless performed?
   end
 
   def bulk_restore
-    @drive_items = current_user.organization.drive_items.deleted.where(id: params[:drive_item_ids])
-    @drive_items.update_all(deleted_at: nil)
+    update_drive_items!(deleted_drive_items_for_bulk) do |drive_item|
+      drive_item.update!(deleted_at: nil)
+    end
 
-    render json: { message: "ファイルまたはフォルダを復元しました" }
+    render json: { message: "ファイルまたはフォルダを復元しました" } unless performed?
   end
 
   def bulk_download
@@ -210,15 +182,27 @@ class DriveItemsController < ApplicationController
   end
 
   def restore
+    if @drive_item.update(deleted_at: nil)
+      render json: @drive_item
+    else
+      render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+    end
   end
 
   private
 
-  def set_drive_item
-    @drive_item =
-      current_user.organization
-                  .drive_items
-                  .find(params[:id])
+  def set_active_drive_item
+    @drive_item = current_user.organization.drive_items.active.find_by(id: params[:id])
+    return if @drive_item.present?
+
+    render_not_found
+  end
+
+  def set_deleted_drive_item
+    @drive_item = current_user.organization.drive_items.deleted.find_by(id: params[:id])
+    return if @drive_item.present?
+
+    render_not_found
   end
 
   def set_deliverable_drive_item
@@ -230,6 +214,69 @@ class DriveItemsController < ApplicationController
 
   def get_extension_from_filename(filename)
     File.extname(filename).delete_prefix(".").downcase
+  end
+
+  def normalized_parent_id
+    parent_id = params[:parent_id]
+    parent_id.present? ? parent_id : nil
+  end
+
+  def valid_item_type?(item_type)
+    item_type == "file" || item_type == "directory"
+  end
+
+  def file_item_without_upload?(item_type)
+    item_type == "file" && params[:file].nil?
+  end
+
+  def directory_item_with_upload?(item_type)
+    item_type == "directory" && params[:file].present?
+  end
+
+  def validate_parent_id(parent_id, not_found_message:, invalid_message:)
+    return true if parent_id.blank?
+
+    parent = current_user.organization.drive_items.active.find_by(id: parent_id)
+    if parent.nil?
+      render json: { error: not_found_message }, status: :not_found
+      return false
+    end
+
+    unless parent.directory?
+      render json: { error: invalid_message }, status: :unprocessable_entity
+      return false
+    end
+
+    true
+  end
+
+  def duplicate_active_item?(parent_id:, name:, extension:)
+    current_user
+      .organization
+      .drive_items
+      .active
+      .exists?(parent_id: parent_id, name: name, extension: extension)
+  end
+
+  def active_drive_items_for_bulk
+    current_user.organization.drive_items.active.where(id: params[:drive_item_ids])
+  end
+
+  def deleted_drive_items_for_bulk
+    current_user.organization.drive_items.deleted.where(id: params[:drive_item_ids])
+  end
+
+  def update_drive_items!(drive_items)
+    ActiveRecord::Base.transaction do
+      drive_items.find_each do |drive_item|
+        yield drive_item
+      end
+    end
+  rescue ActiveRecord::RecordInvalid => error
+    render json: { errors: error.record.errors.full_messages }, status: :unprocessable_entity
+  rescue ActiveRecord::ActiveRecordError => error
+    Rails.logger.error("[drive_items.bulk] failed error=#{error.class}: #{error.message}")
+    render json: { error: "一括操作に失敗しました" }, status: :unprocessable_entity
   end
 
   def save_uploaded_file(uploaded_file, storage_key)
