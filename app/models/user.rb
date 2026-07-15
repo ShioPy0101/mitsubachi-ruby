@@ -32,7 +32,17 @@ class User < ApplicationRecord
          :rememberable,
          :validatable
 
+  before_validation :normalize_email
+
+  validates :email, uniqueness: { case_sensitive: false }
+
   def suspended?
     suspended_at.present?
+  end
+
+  private
+
+  def normalize_email
+    self.email = email.to_s.strip.downcase if email.present?
   end
 end

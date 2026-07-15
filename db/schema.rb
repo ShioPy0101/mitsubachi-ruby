@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_16_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -25,11 +25,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
     t.string "target_type", null: false
     t.datetime "updated_at", null: false
     t.text "user_agent"
-    t.index ["action"], name: "index_admin_audit_logs_on_action"
-    t.index ["actor_user_id"], name: "index_admin_audit_logs_on_actor_user_id"
-    t.index ["created_at"], name: "index_admin_audit_logs_on_created_at"
-    t.index ["organization_id"], name: "index_admin_audit_logs_on_organization_id"
-    t.index ["target_type", "target_id"], name: "index_admin_audit_logs_on_target_type_and_target_id"
+    t.index [ "action" ], name: "index_admin_audit_logs_on_action"
+    t.index [ "actor_user_id" ], name: "index_admin_audit_logs_on_actor_user_id"
+    t.index [ "created_at" ], name: "index_admin_audit_logs_on_created_at"
+    t.index [ "organization_id" ], name: "index_admin_audit_logs_on_organization_id"
+    t.index [ "target_type", "target_id" ], name: "index_admin_audit_logs_on_target_type_and_target_id"
   end
 
   create_table "drive_item_access_logs", force: :cascade do |t|
@@ -44,12 +44,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
     t.datetime "updated_at", null: false
     t.text "user_agent"
     t.bigint "user_id", null: false
-    t.index ["drive_item_id", "occurred_at"], name: "index_access_logs_on_item_and_accessed_at"
-    t.index ["drive_item_id"], name: "index_drive_item_access_logs_on_drive_item_id"
-    t.index ["organization_id", "user_id", "drive_item_id", "action", "occurred_at"], name: "index_drive_item_access_logs_on_stream_dedupe_lookup"
-    t.index ["organization_id"], name: "index_drive_item_access_logs_on_organization_id"
-    t.index ["user_id", "occurred_at"], name: "index_access_logs_on_user_and_accessed_at"
-    t.index ["user_id"], name: "index_drive_item_access_logs_on_user_id"
+    t.index [ "drive_item_id", "occurred_at" ], name: "index_access_logs_on_item_and_accessed_at"
+    t.index [ "drive_item_id" ], name: "index_drive_item_access_logs_on_drive_item_id"
+    t.index [ "organization_id", "user_id", "drive_item_id", "action", "occurred_at" ], name: "index_drive_item_access_logs_on_stream_dedupe_lookup"
+    t.index [ "organization_id" ], name: "index_drive_item_access_logs_on_organization_id"
+    t.index [ "user_id", "occurred_at" ], name: "index_access_logs_on_user_and_accessed_at"
+    t.index [ "user_id" ], name: "index_drive_item_access_logs_on_user_id"
   end
 
   create_table "drive_items", force: :cascade do |t|
@@ -67,11 +67,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
     t.bigint "parent_id"
     t.string "storage_key"
     t.datetime "updated_at", null: false
-    t.index ["deleted_at"], name: "index_drive_items_on_deleted_at"
-    t.index ["organization_id", "parent_id", "name", "extension"], name: "index_active_drive_items_on_org_parent_name_extension", unique: true, where: "(deleted_at IS NULL)"
-    t.index ["organization_id"], name: "index_drive_items_on_organization_id"
-    t.index ["owner_user_id"], name: "index_drive_items_on_owner_user_id"
-    t.index ["parent_id"], name: "index_drive_items_on_parent_id"
+    t.index [ "deleted_at" ], name: "index_drive_items_on_deleted_at"
+    t.index [ "organization_id", "parent_id", "name", "extension" ], name: "index_active_drive_items_on_org_parent_name_extension", unique: true, where: "(deleted_at IS NULL)"
+    t.index [ "organization_id" ], name: "index_drive_items_on_organization_id"
+    t.index [ "owner_user_id" ], name: "index_drive_items_on_owner_user_id"
+    t.index [ "parent_id" ], name: "index_drive_items_on_parent_id"
   end
 
   create_table "drive_permissions", force: :cascade do |t|
@@ -80,8 +80,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
     t.integer "permission"
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
-    t.index ["drive_item_id"], name: "index_drive_permissions_on_drive_item_id"
-    t.index ["user_id"], name: "index_drive_permissions_on_user_id"
+    t.index [ "drive_item_id" ], name: "index_drive_permissions_on_drive_item_id"
+    t.index [ "user_id" ], name: "index_drive_permissions_on_user_id"
   end
 
   create_table "email_authentications", force: :cascade do |t|
@@ -92,8 +92,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
     t.string "token"
     t.datetime "updated_at", null: false
     t.datetime "used_at"
-    t.index ["organization_invite_id"], name: "index_email_authentications_on_organization_invite_id"
-    t.index ["token"], name: "index_email_authentications_on_token", unique: true
+    t.index [ "organization_invite_id" ], name: "index_email_authentications_on_organization_invite_id"
+    t.index [ "token" ], name: "index_email_authentications_on_token", unique: true
   end
 
   create_table "organization_invites", force: :cascade do |t|
@@ -106,10 +106,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
     t.datetime "updated_at", null: false
     t.datetime "used_at"
     t.bigint "used_by_user_id"
-    t.index ["code"], name: "index_organization_invites_on_code", unique: true
-    t.index ["organization_id"], name: "index_organization_invites_on_organization_id"
-    t.index ["stand_by_user_id"], name: "index_organization_invites_on_stand_by_user_id"
-    t.index ["used_by_user_id"], name: "index_organization_invites_on_used_by_user_id"
+    t.index [ "code" ], name: "index_organization_invites_on_code", unique: true
+    t.index [ "organization_id" ], name: "index_organization_invites_on_organization_id"
+    t.index [ "stand_by_user_id" ], name: "index_organization_invites_on_stand_by_user_id"
+    t.index [ "used_by_user_id" ], name: "index_organization_invites_on_used_by_user_id"
   end
 
   create_table "organizations", force: :cascade do |t|
@@ -131,12 +131,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
     t.integer "role", default: 0, null: false
     t.datetime "suspended_at"
     t.datetime "updated_at", null: false
-    t.index ["email"], name: "index_users_on_email", unique: true
-    t.index ["last_sign_in_at"], name: "index_users_on_last_sign_in_at"
-    t.index ["organization_id"], name: "index_users_on_organization_id"
-    t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
-    t.index ["role"], name: "index_users_on_role"
-    t.index ["suspended_at"], name: "index_users_on_suspended_at"
+    t.index "lower((email)::text)", name: "index_users_on_lower_email_unique", unique: true
+    t.index [ "last_sign_in_at" ], name: "index_users_on_last_sign_in_at"
+    t.index [ "organization_id" ], name: "index_users_on_organization_id"
+    t.index [ "reset_password_token" ], name: "index_users_on_reset_password_token", unique: true
+    t.index [ "role" ], name: "index_users_on_role"
+    t.index [ "suspended_at" ], name: "index_users_on_suspended_at"
   end
 
   add_foreign_key "admin_audit_logs", "organizations"
