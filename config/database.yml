@@ -85,20 +85,18 @@ test:
 # for a full overview on how database connection configuration can be specified.
 #
 production:
-  primary: &primary_production
+  primary:
     <<: *default
-    database: mitsubachi_ruby_production
-    username: mitsubachi_ruby
-    password: <%= ENV["MITSUBACHI_RUBY_DATABASE_PASSWORD"] %>
+    url: <%= ENV.fetch("DATABASE_URL") if Rails.env.production? %>
   cache:
-    <<: *primary_production
-    database: mitsubachi_ruby_production_cache
+    <<: *default
+    url: <%= ENV.fetch("DATABASE_CACHE_URL") if Rails.env.production? %>
     migrations_paths: db/cache_migrate
   queue:
-    <<: *primary_production
-    database: mitsubachi_ruby_production_queue
+    <<: *default
+    url: <%= ENV.fetch("DATABASE_QUEUE_URL") if Rails.env.production? %>
     migrations_paths: db/queue_migrate
   cable:
-    <<: *primary_production
-    database: mitsubachi_ruby_production_cable
+    <<: *default
+    url: <%= ENV.fetch("DATABASE_CABLE_URL") if Rails.env.production? %>
     migrations_paths: db/cable_migrate
