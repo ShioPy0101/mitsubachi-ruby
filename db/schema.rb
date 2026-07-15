@@ -10,31 +10,38 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_15_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_15_113000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   create_table "drive_item_access_logs", force: :cascade do |t|
-    t.datetime "accessed_at"
     t.string "action"
     t.datetime "created_at", null: false
-    t.bigint "drive_item_id", null: false
+    t.bigint "drive_item_id"
+    t.string "ip_address", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at"
     t.bigint "organization_id", null: false
+    t.string "request_id", null: false
     t.datetime "updated_at", null: false
+    t.text "user_agent"
     t.bigint "user_id", null: false
-    t.index ["drive_item_id", "accessed_at"], name: "index_access_logs_on_item_and_accessed_at"
+    t.index ["drive_item_id", "occurred_at"], name: "index_access_logs_on_item_and_accessed_at"
     t.index ["drive_item_id"], name: "index_drive_item_access_logs_on_drive_item_id"
+    t.index ["organization_id", "user_id", "drive_item_id", "action", "occurred_at"], name: "index_drive_item_access_logs_on_stream_dedupe_lookup"
     t.index ["organization_id"], name: "index_drive_item_access_logs_on_organization_id"
-    t.index ["user_id", "accessed_at"], name: "index_access_logs_on_user_and_accessed_at"
+    t.index ["user_id", "occurred_at"], name: "index_access_logs_on_user_and_accessed_at"
     t.index ["user_id"], name: "index_drive_item_access_logs_on_user_id"
   end
 
   create_table "drive_items", force: :cascade do |t|
     t.string "blob_path"
+    t.string "content_type"
     t.datetime "created_at", null: false
     t.datetime "deleted_at"
     t.string "extension"
     t.string "file_hash"
+    t.bigint "file_size"
     t.integer "item_type"
     t.string "name"
     t.bigint "organization_id", null: false
@@ -108,7 +115,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_15_100000) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
-  add_foreign_key "drive_item_access_logs", "drive_items"
+  add_foreign_key "drive_item_access_logs", "drive_items", on_delete: :nullify
   add_foreign_key "drive_item_access_logs", "organizations"
   add_foreign_key "drive_item_access_logs", "users"
   add_foreign_key "drive_items", "drive_items", column: "parent_id"
