@@ -27,6 +27,7 @@
 - Rails の内部ポートは `127.0.0.1:3001` などに bind し、インターネットへ直接公開しない
 - Devise の Cookie セッションを使い、Bearer Token や JWT へは変更しない
 - 本番 Cookie は `Secure`、`HttpOnly`、`SameSite=Lax` とする
+- 停止済み User の既存 Cookie セッションは、認証必須 API の共通 before action で拒否する。logout は停止後も利用できるように除外する
 
 ## Models
 - `Organization` - ユーザー、招待、ドライブ項目を束ねる組織
@@ -38,6 +39,20 @@
 - `OrganizationInvite` - 組織招待と stand-by 状態の管理
 - `EmailAuthentication` - メール認証トークンと有効期限の管理
 - `ApplicationRecord` - Active Record 共通ベース
+
+## Email Authentication
+- 登録用リンク発行では、OrganizationInvite をトランザクション内でロックし、使用済み、有効期限、stand-by 状態をロック後に再検証する
+- 登録用リンク発行時に作成または再利用する仮ユーザー、invite の stand-by 更新、EmailAuthentication 作成は同一トランザクションで行う
+- メール送信は DB コミット後に Active Job へ投入し、ロールバックされた stand-by 状態のリンクを送らない
+- active な stand-by は 15 分間有効とし、同一 invite の二重登録開始を拒否する。stale な stand-by は解除して再利用できる
+- 本登録済み User と別 organization の通常 User は、登録 API から organization を変更できない
+- ログイン用リンク発行では User をロック後に停止状態と仮登録状態を再検証する
+- 新しいログイン用リンクを発行すると、同一メールアドレスの古い未使用かつ有効なログイントークンを使用済み扱いにする
+- 新しい登録用リンクを発行すると、同一 invite の古い未使用かつ有効な登録トークンを使用済み扱いにする
+- verify では EmailAuthentication をロック後、使用済み、有効期限、対象 User、停止状態を再検証する
+- 登録用 verify では OrganizationInvite もロックし、使用済み、有効期限、stand-by user と認証対象 User の一致を再検証する
+- User が token 発行後に停止された場合、セッションを作成せず、token は使用済み扱いにする
+- token は SHA-256 hash を DB に保存し、平文 token はメール送信用にのみ扱う
 
 ## Admin Authorization
 - `User#role` は `member`、`organization_admin`、`system_admin` の enum
