@@ -1,4 +1,4 @@
-class EmailAuthenticationsController < ApplicationController
+class Api::V1::EmailAuthenticationsController < ApplicationController
   REGISTRATION_STAND_BY_WINDOW = 15.minutes
 
   # ユーザー作成
@@ -197,6 +197,7 @@ class EmailAuthenticationsController < ApplicationController
 
       return if performed?
 
+      reset_session
       sign_in(user)
       render json: {
   message: "ログインに成功しました",
@@ -254,6 +255,7 @@ class EmailAuthenticationsController < ApplicationController
     return if performed?
 
     # ログイン状態を作る
+    reset_session
     sign_in(user)
 
     render json: {

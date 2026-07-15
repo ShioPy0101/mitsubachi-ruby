@@ -29,8 +29,17 @@ module MitsubachiRuby
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
 
-    config.session_store :cookie_store, key: "_mitsubachi_ruby_session"
+    config.session_store(
+      :cookie_store,
+      key: "_mitsubachi_ruby_session",
+      httponly: true,
+      same_site: :lax,
+      secure: Rails.env.production?
+    )
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use config.session_store, config.session_options
+
+    config.x.file_storage_root = ENV.fetch("FILE_STORAGE_ROOT", Rails.root.join("storage").to_s)
+    config.x.max_upload_size_bytes = ENV.fetch("MAX_UPLOAD_SIZE_BYTES", 10.gigabytes.to_s).to_i
   end
 end

@@ -1,16 +1,42 @@
-# Be sure to restart your server when you modify this file.
+if Rails.env.development?
+  class DevelopmentCors
+    DEFAULT_ORIGINS = %w[
+      http://localhost:3000
+      http://127.0.0.1:3000
+    ].freeze
 
-# Avoid CORS issues when API is called from the frontend app.
-# Handle Cross-Origin Resource Sharing (CORS) in order to accept cross-origin Ajax requests.
+    def initialize(app)
+      @app = app
+      @allowed_origins = ENV.fetch("FRONTEND_ORIGIN", DEFAULT_ORIGINS.join(","))
+                            .split(",")
+                            .map(&:strip)
+                            .reject(&:blank?)
+    end
 
-# Read more: https://github.com/cyu/rack-cors
+    def call(env)
+      origin = env["HTTP_ORIGIN"]
+      return @app.call(env) unless @allowed_origins.include?(origin)
 
-# Rails.application.config.middleware.insert_before 0, Rack::Cors do
-#   allow do
-#     origins "example.com"
-#
-#     resource "*",
-#       headers: :any,
-#       methods: [:get, :post, :put, :patch, :delete, :options, :head]
-#   end
-# end
+      if env["REQUEST_METHOD"] == "OPTIONS"
+        return [ 204, cors_headers(origin), [] ]
+      end
+
+      status, headers, body = @app.call(env)
+      [ status, headers.merge(cors_headers(origin)), body ]
+    end
+
+    private
+
+    def cors_headers(origin)
+      {
+        "Access-Control-Allow-Origin" => origin,
+        "Access-Control-Allow-Credentials" => "true",
+        "Access-Control-Allow-Methods" => "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
+        "Access-Control-Allow-Headers" => "Origin, Content-Type, Accept, X-CSRF-Token, X-Requested-With",
+        "Vary" => "Origin"
+      }
+    end
+  end
+
+  Rails.application.config.middleware.insert_before 0, DevelopmentCors
+end

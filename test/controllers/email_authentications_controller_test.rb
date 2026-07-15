@@ -2,12 +2,12 @@ require "test_helper"
 
 class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
   test "should require params for create" do
-    post auth_create_url
+    post api_v1_auth_create_url
     assert_response :bad_request
   end
 
   test "should require params for verify" do
-    post auth_verify_url
+    post api_v1_auth_verify_url
     assert_response :bad_request
   end
 
@@ -26,7 +26,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_no_difference "EmailAuthentication.count" do
-      post auth_login_url, params: { email: "pending@example.com" }
+      post api_v1_auth_login_url, params: { email: "pending@example.com" }
     end
 
     assert_response :unauthorized
@@ -52,7 +52,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_difference "EmailAuthentication.count", 1 do
-      post auth_create_url, params: {
+      post api_v1_auth_create_url, params: {
         email: " stale@example.com ",
         invite_code: "fresh-invite"
       }
@@ -86,7 +86,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       organization_invite: invite
     )
 
-    post auth_verify_url, params: { token: raw_token }
+    post api_v1_auth_verify_url, params: { token: raw_token }
 
     assert_response :ok
     assert authentication.reload.used_at.present?

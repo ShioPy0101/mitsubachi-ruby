@@ -5,13 +5,39 @@
 ## 基本方針
 
 - `drive_items` 系 API は認証必須です
+- API は `/api/v1` 配下で公開します
 - organization は URL ではなく `current_user.organization` から決まります
 - 他 organization の `drive_item` は取得できず、通常は `404 Not Found` を返します
 - ファイル本体の配信は `X-Accel-Redirect` を使い、Rails は認可とレスポンスヘッダー生成を担当します
+- Rails は API 専用で、フロントエンドのビューやアセット配信は担当しません
+
+## セッションとCSRF
+
+認証は Devise の Cookie セッションを使います。フロントエンドは同一オリジンから相対パスで呼び出します。
+
+```javascript
+fetch("/api/v1/drive_items", {
+  credentials: "same-origin"
+})
+```
+
+本番の Cookie は `Secure`、`HttpOnly`、`SameSite=Lax` を前提にします。状態変更系 API では CSRF token を送信します。
+
+### `GET /api/v1/csrf_token`
+
+CSRF token を返します。
+
+主なレスポンス:
+
+```json
+{
+  "csrf_token": "..."
+}
+```
 
 ## 認証 API
 
-### `POST /auth/create`
+### `POST /api/v1/auth/create`
 
 招待コードを使った登録用のメール認証リンクを送信します。
 
@@ -31,7 +57,7 @@
 - `401 Unauthorized`
 - `409 Conflict`
 
-### `POST /auth/login`
+### `POST /api/v1/auth/login`
 
 既存ユーザー向けのログイン用メール認証リンクを送信します。
 
@@ -49,7 +75,7 @@
 - `400 Bad Request`
 - `401 Unauthorized`
 
-### `POST /auth/verify`
+### `POST /api/v1/auth/verify`
 
 メール内のトークンを検証し、ログイン状態を作成します。
 
@@ -67,15 +93,19 @@
 - `400 Bad Request`
 - `401 Unauthorized`
 
-### `DELETE /logout`
+### `DELETE /api/v1/logout`
 
-ログアウト用の route は定義されています。
+現在のセッションを破棄します。
+
+主なレスポンス:
+
+- `204 No Content`
 
 ## Drive Items API
 
 ### 一覧・作成
 
-### `GET /drive_items`
+### `GET /api/v1/drive_items`
 
 active なファイル・ディレクトリを一覧します。
 
@@ -88,7 +118,7 @@ active なファイル・ディレクトリを一覧します。
 - `200 OK`
 - `401 Unauthorized`
 
-### `POST /drive_items`
+### `POST /api/v1/drive_items`
 
 ファイルまたはディレクトリを作成します。
 
@@ -118,25 +148,26 @@ active なファイル・ディレクトリを一覧します。
 - `201 Created`
 - `401 Unauthorized`
 - `404 Not Found`
+- `413 Content Too Large`
 - `422 Unprocessable Entity`
 
 ### 単体操作
 
-### `GET /drive_items/:id`
+### `GET /api/v1/drive_items/:id`
 
 active な 1 件を返します。
 
-### `PATCH /drive_items/:id`
+### `PATCH /api/v1/drive_items/:id`
 
 名前変更や親ディレクトリ変更を行います。
 
 `parent_id` を指定する場合、移動先は同じ organization の active な directory である必要があります。
 
-### `DELETE /drive_items/:id`
+### `DELETE /api/v1/drive_items/:id`
 
 論理削除し、ゴミ箱へ移動します。
 
-### `POST /drive_items/:id/restore`
+### `POST /api/v1/drive_items/:id/restore`
 
 論理削除済みアイテムを復元します。
 
@@ -149,11 +180,11 @@ active な 1 件を返します。
 
 ### ゴミ箱・一括操作
 
-### `GET /drive_items/trash`
+### `GET /api/v1/drive_items/trash`
 
 論理削除済みアイテム一覧を返します。
 
-### `POST /drive_items/bulk_move`
+### `POST /api/v1/drive_items/bulk_move`
 
 複数アイテムを指定ディレクトリへ移動します。
 
@@ -166,15 +197,15 @@ active な 1 件を返します。
 }
 ```
 
-### `POST /drive_items/bulk_delete`
+### `POST /api/v1/drive_items/bulk_delete`
 
 複数アイテムをまとめて論理削除します。
 
-### `POST /drive_items/bulk_restore`
+### `POST /api/v1/drive_items/bulk_restore`
 
 複数アイテムをまとめて復元します。
 
-### `POST /drive_items/bulk_download`
+### `POST /api/v1/drive_items/bulk_download`
 
 複数アイテムを ZIP 化してダウンロードします。
 
@@ -212,17 +243,17 @@ active な 1 件を返します。
 
 以下は active なファイルのみを対象にします。
 
-### `GET /drive_items/:id/preview`
+### `GET /api/v1/drive_items/:id/preview`
 
 - 用途: ブラウザ内表示
 - `Content-Disposition: inline`
 
-### `GET /drive_items/:id/download`
+### `GET /api/v1/drive_items/:id/download`
 
 - 用途: ダウンロード
 - `Content-Disposition: attachment`
 
-### `GET /drive_items/:id/stream`
+### `GET /api/v1/drive_items/:id/stream`
 
 - 用途: 動画などのシーク向け配信
 - `Content-Disposition: inline`
@@ -251,7 +282,7 @@ active な 1 件を返します。
 
 - 対象は file である必要があります
 - `storage_key` は `/`、`\`、`..`、NUL を含まない安全なキーである必要があります
-- 実ファイルが `storage/drive_items/:storage_key` に存在する必要があります
+- 実ファイルが `FILE_STORAGE_ROOT/drive_items/:storage_key` に存在する必要があります
 - 認可とファイル検証の後、配信許可前に監査ログを記録します
 - `stream` の監査ログは同一 user / file / organization について 5 分間重複記録を抑制します
 
@@ -287,6 +318,7 @@ updated_at
 - `deleted_at` が `NULL` のものを active として扱います
 - ファイル保存先の内部識別子には `storage_key` を使います
 - `blob_path` は `drive_items/:storage_key` 形式に同期されます
+- 物理保存先のルートは `FILE_STORAGE_ROOT` で指定します。未指定時は既存互換のため `storage` を使います
 
 ### `drive_item_access_logs`
 
@@ -320,6 +352,14 @@ updated_at
 
 ## ヘルスチェック
 
-### `GET /up`
+### `GET /api/health`
 
-稼働確認用 endpoint です。成功時は `200 OK` と `ok` を返します。
+DB 接続を含む ready check です。
+
+### `GET /api/health/live`
+
+プロセス生存確認です。
+
+### `GET /api/health/ready`
+
+DB 接続を含む ready check です。

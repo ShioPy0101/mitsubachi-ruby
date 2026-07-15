@@ -1,7 +1,7 @@
 require "fileutils"
 require "securerandom"
 
-class DriveItemsController < ApplicationController
+class Api::V1::DriveItemsController < ApplicationController
   before_action :authenticate_user!
   before_action :set_active_drive_item, only: %i[show update destroy]
   before_action :set_deleted_drive_item, only: %i[restore]
@@ -56,13 +56,18 @@ class DriveItemsController < ApplicationController
 
     if item_type == "file"
       uploaded_file = params[:file]
+      if upload_too_large?(uploaded_file)
+        render json: { error: "ファイルサイズが上限を超えています" }, status: :content_too_large
+        return
+      end
+
       generated_storage_key = build_storage_key(extension)
       file_saved = false
       saved = false
 
       begin
-        stored_file = save_uploaded_file(uploaded_file, generated_storage_key)
         file_saved = true
+        stored_file = save_uploaded_file(uploaded_file, generated_storage_key)
 
         @drive_item.storage_key = stored_file.storage_key
         @drive_item.extension = extension
@@ -79,6 +84,8 @@ class DriveItemsController < ApplicationController
       rescue ActiveRecord::ActiveRecordError => error
         Rails.logger.error("[drive_items.create] failed to save drive_item error=#{error.class}: #{error.message}")
         render json: { error: "ファイルを保存できませんでした" }, status: :unprocessable_entity
+      rescue DriveItems::StoredFileInspector::UploadTooLargeError
+        render json: { error: "ファイルサイズが上限を超えています" }, status: :content_too_large
       ensure
         cleanup_uploaded_file!(generated_storage_key) if file_saved && !saved
       end
@@ -300,7 +307,7 @@ class DriveItemsController < ApplicationController
   def save_uploaded_file(uploaded_file, storage_key)
     DriveItems::StoredFileInspector.copy_upload!(
       uploaded_file: uploaded_file,
-      storage_path: Rails.root.join("storage", DriveItem.storage_relative_path_for(storage_key)),
+      storage_path: DriveItem.storage_root.join(DriveItem.storage_relative_path_for(storage_key)),
       filename: uploaded_file.original_filename,
       storage_key: storage_key
     )
@@ -312,9 +319,14 @@ class DriveItemsController < ApplicationController
   end
 
   def cleanup_uploaded_file!(storage_key)
-    return unless DriveItem.valid_storage_key?(storage_key)
+    safe_storage_key = storage_key.to_s
+    return unless DriveItem.valid_storage_key?(safe_storage_key)
 
-    FileUtils.rm_f(Rails.root.join("storage", DriveItem.storage_relative_path_for(storage_key)))
+    FileUtils.rm_f(DriveItem.storage_root.join("drive_items", safe_storage_key))
+  end
+
+  def upload_too_large?(uploaded_file)
+    uploaded_file.size.to_i > Rails.configuration.x.max_upload_size_bytes
   end
 
   def deliver_drive_item(action)

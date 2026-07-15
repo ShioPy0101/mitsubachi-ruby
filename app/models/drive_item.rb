@@ -62,7 +62,7 @@ class DriveItem < ApplicationRecord
   end
 
   def absolute_storage_path
-    Rails.root.join("storage", storage_relative_path)
+    self.class.storage_root.join(storage_relative_path)
   end
 
   def filename
@@ -87,6 +87,10 @@ class DriveItem < ApplicationRecord
     return if storage_key.blank?
 
     File.join("drive_items", storage_key)
+  end
+
+  def self.storage_root
+    Pathname.new(Rails.configuration.x.file_storage_root).expand_path
   end
 
   private

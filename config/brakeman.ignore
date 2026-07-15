@@ -1,8 +1,8 @@
 {
   "ignored_warnings": [
     {
-      "fingerprint": "7a32a8b92dc32e2fd4d84b17620e7ed373ca34d4c1641b1f8a83d2fb12a34ef9",
-      "note": "storage_key は UUID 系の形式で再検証した上で cleanup しているため false positive"
+      "fingerprint": "c5955a1468dab608f765b9ba0e08cf8e06d217956cc2e24620a34ce98148481d",
+      "note": "storage_key は UUID 系の形式で生成し、DriveItem.valid_storage_key? で /, \\, .., NUL を拒否してから cleanup しているため false positive"
     }
   ]
 }
