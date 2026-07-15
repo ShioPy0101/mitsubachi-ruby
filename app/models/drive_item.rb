@@ -1,5 +1,7 @@
 # app/models/drive_item.rb
 class DriveItem < ApplicationRecord
+  STORAGE_KEY_PATTERN = %r{\Adrive_items/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*\z}
+
   # DriveItemは一つの組織に属する
   belongs_to :organization
 
@@ -34,9 +36,12 @@ class DriveItem < ApplicationRecord
   # extensionは、item_typeがfileの場合に必須である
   validates :extension, presence: true, if: :file?
 
+  before_validation :sync_storage_columns
+
   # 保存する直前に、検査
   validate :parent_belongs_to_same_organization
   validate :file_fields_match_item_type
+  validate :storage_key_format
 
   # スコープの定義
 
@@ -46,7 +51,27 @@ class DriveItem < ApplicationRecord
   # deletedなDriveItemを取得するスコープ
   scope :deleted, -> { where.not(deleted_at: nil) }
 
+  def effective_storage_key
+    storage_key.presence || blob_path.presence
+  end
+
+  def self.valid_storage_key?(value)
+    return false if value.blank?
+    return false if value.start_with?("/", "\\")
+    return false if value.include?("..")
+    return false if value.include?("\\")
+
+    value.match?(STORAGE_KEY_PATTERN)
+  end
+
   private
+
+  def sync_storage_columns
+    normalized_key = normalize_storage_key(storage_key.presence || blob_path.presence)
+
+    self.storage_key = normalized_key
+    self.blob_path = normalized_key
+  end
 
   # 親DriveItemが同じ組織に属しているかを検査する
   def parent_belongs_to_same_organization
@@ -60,17 +85,32 @@ class DriveItem < ApplicationRecord
   def file_fields_match_item_type
     if directory?
 
-      # ディレクトリの場合、extension, blob_path, file_hashは空であるべき
+      # ディレクトリの場合、extension, blob_path, storage_key, file_hashは空であるべき
       errors.add(:extension, "must be blank") if extension.present?
       errors.add(:blob_path, "must be blank") if blob_path.present?
+      errors.add(:storage_key, "must be blank") if storage_key.present?
       errors.add(:file_hash, "must be blank") if file_hash.present?
     end
 
     if file?
 
-      # ファイルの場合、extension, blob_path, file_hashは必須である
+      # ファイルの場合、extension, blob_path, storage_key, file_hashは必須である
       errors.add(:extension, "is required") if extension.blank?
       errors.add(:blob_path, "is required") if blob_path.blank?
+      errors.add(:storage_key, "is required") if storage_key.blank?
     end
+  end
+
+  def storage_key_format
+    return unless file?
+    return if self.class.valid_storage_key?(storage_key)
+
+    errors.add(:storage_key, "is invalid")
+  end
+
+  def normalize_storage_key(value)
+    return if value.blank?
+
+    value.to_s.delete_prefix("/")
   end
 end

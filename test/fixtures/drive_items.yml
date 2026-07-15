@@ -10,7 +10,8 @@ two:
   name: sample.pdf
   item_type: file
   extension: pdf
-  blob_path: /tmp/sample.pdf
+  blob_path: drive_items/sample.pdf
+  storage_key: drive_items/sample.pdf
 
 child_file:
   organization: one
@@ -19,4 +20,5 @@ child_file:
   name: report.pdf
   item_type: file
   extension: pdf
-  blob_path: /tmp/report.pdf
+  blob_path: drive_items/report.pdf
+  storage_key: drive_items/report.pdf

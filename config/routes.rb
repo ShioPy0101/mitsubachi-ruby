@@ -61,4 +61,6 @@ Rails.application.routes.draw do
 
   # ログアウト
   delete "/logout", to: "sessions#destroy"
+
+  get "/up", to: proc { [ 200, { "Content-Type" => "text/plain" }, [ "ok" ] ] }
 end

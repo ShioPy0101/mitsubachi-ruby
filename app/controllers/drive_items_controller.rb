@@ -1,6 +1,7 @@
 
 require "fileutils"
 require "securerandom"
+require "rack/mime"
 
 
 class DriveItemsController < ApplicationController
@@ -260,25 +261,17 @@ class DriveItemsController < ApplicationController
   # GET /drive_items/:id/preview
   # ブラウザ内プレビュー(動画を返す)
   def preview
-    drive_item_id = params[:id]
+    return unless prepare_accel_redirect!("inline")
 
-    # 組織内の DriveItem を検索する。見つからない場合はエラーを返す
-    @drive_item = current_user.organization.drive_items.active.find_by(id: drive_item_id)
-
-    if @drive_item.nil?
-      render json: { error: "指定されたファイルまたはフォルダが見つかりません" }, status: :not_found
-      return
-    end
-
-    unless @drive_item.file?
-      render json: { error: "プレビューはファイルに対してのみ可能です" }, status: :unprocessable_entity
-      nil
-    end
+    head :ok
   end
 
   # GET /drive_items/:id/download
   # ファイルダウンロード
   def download
+    return unless prepare_accel_redirect!("attachment")
+
+    head :ok
   end
 
   # POST /drive_items/:id/restore
@@ -312,27 +305,13 @@ class DriveItemsController < ApplicationController
     File.extname(filename).delete_prefix(".").downcase
   end
 
-  # ファイルを取得してレスポンスとして返す
-  def download_file(blob_path, filename:)
-    file_path = Rails.root.join("storage", blob_path)
-
-    unless File.exist?(file_path)
-      render json: { error: "ファイルが見つかりません" }, status: :not_found
-      return
-    end
-
-    send_file file_path,
-              filename: filename,
-              disposition: "attachment"
-  end
-
   def save_uploaded_file(uploaded_file)
     # ファイルの拡張子を取得し、保存先のパスを生成する
     extension = get_extension_from_filename(uploaded_file.original_filename)
 
     # 保存先のパスを生成する。UUIDを使って一意にする
-    blob_path = "drive_items/#{SecureRandom.uuid}.#{extension}"
-    destination_path = Rails.root.join("storage", blob_path)
+    storage_key = "drive_items/#{SecureRandom.uuid}.#{extension}"
+    destination_path = Rails.root.join("storage", storage_key)
 
     # storage/drive_items がまだなければ作る
     FileUtils.mkdir_p(destination_path.dirname)
@@ -344,6 +323,67 @@ class DriveItemsController < ApplicationController
       IO.copy_stream(uploaded_file.tempfile, file)
     end
 
-    [ blob_path, extension ]
+    [ storage_key, extension ]
+  end
+
+  def prepare_accel_redirect!(disposition)
+    unless @drive_item.file?
+      render json: { error: "この操作はファイルに対してのみ可能です" }, status: :unprocessable_entity
+      return false
+    end
+
+    storage_key = @drive_item.effective_storage_key
+
+    unless DriveItem.valid_storage_key?(storage_key)
+      render json: { error: "保存先キーが不正です" }, status: :not_found
+      return false
+    end
+
+    absolute_path = storage_absolute_path(storage_key)
+
+    unless File.exist?(absolute_path)
+      render json: { error: "ファイルが見つかりません" }, status: :not_found
+      return false
+    end
+
+    record_drive_item_access!(disposition == "inline" ? "preview" : "download")
+    apply_accel_redirect_headers(storage_key, disposition)
+    true
+  end
+
+  def storage_absolute_path(storage_key)
+    Rails.root.join("storage", storage_key)
+  end
+
+  def apply_accel_redirect_headers(storage_key, disposition)
+    response.headers["X-Accel-Redirect"] = "/internal/storage/#{storage_key}"
+    response.headers["Content-Type"] = drive_item_content_type(@drive_item)
+    response.headers["Content-Disposition"] =
+      ActionDispatch::Http::ContentDisposition.format(
+        disposition: disposition,
+        filename: drive_item_filename(@drive_item)
+      )
+  end
+
+  def drive_item_content_type(drive_item)
+    Rack::Mime.mime_type(".#{drive_item.extension}", "application/octet-stream")
+  end
+
+  def drive_item_filename(drive_item)
+    extension = drive_item.extension.to_s
+    return drive_item.name if extension.blank?
+    return drive_item.name if drive_item.name.downcase.end_with?(".#{extension.downcase}")
+
+    "#{drive_item.name}.#{extension}"
+  end
+
+  def record_drive_item_access!(action)
+    DriveItemAccessLog.create!(
+      organization: current_user.organization,
+      user: current_user,
+      drive_item: @drive_item,
+      action: action,
+      accessed_at: Time.current
+    )
   end
 end
