@@ -10,14 +10,14 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_16_010100) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_16_010200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   create_table "admin_audit_logs", force: :cascade do |t|
     t.string "action", null: false
     t.bigint "actor_user_id", null: false
-    t.jsonb "changes", default: {}, null: false
+    t.jsonb "change_set", default: {}, null: false
     t.datetime "created_at", null: false
     t.string "ip_address"
     t.bigint "organization_id", null: false
