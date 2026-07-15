@@ -9,14 +9,17 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     @user = users(:one)
     @drive_item = drive_items(:child_file)
     @other_item = drive_items(:two)
+    @storage_key = "#{SecureRandom.uuid}.pdf"
 
     FileUtils.mkdir_p(Rails.root.join("storage", "drive_items"))
-    File.binwrite(@drive_item.absolute_storage_path, pdf_payload)
     @drive_item.update_columns(
+      storage_key: @storage_key,
+      blob_path: DriveItem.storage_relative_path_for(@storage_key),
       file_hash: Digest::SHA256.hexdigest(pdf_payload),
       file_size: pdf_payload.bytesize,
       content_type: "application/pdf"
     )
+    File.binwrite(@drive_item.absolute_storage_path, pdf_payload)
   end
 
   teardown do

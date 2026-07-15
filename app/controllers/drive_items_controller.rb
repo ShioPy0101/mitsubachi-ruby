@@ -167,6 +167,24 @@ class DriveItemsController < ApplicationController
   end
 
   def bulk_download
+    result = DriveItems::BulkDownloadService.new(
+      organization: current_user.organization,
+      drive_item_ids: params[:drive_item_ids]
+    ).call
+
+    unless result.success?
+      render json: { error: result.error_message }, status: result.status
+      return
+    end
+
+    record_bulk_download_access!(result.drive_items)
+    send_zip_file(result)
+  rescue StandardError => error
+    result&.cleanup!
+    Rails.logger.error("[drive_items.bulk_download] failed to send zip error=#{error.class}: #{error.message}")
+    return if performed?
+
+    render json: { error: "ZIPファイルを送信できませんでした" }, status: :unprocessable_entity
   end
 
   def preview
@@ -321,5 +339,47 @@ class DriveItemsController < ApplicationController
 
   def render_not_found
     render json: { error: "指定されたファイルが見つかりません" }, status: :not_found
+  end
+
+  def record_bulk_download_access!(drive_items)
+    now = Time.current
+
+    drive_items.each do |drive_item|
+      DriveItemAccessLog.create!(
+        organization: current_user.organization,
+        user: current_user,
+        drive_item: drive_item,
+        action: "bulk_download",
+        occurred_at: now,
+        ip_address: request.remote_ip,
+        user_agent: request.user_agent,
+        request_id: request.request_id
+      )
+    end
+  end
+
+  def send_zip_file(result)
+    response.headers["Content-Type"] = DriveItems::BulkDownloadService::ZIP_CONTENT_TYPE
+    response.headers["Content-Disposition"] =
+      ActionDispatch::Http::ContentDisposition.format(
+        disposition: "attachment",
+        filename: result.filename
+      )
+    response.headers["Content-Length"] = result.zip_size.to_s
+    self.response_body = TemporaryFileBody.new(result)
+  end
+
+  class TemporaryFileBody
+    def initialize(result)
+      @result = result
+    end
+
+    def each
+      @result.each_chunk { |chunk| yield chunk }
+    end
+
+    def close
+      @result.cleanup!
+    end
   end
 end

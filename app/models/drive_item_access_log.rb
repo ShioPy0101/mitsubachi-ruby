@@ -1,5 +1,5 @@
 class DriveItemAccessLog < ApplicationRecord
-  ACTIONS = %w[preview download stream].freeze
+  ACTIONS = %w[preview download stream bulk_download].freeze
 
   belongs_to :organization
   belongs_to :user
