@@ -1,7 +1,9 @@
 class EmailAuthenticationsController < ApplicationController
+  REGISTRATION_STAND_BY_WINDOW = 15.minutes
+
   # ユーザー作成
   def create
-    email = params[:email]
+    email = normalize_email(params[:email])
     invite_code = params[:invite_code]
 
     # email が空の場合はエラーを返す
@@ -13,12 +15,6 @@ class EmailAuthenticationsController < ApplicationController
     # invite_code が空の場合はエラーを返す
     unless invite_code.present?
       render json: { error: "invite_code は必須です" }, status: :bad_request
-      return
-    end
-
-    # すでにユーザーが存在する場合はエラーを返す
-    if User.exists?(email: email)
-      render json: { error: "このメールアドレスはすでに登録されています" }, status: :conflict
       return
     end
 
@@ -44,10 +40,24 @@ class EmailAuthenticationsController < ApplicationController
     end
 
     # invite_code が現在 stand-by 状態かどうかをチェックする
-    if invite.stand_by_user.present? && invite.stand_by_at.present? && invite.stand_by_at > 15.minutes.ago
+    if invite_stand_by_active?(invite)
       render json: { error: "この invite_code は現在検証中です" }, status: :conflict
       return
     end
+
+    existing_user = find_user_by_email(email)
+
+    if existing_user.present? && !provisional_user?(existing_user)
+      render json: { error: "このメールアドレスはすでに登録されています" }, status: :conflict
+      return
+    end
+
+    if existing_user.present? && active_stand_by_invite_for(existing_user).present?
+      render json: { error: "このメールアドレスは現在検証中です" }, status: :conflict
+      return
+    end
+
+    clear_stale_stand_by!(existing_user) if existing_user.present?
 
     # 認証用 token を生成して、EmailAuthentication モデルに保存する
     email_auth_token = SecureRandom.urlsafe_base64(32)
@@ -56,12 +66,13 @@ class EmailAuthenticationsController < ApplicationController
 
     # invite_code をstand-byにする
     # パスワードを設定していない仮ユーザーを作成する（メール専用のため）
-    stand_by_user = User.find_or_create_by!(
-      email: email,
-      organization: invite.organization
-    ) do |new_user|
-      new_user.password = SecureRandom.base64(32)
+    stand_by_user = existing_user || User.new(email: email)
+    stand_by_user.organization = invite.organization
+
+    unless stand_by_user.persisted?
+      stand_by_user.password = SecureRandom.base64(32)
     end
+    stand_by_user.save!
 
     invite.update!(
       stand_by_at: Time.current,
@@ -88,13 +99,26 @@ class EmailAuthenticationsController < ApplicationController
   end
 
   def login
-    email = params[:email]
+    email = normalize_email(params[:email])
 
     # email が空の場合はエラーを返す
     unless email.present?
       render json: { error: "email は必須です" }, status: :bad_request
       return
     end
+
+    user = find_user_by_email(email)
+
+    if user.nil?
+      render json: { error: "ユーザーが存在しません" }, status: :unauthorized
+      return
+    end
+
+    if provisional_user?(user)
+      render json: { error: "登録用リンクでメール認証を完了してください" }, status: :unauthorized
+      return
+    end
+
     # 認証用 token を生成して、EmailAuthentication モデルに保存する
     email_auth_token = SecureRandom.urlsafe_base64(32)
 
@@ -239,5 +263,40 @@ class EmailAuthenticationsController < ApplicationController
         email: user.email
       }
     }, status: :ok
+  end
+
+  private
+
+  def normalize_email(email)
+    email.to_s.strip.downcase
+  end
+
+  def find_user_by_email(email)
+    User.find_by("LOWER(email) = ?", email.downcase)
+  end
+
+  def invite_stand_by_active?(invite)
+    invite.stand_by_user.present? &&
+      invite.stand_by_at.present? &&
+      invite.stand_by_at > REGISTRATION_STAND_BY_WINDOW.ago
+  end
+
+  def provisional_user?(user)
+    OrganizationInvite.where(stand_by_user: user, used_at: nil).exists? &&
+      !OrganizationInvite.where(used_by_user: user).exists?
+  end
+
+  def active_stand_by_invite_for(user)
+    OrganizationInvite
+      .where(stand_by_user: user, used_at: nil)
+      .where("stand_by_at > ?", REGISTRATION_STAND_BY_WINDOW.ago)
+      .first
+  end
+
+  def clear_stale_stand_by!(user)
+    OrganizationInvite
+      .where(stand_by_user: user, used_at: nil)
+      .where("stand_by_at IS NULL OR stand_by_at <= ?", REGISTRATION_STAND_BY_WINDOW.ago)
+      .update_all(stand_by_user_id: nil, stand_by_at: nil, updated_at: Time.current)
   end
 end

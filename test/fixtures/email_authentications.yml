@@ -2,12 +2,12 @@
 
 one:
   email: MyString
-  token: MyString
-  expires_at: 2026-06-28 03:59:39
-  used_at: 2026-06-28 03:59:39
+  token: token_one
+  expires_at: <%= 1.hour.from_now %>
+  used_at:
 
 two:
   email: MyString
-  token: MyString
-  expires_at: 2026-06-28 03:59:39
-  used_at: 2026-06-28 03:59:39
+  token: token_two
+  expires_at: <%= 1.hour.from_now %>
+  used_at:

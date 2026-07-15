@@ -129,7 +129,6 @@ class DriveItemsController < ApplicationController
   # PATCH /drive_items/:id
   # 名前変更・単体移動など
   def update
-
     drive_item_id = params[:id]
     new_name = params[:name]
     new_parent_id = params[:parent_id]
@@ -256,7 +255,6 @@ class DriveItemsController < ApplicationController
   # POST /drive_items/bulk_download
   # 複数ファイルを ZIP にまとめる
   def bulk_download
-    
   end
 
   # GET /drive_items/:id/preview
@@ -274,10 +272,8 @@ class DriveItemsController < ApplicationController
 
     unless @drive_item.file?
       render json: { error: "プレビューはファイルに対してのみ可能です" }, status: :unprocessable_entity
-      return
+      nil
     end
-
-
   end
 
   # GET /drive_items/:id/download
@@ -311,11 +307,23 @@ class DriveItemsController < ApplicationController
     true
   end
 
-  
-
   # 拡張子取得
   def get_extension_from_filename(filename)
     File.extname(filename).delete_prefix(".").downcase
+  end
+
+  # ファイルを取得してレスポンスとして返す
+  def download_file(blob_path, filename:)
+    file_path = Rails.root.join("storage", blob_path)
+
+    unless File.exist?(file_path)
+      render json: { error: "ファイルが見つかりません" }, status: :not_found
+      return
+    end
+
+    send_file file_path,
+              filename: filename,
+              disposition: "attachment"
   end
 
   def save_uploaded_file(uploaded_file)
