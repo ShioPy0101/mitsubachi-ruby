@@ -166,7 +166,7 @@ module DriveItems
     end
 
     def safe_storage_path(drive_item)
-      storage_root = Rails.root.join("storage").expand_path.to_s
+      storage_root = DriveItem.storage_root.expand_path.to_s
       absolute_path = drive_item.absolute_storage_path.expand_path.to_s
 
       unless absolute_path.start_with?("#{storage_root}/")

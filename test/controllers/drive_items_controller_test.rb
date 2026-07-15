@@ -30,19 +30,19 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "should get index" do
-    get drive_items_url
+    get api_v1_drive_items_url
     assert_response :unauthorized
   end
 
   test "should get show" do
-    get drive_item_url(drive_items(:one))
+    get api_v1_drive_item_url(drive_items(:one))
     assert_response :unauthorized
   end
 
   test "他組織のアイテムへアクセスできない" do
     sign_in @user
 
-    get drive_item_url(@other_item)
+    get api_v1_drive_item_url(@other_item)
 
     assert_response :not_found
   end
@@ -50,7 +50,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "削除済みアイテムは show できない" do
     sign_in @user
 
-    get drive_item_url(@deleted_folder)
+    get api_v1_drive_item_url(@deleted_folder)
 
     assert_response :not_found
   end
@@ -58,7 +58,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "削除済みアイテムは update できない" do
     sign_in @user
 
-    patch drive_item_url(@deleted_folder), params: { name: "restored_name" }
+    patch api_v1_drive_item_url(@deleted_folder), params: { name: "restored_name" }
 
     assert_response :not_found
     assert_equal "deleted_folder", @deleted_folder.reload.name
@@ -67,7 +67,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "削除済みアイテムは destroy できない" do
     sign_in @user
 
-    delete drive_item_url(@deleted_folder)
+    delete api_v1_drive_item_url(@deleted_folder)
 
     assert_response :not_found
     assert @deleted_folder.reload.deleted_at.present?
@@ -76,7 +76,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "削除済みアイテムを restore できる" do
     sign_in @user
 
-    post restore_drive_item_url(@deleted_folder)
+    post restore_api_v1_drive_item_url(@deleted_folder)
 
     assert_response :ok
     assert_nil @deleted_folder.reload.deleted_at
@@ -85,7 +85,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "active なアイテムは restore できない" do
     sign_in @user
 
-    post restore_drive_item_url(@root)
+    post restore_api_v1_drive_item_url(@root)
 
     assert_response :not_found
   end
@@ -93,7 +93,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "update でルート直下へ移動できる" do
     sign_in @user
 
-    patch drive_item_url(@child_folder), params: { parent_id: "" }
+    patch api_v1_drive_item_url(@child_folder), params: { parent_id: "" }
 
     assert_response :ok
     assert_nil @child_folder.reload.parent_id
@@ -102,7 +102,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "ファイルを親に指定できない" do
     sign_in @user
 
-    patch drive_item_url(@child_folder), params: { parent_id: @file.id }
+    patch api_v1_drive_item_url(@child_folder), params: { parent_id: @file.id }
 
     assert_response :unprocessable_entity
     assert_equal @root.id, @child_folder.reload.parent_id
@@ -111,7 +111,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "自分自身を親に指定できない" do
     sign_in @user
 
-    patch drive_item_url(@child_folder), params: { parent_id: @child_folder.id }
+    patch api_v1_drive_item_url(@child_folder), params: { parent_id: @child_folder.id }
 
     assert_response :unprocessable_entity
     assert_equal @root.id, @child_folder.reload.parent_id
@@ -120,7 +120,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "子孫フォルダへ移動できない" do
     sign_in @user
 
-    patch drive_item_url(@child_folder), params: { parent_id: @grandchild_folder.id }
+    patch api_v1_drive_item_url(@child_folder), params: { parent_id: @grandchild_folder.id }
 
     assert_response :unprocessable_entity
     assert_equal @root.id, @child_folder.reload.parent_id
@@ -150,7 +150,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       item_type: "directory"
     )
 
-    post bulk_move_drive_items_url, params: {
+    post bulk_move_api_v1_drive_items_url, params: {
       drive_item_ids: [ movable.id, ancestor.id ],
       parent_id: descendant.id
     }
@@ -163,18 +163,18 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "DB保存失敗時にアップロード済みファイルが削除される" do
     sign_in @user
     original_save = DriveItem.instance_method(:save)
-    original_build_storage_key = DriveItemsController.instance_method(:build_storage_key)
+    original_build_storage_key = Api::V1::DriveItemsController.instance_method(:build_storage_key)
     storage_key = "#{SecureRandom.uuid}.txt"
-    storage_path = Rails.root.join("storage", DriveItem.storage_relative_path_for(storage_key))
+    storage_path = DriveItem.storage_root.join(DriveItem.storage_relative_path_for(storage_key))
 
     DriveItem.define_method(:save) do |*args, **kwargs|
       false
     end
-    DriveItemsController.define_method(:build_storage_key) do |_extension|
+    Api::V1::DriveItemsController.define_method(:build_storage_key) do |_extension|
       storage_key
     end
 
-    post drive_items_url, params: {
+    post api_v1_drive_items_url, params: {
       name: "orphan",
       item_type: "file",
       parent_id: @root.id,
@@ -185,14 +185,14 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_not File.exist?(storage_path)
   ensure
     DriveItem.define_method(:save, original_save)
-    DriveItemsController.define_method(:build_storage_key, original_build_storage_key)
+    Api::V1::DriveItemsController.define_method(:build_storage_key, original_build_storage_key)
   end
 
   test "ゴミ箱内に同名アイテムがあっても新規作成できる" do
     sign_in @user
 
     assert_difference "DriveItem.count", 1 do
-      post drive_items_url, params: {
+      post api_v1_drive_items_url, params: {
         name: @deleted_report.name,
         item_type: "file",
         parent_id: @root.id,
@@ -213,7 +213,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     file_a = create_file_item(name: "alpha.txt", body: "alpha")
     file_b = create_file_item(name: "beta.txt", body: "beta")
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ file_a.id, file_b.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ file_a.id, file_b.id ] }
 
     assert_response :ok
     assert_equal "application/zip", response.media_type
@@ -230,7 +230,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     folder = create_directory(name: "docs")
     create_file_item(name: "readme.txt", parent: folder, body: "readme")
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ folder.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ folder.id ] }
 
     assert_response :ok
     assert_equal "readme", zip_entries(response.body).fetch("docs/readme.txt")
@@ -242,7 +242,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     subfolder = create_directory(name: "nested", parent: folder)
     create_file_item(name: "deep.txt", parent: subfolder, body: "deep")
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ folder.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ folder.id ] }
 
     assert_response :ok
     assert_equal "deep", zip_entries(response.body).fetch("docs/nested/deep.txt")
@@ -254,7 +254,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     other_file = drive_items(:two)
     write_storage_file(other_file.storage_key, "other")
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ own_file.id, other_file.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ own_file.id, other_file.id ] }
 
     assert_response :ok
     entries = zip_entries(response.body)
@@ -266,7 +266,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     own_file = create_file_item(name: "own.txt", body: "own")
     deleted_file = create_file_item(name: "deleted.txt", body: "deleted", deleted_at: Time.current)
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ own_file.id, deleted_file.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ own_file.id, deleted_file.id ] }
 
     assert_response :ok
     entries = zip_entries(response.body)
@@ -278,7 +278,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     missing_file = create_file_item(name: "missing.txt", body: "missing")
     FileUtils.rm_f(missing_file.absolute_storage_path)
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ missing_file.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ missing_file.id ] }
 
     assert_response :not_found
     assert_equal({ "error" => "実ファイルが見つからないファイルが含まれています" }, response.parsed_body)
@@ -288,7 +288,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
     unsafe_file = create_file_item(name: "../secret.txt", body: "secret")
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ unsafe_file.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ unsafe_file.id ] }
 
     assert_response :ok
     entries = zip_entries(response.body)
@@ -305,7 +305,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     create_file_item(name: "same.txt", parent: folder_a, body: "a")
     create_file_item(name: "same.txt", parent: folder_b, body: "b")
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ folder_a.id, folder_b.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ folder_a.id, folder_b.id ] }
 
     assert_response :ok
     entries = zip_entries(response.body)
@@ -324,7 +324,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       raise "zip failure"
     end
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ file.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ file.id ] }
 
     assert_response :unprocessable_entity
     assert captured_zip_path
@@ -336,28 +336,28 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "ZIP送信処理で例外が発生した場合に安全な一時ZIPだけが削除される" do
     sign_in @user
     file = create_file_item(name: "send_failure.txt", body: "send failure")
-    original_send_zip_file = DriveItemsController.instance_method(:send_zip_file)
+    original_send_zip_file = Api::V1::DriveItemsController.instance_method(:send_zip_file)
     captured_result = nil
 
-    DriveItemsController.define_method(:send_zip_file) do |result|
+    Api::V1::DriveItemsController.define_method(:send_zip_file) do |result|
       captured_result = result
       raise "send failure"
     end
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [ file.id ] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ file.id ] }
 
     assert_response :unprocessable_entity
     assert_equal({ "error" => "ZIPファイルを送信できませんでした" }, response.parsed_body)
     assert captured_result
     assert_not File.exist?(captured_result.zip_path)
   ensure
-    DriveItemsController.define_method(:send_zip_file, original_send_zip_file)
+    Api::V1::DriveItemsController.define_method(:send_zip_file, original_send_zip_file)
   end
 
   test "対象IDが空の場合にエラーになる" do
     sign_in @user
 
-    post bulk_download_drive_items_url, params: { drive_item_ids: [] }
+    post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [] }
 
     assert_response :unprocessable_entity
     assert_equal({ "error" => "対象が指定されていません" }, response.parsed_body)
@@ -409,7 +409,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   end
 
   def write_storage_file(storage_key, body)
-    path = Rails.root.join("storage", DriveItem.storage_relative_path_for(storage_key))
+    path = DriveItem.storage_root.join(DriveItem.storage_relative_path_for(storage_key))
     FileUtils.mkdir_p(path.dirname)
     File.binwrite(path, body)
     @storage_paths << path

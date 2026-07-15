@@ -1,70 +1,35 @@
 Rails.application.routes.draw do
-  # /drive_items を中心に、DriveItemsController のCRUDルートを作成
-  # 自動生成されるルート:
-  # GET    /drive_items          -> drive_items#index
-  # POST   /drive_items          -> drive_items#create
-  # GET    /drive_items/:id      -> drive_items#show
-  # PATCH  /drive_items/:id      -> drive_items#update
-  # DELETE /drive_items/:id      -> drive_items#destroy
-  resources :drive_items do
-    # collection は「特定の1件ではなく、drive_items 全体」を対象にする操作
-    # URLに :id は付かない
-    collection do
-      # GET /drive_items/trash
-      # 論理削除済みのファイル・ディレクトリ一覧を返す
-      get :trash
+  devise_for :users, skip: :all
 
-      # POST /drive_items/bulk_move
-      # 複数選択した項目を、指定したフォルダへまとめて移動
-      post :bulk_move
+  namespace :api do
+    get "health", to: "health#ready"
+    get "health/live", to: "health#live"
+    get "health/ready", to: "health#ready"
 
-      # POST /drive_items/bulk_delete
-      # 複数選択した項目をまとめてゴミ箱へ移動
-      post :bulk_delete
+    namespace :v1 do
+      resource :csrf_token, only: :show
 
-      # POST /drive_items/bulk_restore
-      # ゴミ箱にある複数項目をまとめて復元
-      post :bulk_restore
+      post "auth/create", to: "email_authentications#create"
+      post "auth/login", to: "email_authentications#login"
+      post "auth/verify", to: "email_authentications#verify"
+      delete "logout", to: "sessions#destroy"
 
-      # POST /drive_items/bulk_download
-      # 複数ファイルをまとめてZIP化してダウンロード
-      post :bulk_download
-    end
+      resources :drive_items do
+        collection do
+          get :trash
+          post :bulk_move
+          post :bulk_delete
+          post :bulk_restore
+          post :bulk_download
+        end
 
-    # member は「特定の1件」を対象にする操作
-    # URLに対象のIDが付く。
-    member do
-      # GET /drive_items/:id/preview
-      # 画像・PDF・動画などをブラウザ内で表示
-      get :preview
-
-      # GET /drive_items/:id/download
-      # 1件のファイルをダウンロード
-      get :download
-
-      # GET /drive_items/:id/stream
-      # 動画などRange付き再生向けの配信
-      get :stream
-
-      # POST /drive_items/:id/restore
-      # ゴミ箱にある1件を復元
-      post :restore
+        member do
+          get :preview
+          get :download
+          get :stream
+          post :restore
+        end
+      end
     end
   end
-
-  devise_for :users, skip: [ :sessions, :registrations ]
-
-  # 認証コードを発行・メール送信（アカウント作成用）
-  post "/auth/create", to: "email_authentications#create"
-
-  # 認証コードを発行・メール送信（ログイン用）
-  post "/auth/login", to: "email_authentications#login"
-
-  # 認証コードを照合してログイン
-  post "/auth/verify", to: "email_authentications#verify"
-
-  # ログアウト
-  delete "/logout", to: "sessions#destroy"
-
-  get "/up", to: proc { [ 200, { "Content-Type" => "text/plain" }, [ "ok" ] ] }
 end

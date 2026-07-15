@@ -11,7 +11,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     @other_item = drive_items(:two)
     @storage_key = "#{SecureRandom.uuid}.pdf"
 
-    FileUtils.mkdir_p(Rails.root.join("storage", "drive_items"))
+    FileUtils.mkdir_p(DriveItem.storage_root.join("drive_items"))
     @drive_item.update_columns(
       storage_key: @storage_key,
       blob_path: DriveItem.storage_relative_path_for(@storage_key),
@@ -28,7 +28,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
   end
 
   test "未認証では配信できない" do
-    get preview_drive_item_url(@drive_item)
+    get preview_api_v1_drive_item_url(@drive_item)
 
     assert_response :unauthorized
   end
@@ -37,7 +37,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItemAccessLog.count", 1 do
-      get preview_drive_item_url(@drive_item), headers: request_headers
+      get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
     end
 
     assert_response :ok
@@ -56,7 +56,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItemAccessLog.count", 1 do
-      get download_drive_item_url(@drive_item), headers: request_headers
+      get download_api_v1_drive_item_url(@drive_item), headers: request_headers
     end
 
     assert_response :ok
@@ -68,7 +68,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItemAccessLog.count", 1 do
-      get stream_drive_item_url(@drive_item), headers: request_headers.merge("Range" => "bytes=0-10")
+      get stream_api_v1_drive_item_url(@drive_item), headers: request_headers.merge("Range" => "bytes=0-10")
     end
 
     assert_response :ok
@@ -79,7 +79,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
   test "他 organization のファイルは配信できない" do
     sign_in @user
 
-    get preview_drive_item_url(@other_item), headers: request_headers
+    get preview_api_v1_drive_item_url(@other_item), headers: request_headers
 
     assert_response :not_found
   end
@@ -88,7 +88,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
     @drive_item.update!(deleted_at: Time.current)
 
-    get preview_drive_item_url(@drive_item), headers: request_headers
+    get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
 
     assert_response :not_found
   end
@@ -97,7 +97,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
     @drive_item.update_columns(storage_key: "../secret.pdf", blob_path: "drive_items/../secret.pdf")
 
-    get preview_drive_item_url(@drive_item), headers: request_headers
+    get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
 
     assert_response :not_found
   end
@@ -106,7 +106,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
     FileUtils.rm_f(@drive_item.absolute_storage_path)
 
-    get preview_drive_item_url(@drive_item), headers: request_headers
+    get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
 
     assert_response :not_found
   end
@@ -115,7 +115,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
     @drive_item.update!(name: "日本語資料")
 
-    get download_drive_item_url(@drive_item), headers: request_headers
+    get download_api_v1_drive_item_url(@drive_item), headers: request_headers
 
     assert_response :ok
     assert_includes response.headers["Content-Disposition"], "filename*="
@@ -136,7 +136,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     end
 
     begin
-      get preview_drive_item_url(@drive_item), headers: request_headers
+      get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
     ensure
       AuditLogs::Recorder.define_singleton_method(:new, original_new)
     end

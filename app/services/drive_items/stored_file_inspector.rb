@@ -17,6 +17,7 @@ module DriveItems
           destination.write(chunk)
           digest.update(chunk)
           byte_size += chunk.bytesize
+          raise UploadTooLargeError if byte_size > Rails.configuration.x.max_upload_size_bytes
         end
       end
 
@@ -30,5 +31,7 @@ module DriveItems
     ensure
       uploaded_file.tempfile.rewind
     end
+
+    UploadTooLargeError = Class.new(StandardError)
   end
 end
