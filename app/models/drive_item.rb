@@ -1,6 +1,6 @@
 # app/models/drive_item.rb
 class DriveItem < ApplicationRecord
-  STORAGE_KEY_PATTERN = %r{\Adrive_items/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*\z}
+  STORAGE_KEY_PATTERN = /\A[a-zA-Z0-9][a-zA-Z0-9._-]*\z/
 
   # DriveItemは一つの組織に属する
   belongs_to :organization
@@ -55,13 +55,36 @@ class DriveItem < ApplicationRecord
     storage_key.presence || blob_path.presence
   end
 
+  def storage_relative_path
+    self.class.storage_relative_path_for(effective_storage_key)
+  end
+
+  def absolute_storage_path
+    Rails.root.join("storage", storage_relative_path)
+  end
+
+  def filename
+    return name if extension.blank?
+    return name if name.to_s.downcase.end_with?(".#{extension.downcase}")
+
+    "#{name}.#{extension}"
+  end
+
   def self.valid_storage_key?(value)
     return false if value.blank?
+    return false if value.include?("/")
     return false if value.start_with?("/", "\\")
     return false if value.include?("..")
     return false if value.include?("\\")
+    return false if value.include?("\0")
 
     value.match?(STORAGE_KEY_PATTERN)
+  end
+
+  def self.storage_relative_path_for(storage_key)
+    return if storage_key.blank?
+
+    File.join("drive_items", storage_key)
   end
 
   private
@@ -70,7 +93,7 @@ class DriveItem < ApplicationRecord
     normalized_key = normalize_storage_key(storage_key.presence || blob_path.presence)
 
     self.storage_key = normalized_key
-    self.blob_path = normalized_key
+    self.blob_path = normalized_key.present? ? self.class.storage_relative_path_for(normalized_key) : nil
   end
 
   # 親DriveItemが同じ組織に属しているかを検査する
@@ -111,6 +134,8 @@ class DriveItem < ApplicationRecord
   def normalize_storage_key(value)
     return if value.blank?
 
-    value.to_s.delete_prefix("/")
+    candidate = value.to_s.delete_prefix("/")
+    candidate = candidate.delete_prefix("drive_items/")
+    File.basename(candidate)
   end
 end

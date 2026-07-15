@@ -42,6 +42,10 @@ Rails.application.routes.draw do
       # 1件のファイルをダウンロード
       get :download
 
+      # GET /drive_items/:id/stream
+      # 動画などRange付き再生向けの配信
+      get :stream
+
       # POST /drive_items/:id/restore
       # ゴミ箱にある1件を復元
       post :restore

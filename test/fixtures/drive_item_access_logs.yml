@@ -4,12 +4,20 @@ one:
   organization: one
   user: one
   drive_item: one
-  action: MyString
-  accessed_at: 2026-06-28 06:45:11
+  action: preview
+  occurred_at: 2026-06-28 06:45:11
+  ip_address: 127.0.0.1
+  user_agent: Rails Test
+  request_id: req-one
+  metadata: {}
 
 two:
   organization: two
   user: two
   drive_item: two
-  action: MyString
-  accessed_at: 2026-06-28 06:45:11
+  action: download
+  occurred_at: 2026-06-28 06:45:11
+  ip_address: 127.0.0.2
+  user_agent: Rails Test
+  request_id: req-two
+  metadata: {}

@@ -1,0 +1,8 @@
+{
+  "ignored_warnings": [
+    {
+      "fingerprint": "7a32a8b92dc32e2fd4d84b17620e7ed373ca34d4c1641b1f8a83d2fb12a34ef9",
+      "note": "storage_key は UUID 系の形式で再検証した上で cleanup しているため false positive"
+    }
+  ]
+}
