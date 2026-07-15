@@ -1,19 +1,67 @@
 require "fileutils"
-require "tempfile"
+require "pathname"
+require "securerandom"
 require "zip"
 
 module DriveItems
   class BulkDownloadService
+    BULK_DOWNLOAD_DIRECTORY = Rails.root.join("tmp", "bulk_downloads").expand_path.freeze
     ZIP_CONTENT_TYPE = "application/zip"
     CHUNK_SIZE = 5.megabytes
 
     Result = Data.define(:success?, :status, :error_message, :zip_path, :filename, :drive_items) do
+      def self.bulk_download_directory
+        BulkDownloadService::BULK_DOWNLOAD_DIRECTORY
+      end
+
       def self.success(zip_path:, filename:, drive_items:)
         new(true, :ok, nil, zip_path, filename, drive_items)
       end
 
       def self.failure(status, error_message)
         new(false, status, error_message, nil, nil, [])
+      end
+
+      def cleanup!
+        path = safe_zip_path
+        return unless path
+
+        FileUtils.rm_f(path)
+      end
+
+      def zip_size
+        path = safe_zip_path
+        raise ArgumentError, "invalid zip path" unless path
+
+        File.size(path)
+      end
+
+      def each_chunk
+        path = safe_zip_path
+        raise ArgumentError, "invalid zip path" unless path
+
+        File.open(path, "rb") do |file|
+          while (chunk = file.read(BulkDownloadService::CHUNK_SIZE))
+            yield chunk
+          end
+        end
+      end
+
+      private
+
+      def safe_zip_path
+        return if zip_path.blank?
+
+        directory = self.class.bulk_download_directory
+        path = Pathname.new(zip_path).expand_path
+        relative_path = path.relative_path_from(directory)
+
+        return if relative_path.to_s.start_with?("..")
+        return unless path.extname == ".zip"
+
+        path
+      rescue ArgumentError
+        nil
       end
     end
 
@@ -31,9 +79,7 @@ module DriveItems
       entries = build_entries(roots)
       return Result.failure(:not_found, "ダウンロード可能なファイルが見つかりません") if entries.empty?
 
-      zip_file = Tempfile.new([ "drive-items-", ".zip" ], binmode: true)
-      zip_path = zip_file.path
-      zip_file.close
+      zip_path = build_zip_path
 
       write_zip!(zip_path, entries)
       Result.success(zip_path: zip_path, filename: zip_filename, drive_items: entries.map(&:drive_item))
@@ -56,6 +102,11 @@ module DriveItems
         @status = status
         super(message)
       end
+    end
+
+    def build_zip_path
+      FileUtils.mkdir_p(BULK_DOWNLOAD_DIRECTORY)
+      BULK_DOWNLOAD_DIRECTORY.join("bulk-download-#{SecureRandom.uuid}.zip")
     end
 
     def build_entries(roots)
@@ -162,7 +213,7 @@ module DriveItems
     end
 
     def cleanup_zip(zip_path)
-      FileUtils.rm_f(zip_path) if zip_path.present?
+      Result.success(zip_path: zip_path, filename: nil, drive_items: []).cleanup!
     end
   end
 end

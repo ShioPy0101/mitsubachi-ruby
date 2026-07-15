@@ -177,14 +177,14 @@ class DriveItemsController < ApplicationController
       return
     end
 
-    begin
-      record_bulk_download_access!(result.drive_items)
-      send_zip_file(result)
-    rescue StandardError => error
-      FileUtils.rm_f(result.zip_path)
-      Rails.logger.error("[drive_items.bulk_download] failed to send zip error=#{error.class}: #{error.message}")
-      render json: { error: "ZIPファイルを送信できませんでした" }, status: :unprocessable_entity
-    end
+    record_bulk_download_access!(result.drive_items)
+    send_zip_file(result)
+  rescue StandardError => error
+    result&.cleanup!
+    Rails.logger.error("[drive_items.bulk_download] failed to send zip error=#{error.class}: #{error.message}")
+    return if performed?
+
+    render json: { error: "ZIPファイルを送信できませんでした" }, status: :unprocessable_entity
   end
 
   def preview
@@ -365,27 +365,21 @@ class DriveItemsController < ApplicationController
         disposition: "attachment",
         filename: result.filename
       )
-    response.headers["Content-Length"] = File.size(result.zip_path).to_s
-    self.response_body = TemporaryFileBody.new(result.zip_path)
+    response.headers["Content-Length"] = result.zip_size.to_s
+    self.response_body = TemporaryFileBody.new(result)
   end
 
   class TemporaryFileBody
-    CHUNK_SIZE = 5.megabytes
-
-    def initialize(path)
-      @path = path
+    def initialize(result)
+      @result = result
     end
 
     def each
-      File.open(@path, "rb") do |file|
-        while (chunk = file.read(CHUNK_SIZE))
-          yield chunk
-        end
-      end
+      @result.each_chunk { |chunk| yield chunk }
     end
 
     def close
-      FileUtils.rm_f(@path)
+      @result.cleanup!
     end
   end
 end

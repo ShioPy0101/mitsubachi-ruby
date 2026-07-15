@@ -4,6 +4,11 @@ require "stringio"
 class DriveItems::IntegrityCheckerTest < ActiveSupport::TestCase
   setup do
     @drive_item = drive_items(:child_file)
+    @storage_key = "#{SecureRandom.uuid}.pdf"
+    @drive_item.update_columns(
+      storage_key: @storage_key,
+      blob_path: DriveItem.storage_relative_path_for(@storage_key)
+    )
     FileUtils.mkdir_p(Rails.root.join("storage", "drive_items"))
     File.binwrite(@drive_item.absolute_storage_path, "a" * 32)
   end

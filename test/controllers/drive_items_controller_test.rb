@@ -162,13 +162,16 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
 
   test "DB保存失敗時にアップロード済みファイルが削除される" do
     sign_in @user
-    storage_dir = Rails.root.join("storage", "drive_items")
-    FileUtils.mkdir_p(storage_dir)
-    before_files = Dir.children(storage_dir)
     original_save = DriveItem.instance_method(:save)
+    original_build_storage_key = DriveItemsController.instance_method(:build_storage_key)
+    storage_key = "#{SecureRandom.uuid}.txt"
+    storage_path = Rails.root.join("storage", DriveItem.storage_relative_path_for(storage_key))
 
     DriveItem.define_method(:save) do |*args, **kwargs|
       false
+    end
+    DriveItemsController.define_method(:build_storage_key) do |_extension|
+      storage_key
     end
 
     post drive_items_url, params: {
@@ -179,9 +182,10 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :unprocessable_entity
-    assert_equal before_files.sort, Dir.children(storage_dir).sort
+    assert_not File.exist?(storage_path)
   ensure
     DriveItem.define_method(:save, original_save)
+    DriveItemsController.define_method(:build_storage_key, original_build_storage_key)
   end
 
   test "ゴミ箱内に同名アイテムがあっても新規作成できる" do
@@ -208,7 +212,6 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
     file_a = create_file_item(name: "alpha.txt", body: "alpha")
     file_b = create_file_item(name: "beta.txt", body: "beta")
-    before_paths = bulk_zip_temp_paths
 
     post bulk_download_drive_items_url, params: { drive_item_ids: [ file_a.id, file_b.id ] }
 
@@ -220,7 +223,6 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "alpha", entries.fetch("alpha.txt")
     assert_equal "beta", entries.fetch("beta.txt")
     assert_equal 2, DriveItemAccessLog.where(action: "bulk_download").count
-    assert_equal before_paths, bulk_zip_temp_paths
   end
 
   test "フォルダ構造がZIP内で維持される" do
@@ -314,19 +316,42 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "ZIP生成失敗時に一時ファイルが残らない" do
     sign_in @user
     file = create_file_item(name: "broken.txt", body: "broken")
-    before_paths = bulk_zip_temp_paths
+    captured_zip_path = nil
     original_open = Zip::OutputStream.method(:open)
 
-    Zip::OutputStream.define_singleton_method(:open) do |*|
+    Zip::OutputStream.define_singleton_method(:open) do |zip_path, *|
+      captured_zip_path = zip_path
       raise "zip failure"
     end
 
     post bulk_download_drive_items_url, params: { drive_item_ids: [ file.id ] }
 
     assert_response :unprocessable_entity
-    assert_equal before_paths, bulk_zip_temp_paths
+    assert captured_zip_path
+    assert_not File.exist?(captured_zip_path)
   ensure
     Zip::OutputStream.define_singleton_method(:open, original_open)
+  end
+
+  test "ZIP送信処理で例外が発生した場合に安全な一時ZIPだけが削除される" do
+    sign_in @user
+    file = create_file_item(name: "send_failure.txt", body: "send failure")
+    original_send_zip_file = DriveItemsController.instance_method(:send_zip_file)
+    captured_result = nil
+
+    DriveItemsController.define_method(:send_zip_file) do |result|
+      captured_result = result
+      raise "send failure"
+    end
+
+    post bulk_download_drive_items_url, params: { drive_item_ids: [ file.id ] }
+
+    assert_response :unprocessable_entity
+    assert_equal({ "error" => "ZIPファイルを送信できませんでした" }, response.parsed_body)
+    assert captured_result
+    assert_not File.exist?(captured_result.zip_path)
+  ensure
+    DriveItemsController.define_method(:send_zip_file, original_send_zip_file)
   end
 
   test "対象IDが空の場合にエラーになる" do
@@ -400,9 +425,5 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     end
 
     entries
-  end
-
-  def bulk_zip_temp_paths
-    Dir.glob(File.join(Dir.tmpdir, "drive-items-*.zip")).sort
   end
 end
