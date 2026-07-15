@@ -57,6 +57,16 @@ CSRF token を返します。
 - `401 Unauthorized`
 - `409 Conflict`
 
+挙動:
+
+- email は前後空白を除去し、小文字化して検索・保存します
+- invite はトランザクション内でロックし、使用済み、有効期限、stand-by 状態を再確認します
+- 同じ invite に active な stand-by がある間は、新しい登録リンクを発行しません
+- stale な stand-by は解除してから仮ユーザーを再利用できます
+- 本登録済みユーザーや、別 organization の通常ユーザーは、この API で organization を変更できません
+- 登録用トークンの有効期限は 15 分で、同一 invite の古い未使用トークンは新しい発行時に使用済み扱いにします
+- メール送信は DB トランザクションのコミット後にキューへ投入します
+
 ### `POST /api/v1/auth/login`
 
 既存ユーザー向けのログイン用メール認証リンクを送信します。
@@ -75,6 +85,12 @@ CSRF token を返します。
 - `400 Bad Request`
 - `401 Unauthorized`
 
+挙動:
+
+- email は前後空白を除去し、小文字化して検索します
+- 停止済みユーザー、存在しないユーザー、登録用リンク未検証の仮ユーザーにはログイン用リンクを発行しません
+- ログイン用トークンの有効期限は 15 分で、同一メールアドレスの古い未使用ログイントークンは新しい発行時に使用済み扱いにします
+
 ### `POST /api/v1/auth/verify`
 
 メール内のトークンを検証し、ログイン状態を作成します。
@@ -92,6 +108,17 @@ CSRF token を返します。
 - `200 OK`
 - `400 Bad Request`
 - `401 Unauthorized`
+
+挙動:
+
+- token は DB へ SHA-256 hash として保存され、メールに含まれる平文 token は保存しません
+- token は単回使用です
+- 検証時は `EmailAuthentication` をロックし、使用済み、有効期限、対象 User、停止状態を再確認します
+- 登録用 token では OrganizationInvite もロックし、使用済み、有効期限、stand-by user との一致を再確認します
+- token 発行後に User が停止された場合、セッションは作成せず、token は使用済み扱いにします
+- invite と stand-by user が一致しない場合、invite は使用済みにしません
+
+停止済みユーザーの既存 Cookie セッションは、認証必須 API の共通処理で拒否されます。logout は停止後も利用できます。
 
 ### `DELETE /api/v1/logout`
 

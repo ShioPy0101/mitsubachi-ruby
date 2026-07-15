@@ -35,8 +35,4 @@ class User < ApplicationRecord
   def suspended?
     suspended_at.present?
   end
-
-  def active_for_authentication?
-    super && !suspended?
-  end
 end
