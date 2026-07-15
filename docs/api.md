@@ -104,6 +104,15 @@ active なファイル・ディレクトリを一覧します。
 
 ファイル作成時は multipart で `file` を送ります。
 
+制約:
+
+- `item_type` は `file` または `directory`
+- `file` 作成時はアップロードファイル必須
+- `directory` 作成時はアップロードファイル指定不可
+- `parent_id` を指定する場合、同じ organization の active な directory である必要があります
+- 同一 `parent_id` 配下では、active な項目の `name` と `extension` の組み合わせは重複できません
+- 保存時に `storage_key`、`blob_path`、`file_hash`、`file_size`、`content_type` を記録します
+
 主なレスポンス:
 
 - `201 Created`
@@ -120,6 +129,8 @@ active な 1 件を返します。
 ### `PATCH /drive_items/:id`
 
 名前変更や親ディレクトリ変更を行います。
+
+`parent_id` を指定する場合、移動先は同じ organization の active な directory である必要があります。
 
 ### `DELETE /drive_items/:id`
 
@@ -165,7 +176,37 @@ active な 1 件を返します。
 
 ### `POST /drive_items/bulk_download`
 
-ZIP などの一括ダウンロード用 endpoint です。現時点では controller 側の実装は空です。
+複数アイテムを ZIP 化してダウンロードします。
+
+主な入力:
+
+```json
+{
+  "drive_item_ids": [1, 2, 3]
+}
+```
+
+挙動:
+
+- 指定 ID は `current_user.organization.drive_items.active` から取得します
+- directory が含まれる場合、その配下の active な file を再帰的に ZIP へ含めます
+- ZIP 内のエントリ名はパス区切りや改行などを除去し、同名の場合は `(2)` 以降を付けて重複を避けます
+- 同じ file が複数経路で指定された場合は 1 回だけ含めます
+- 成功時は対象 file ごとに `bulk_download` の監査ログを記録します
+- 一時 ZIP は `tmp/bulk_downloads` に作成し、レスポンス送信後に削除します
+
+主なレスポンス:
+
+- `200 OK`
+- `401 Unauthorized`
+- `404 Not Found`
+- `422 Unprocessable Entity`
+
+成功時の主なレスポンスヘッダー:
+
+- `Content-Type: application/zip`
+- `Content-Disposition: attachment`
+- `Content-Length`
 
 ## 配信 API
 
@@ -206,6 +247,14 @@ ZIP などの一括ダウンロード用 endpoint です。現時点では contr
 /internal/storage/drive_items/:storage_key
 ```
 
+配信前の検証:
+
+- 対象は file である必要があります
+- `storage_key` は `/`、`\`、`..`、NUL を含まない安全なキーである必要があります
+- 実ファイルが `storage/drive_items/:storage_key` に存在する必要があります
+- 認可とファイル検証の後、配信許可前に監査ログを記録します
+- `stream` の監査ログは同一 user / file / organization について 5 分間重複記録を抑制します
+
 ## 主要データ構造
 
 ### `drive_items`
@@ -237,10 +286,20 @@ updated_at
 - `item_type` は `file` / `directory`
 - `deleted_at` が `NULL` のものを active として扱います
 - ファイル保存先の内部識別子には `storage_key` を使います
+- `blob_path` は `drive_items/:storage_key` 形式に同期されます
 
 ### `drive_item_access_logs`
 
-ファイル配信の監査ログです。
+ファイル配信と一括ダウンロードの監査ログを管理します。
+
+主なアクション:
+
+```text
+preview
+download
+stream
+bulk_download
+```
 
 主なカラム:
 
@@ -258,12 +317,6 @@ metadata
 created_at
 updated_at
 ```
-
-`action` の初期値:
-
-- `preview`
-- `download`
-- `stream`
 
 ## ヘルスチェック
 
