@@ -52,3 +52,5 @@ end
 gem "dotenv-rails", groups: [ :development, :test ]
 
 gem "devise"
+
+gem "rubyzip", require: "zip"
