@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+
+ai_detect_test_framework() {
+  if [[ -f test/test_helper.rb ]] || [[ -d test ]]; then
+    echo "minitest"
+  elif [[ -f spec/spec_helper.rb ]] || [[ -f spec/rails_helper.rb ]] || [[ -d spec ]]; then
+    echo "rspec"
+  else
+    echo "unknown"
+  fi
+}
+
+ai_list_changed_paths() {
+  if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    {
+      git diff --name-only --diff-filter=ACMRTUXB HEAD --
+      git ls-files --others --exclude-standard
+    } | awk "NF" | sort -u
+  else
+    git ls-files --others --exclude-standard | awk "NF" | sort -u
+  fi
+}
+
+ai_is_ruby_path() {
+  local path="$1"
+
+  if [[ "$path" == *.rb ]]; then
+    return 0
+  fi
+
+  if [[ "$path" == bin/* ]] && [[ -f "$path" ]] && head -n 1 "$path" | grep -Eq "ruby([[:space:]]|$)"; then
+    return 0
+  fi
+
+  return 1
+}
+
+ai_list_changed_ruby_files() {
+  local path
+
+  while IFS= read -r path; do
+    if ai_is_ruby_path "$path"; then
+      echo "$path"
+    fi
+  done < <(ai_list_changed_paths)
+}
+
+ai_map_test_path() {
+  local framework="$1"
+  local path="$2"
+  local base candidate=""
+
+  case "$framework" in
+    minitest)
+      case "$path" in
+        test/*_test.rb)
+          candidate="$path"
+          ;;
+        app/controllers/*_controller.rb)
+          base="$(basename "$path" .rb)"
+          candidate="test/controllers/${base}_test.rb"
+          ;;
+        app/models/*.rb)
+          base="$(basename "$path" .rb)"
+          candidate="test/models/${base}_test.rb"
+          ;;
+        app/mailers/*_mailer.rb)
+          base="$(basename "$path" .rb)"
+          candidate="test/mailers/${base}_test.rb"
+          ;;
+        app/jobs/*_job.rb)
+          base="$(basename "$path" .rb)"
+          candidate="test/jobs/${base}_test.rb"
+          ;;
+        app/services/*.rb)
+          base="$(basename "$path" .rb)"
+          candidate="test/services/${base}_test.rb"
+          ;;
+        lib/*.rb)
+          base="$(basename "$path" .rb)"
+          candidate="test/lib/${base}_test.rb"
+          ;;
+      esac
+      ;;
+    rspec)
+      case "$path" in
+        spec/*_spec.rb)
+          candidate="$path"
+          ;;
+        app/controllers/*_controller.rb)
+          base="$(basename "$path" .rb)"
+          candidate="spec/controllers/${base}_spec.rb"
+          ;;
+        app/models/*.rb)
+          base="$(basename "$path" .rb)"
+          candidate="spec/models/${base}_spec.rb"
+          ;;
+        app/mailers/*_mailer.rb)
+          base="$(basename "$path" .rb)"
+          candidate="spec/mailers/${base}_spec.rb"
+          ;;
+        app/jobs/*_job.rb)
+          base="$(basename "$path" .rb)"
+          candidate="spec/jobs/${base}_spec.rb"
+          ;;
+        app/services/*.rb)
+          base="$(basename "$path" .rb)"
+          candidate="spec/services/${base}_spec.rb"
+          ;;
+        lib/*.rb)
+          base="$(basename "$path" .rb)"
+          candidate="spec/lib/${base}_spec.rb"
+          ;;
+      esac
+      ;;
+  esac
+
+  if [[ -n "$candidate" ]] && [[ -f "$candidate" ]]; then
+    echo "$candidate"
+  fi
+}
+
+ai_list_target_tests() {
+  local framework="$1"
+  local path
+
+  while IFS= read -r path; do
+    ai_map_test_path "$framework" "$path"
+  done < <(ai_list_changed_paths) | awk "NF" | sort -u
+}

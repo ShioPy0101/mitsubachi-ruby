@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$APP_ROOT"
+
+source bin/ai-common
+
+FRAMEWORK="${AI_TEST_FRAMEWORK:-$(ai_detect_test_framework)}"
+LOG_FILE="tmp/ai-test.log"
+
+mkdir -p tmp
+: > "$LOG_FILE"
+
+if [[ "$FRAMEWORK" == "unknown" ]]; then
+  echo "FAIL: unknown test framework"
+  exit 1
+fi
+
+if (($# > 0)); then
+  targets=("$@")
+else
+  mapfile -t targets < <(ai_list_target_tests "$FRAMEWORK")
+fi
+
+if [[ ${#targets[@]} -eq 0 ]]; then
+  echo "PASS: no targeted tests"
+  echo "No test targets." > "$LOG_FILE"
+  exit 0
+fi
+
+case "$FRAMEWORK" in
+  minitest)
+    cmd=(bin/rails test "${targets[@]}")
+    ;;
+  rspec)
+    cmd=(bundle exec rspec "${targets[@]}")
+    ;;
+esac
+
+set +e
+{
+  echo "Framework: $FRAMEWORK"
+  printf "Command:"
+  printf " %q" "${cmd[@]}"
+  printf "\n\n"
+  "${cmd[@]}"
+} >"$LOG_FILE" 2>&1
+status=$?
+set -e
+
+if [[ $status -eq 0 ]]; then
+  echo "PASS: tests (${#targets[@]} target files)"
+  exit 0
+fi
+
+echo "FAIL: tests"
+if ! rg -n "^(Failure:|Error:|Failures:|Errors:|bin/rails aborted!|ActiveRecord::|PG::|RuntimeError:)" "$LOG_FILE" | head -n 20; then
+  tail -n 20 "$LOG_FILE"
+fi
+echo "Log: $LOG_FILE"
+exit "$status"

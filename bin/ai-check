@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$APP_ROOT"
+
+source bin/ai-common
+
+FRAMEWORK="${AI_TEST_FRAMEWORK:-$(ai_detect_test_framework)}"
+
+if [[ "$FRAMEWORK" == "unknown" ]]; then
+  echo "FAIL: unknown test framework"
+  exit 1
+fi
+
+bin/ai-lint-changed
+
+mapfile -t targets < <(ai_list_target_tests "$FRAMEWORK")
+bin/ai-test "${targets[@]}"
