@@ -10,9 +10,27 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_15_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_16_010100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "admin_audit_logs", force: :cascade do |t|
+    t.string "action", null: false
+    t.bigint "actor_user_id", null: false
+    t.jsonb "changes", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "ip_address"
+    t.bigint "organization_id", null: false
+    t.bigint "target_id", null: false
+    t.string "target_type", null: false
+    t.datetime "updated_at", null: false
+    t.text "user_agent"
+    t.index ["action"], name: "index_admin_audit_logs_on_action"
+    t.index ["actor_user_id"], name: "index_admin_audit_logs_on_actor_user_id"
+    t.index ["created_at"], name: "index_admin_audit_logs_on_created_at"
+    t.index ["organization_id"], name: "index_admin_audit_logs_on_organization_id"
+    t.index ["target_type", "target_id"], name: "index_admin_audit_logs_on_target_type_and_target_id"
+  end
 
   create_table "drive_item_access_logs", force: :cascade do |t|
     t.string "action"
@@ -104,17 +122,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_15_150000) do
     t.datetime "created_at", null: false
     t.string "email", null: false
     t.string "encrypted_password", default: "", null: false
+    t.datetime "last_sign_in_at"
     t.string "name"
     t.bigint "organization_id", null: false
     t.datetime "remember_created_at"
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
+    t.integer "role", default: 0, null: false
+    t.datetime "suspended_at"
     t.datetime "updated_at", null: false
     t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["last_sign_in_at"], name: "index_users_on_last_sign_in_at"
     t.index ["organization_id"], name: "index_users_on_organization_id"
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
+    t.index ["role"], name: "index_users_on_role"
+    t.index ["suspended_at"], name: "index_users_on_suspended_at"
   end
 
+  add_foreign_key "admin_audit_logs", "organizations"
+  add_foreign_key "admin_audit_logs", "users", column: "actor_user_id"
   add_foreign_key "drive_item_access_logs", "drive_items", on_delete: :nullify
   add_foreign_key "drive_item_access_logs", "organizations"
   add_foreign_key "drive_item_access_logs", "users"

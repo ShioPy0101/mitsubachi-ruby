@@ -114,6 +114,11 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       return
     end
 
+    if user.suspended?
+      render json: { error: "このユーザーは停止されています" }, status: :unauthorized
+      return
+    end
+
     if provisional_user?(user)
       render json: { error: "登録用リンクでメール認証を完了してください" }, status: :unauthorized
       return
