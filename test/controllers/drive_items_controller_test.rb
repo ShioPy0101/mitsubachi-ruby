@@ -202,7 +202,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @deleted_report.name, created.name
   ensure
     cleanup_created_file(created) if defined?(created) && created&.persisted?
-  end 
+  end
 
   test "複数ファイルをZIPで取得できる" do
     sign_in @user
@@ -353,8 +353,8 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     return unless drive_item.file? && drive_item.storage_key.present?
 
     FileUtils.rm_f(drive_item.absolute_storage_path)
-  end 
-  
+  end
+
   def create_directory(name:, parent: nil)
     DriveItem.create!(
       organization: @organization,
