@@ -61,6 +61,25 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     assert_response :unauthorized
   end
 
+  test "suspended user cannot continue using an existing session" do
+    sign_in @user
+    @user.update!(suspended_at: Time.current)
+
+    get api_v1_drive_items_url
+
+    assert_response :unauthorized
+    assert_equal({ "error" => "このユーザーは停止されています" }, response.parsed_body)
+  end
+
+  test "suspended user can still call logout" do
+    sign_in @user
+    @user.update!(suspended_at: Time.current)
+
+    delete api_v1_logout_url
+
+    assert_response :no_content
+  end
+
   test "other organization parent cannot be used on create" do
     sign_in @user
 
