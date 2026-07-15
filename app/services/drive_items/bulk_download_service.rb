@@ -85,7 +85,7 @@ module DriveItems
         raise InvalidEntryError.new("保存先キーが不正なファイルが含まれています", status: :not_found)
       end
 
-      absolute_path = safe_storage_path(storage_key)
+      absolute_path = safe_storage_path(drive_item)
       unless File.file?(absolute_path)
         raise InvalidEntryError.new("実ファイルが見つからないファイルが含まれています", status: :not_found)
       end
@@ -114,9 +114,9 @@ module DriveItems
       end
     end
 
-    def safe_storage_path(storage_key)
-      storage_root = Rails.root.join("storage").to_s
-      absolute_path = Rails.root.join("storage", storage_key).expand_path.to_s
+    def safe_storage_path(drive_item)
+      storage_root = Rails.root.join("storage").expand_path.to_s
+      absolute_path = drive_item.absolute_storage_path.expand_path.to_s
 
       unless absolute_path.start_with?("#{storage_root}/")
         raise InvalidEntryError.new("保存先キーが不正なファイルが含まれています", status: :not_found)

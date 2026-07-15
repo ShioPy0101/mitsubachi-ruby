@@ -350,7 +350,10 @@ class DriveItemsController < ApplicationController
         user: current_user,
         drive_item: drive_item,
         action: "bulk_download",
-        accessed_at: now
+        occurred_at: now,
+        ip_address: request.remote_ip,
+        user_agent: request.user_agent,
+        request_id: request.request_id
       )
     end
   end
