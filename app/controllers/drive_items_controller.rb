@@ -326,38 +326,76 @@ class DriveItemsController < ApplicationController
     [ storage_key, extension ]
   end
 
+  # X-Accel-Redirectによるファイル配信の準備を行う。
+  #
+  # 配信可能なファイルか、保存先キーが安全か、実ファイルが存在するかを確認し、
+  # 問題がなければアクセスログとレスポンスヘッダーを設定する。
+  #
+  # 戻り値:
+  # - 成功時: true
+  # - 失敗時: エラーレスポンスを返して false
   def prepare_accel_redirect!(disposition)
+    # フォルダなど、ファイル以外のDriveItemは配信できない。
     unless @drive_item.file?
-      render json: { error: "この操作はファイルに対してのみ可能です" }, status: :unprocessable_entity
+      render json: { error: "この操作はファイルに対してのみ可能です" },
+            status: :unprocessable_entity
       return false
     end
 
+    # 実際の保存先を表すストレージキーを取得する。
     storage_key = @drive_item.effective_storage_key
 
+    # 不正なパスやパストラバーサルを防ぐため、
+    # ストレージキーの形式を検証する。
     unless DriveItem.valid_storage_key?(storage_key)
       render json: { error: "保存先キーが不正です" }, status: :not_found
       return false
     end
 
+    # ストレージキーから、Railsサーバー上の絶対パスを生成する。
     absolute_path = storage_absolute_path(storage_key)
 
+    # DB上にDriveItemが存在していても、
+    # 実ファイルが削除されている可能性があるため存在確認する。
     unless File.exist?(absolute_path)
       render json: { error: "ファイルが見つかりません" }, status: :not_found
       return false
     end
 
-    record_drive_item_access!(disposition == "inline" ? "preview" : "download")
+    # inlineならプレビュー、それ以外ならダウンロードとして記録する。
+    action = disposition == "inline" ? "preview" : "download"
+    record_drive_item_access!(action)
+
+    # Nginxに内部配信させるためのレスポンスヘッダーを設定する。
     apply_accel_redirect_headers(storage_key, disposition)
+
     true
   end
 
+  # ストレージキーから、Railsプロジェクト内の実ファイルパスを生成する。
+  #
+  # 例:
+  # storage_key = "organizations/1/files/example.pdf"
+  # 戻り値 = Rails.root/storage/organizations/1/files/example.pdf
   def storage_absolute_path(storage_key)
     Rails.root.join("storage", storage_key)
   end
 
+  # X-Accel-Redirectによる配信に必要なレスポンスヘッダーを設定する。
   def apply_accel_redirect_headers(storage_key, disposition)
-    response.headers["X-Accel-Redirect"] = "/internal/storage/#{storage_key}"
-    response.headers["Content-Type"] = drive_item_content_type(@drive_item)
+    # Railsがファイル本体を返す代わりに、
+    # Nginxへ内部配信先のURIを通知する。
+    response.headers["X-Accel-Redirect"] =
+      "/internal/storage/#{storage_key}"
+
+    # 拡張子からMIMEタイプを判定する。
+    # 判定できない場合はapplication/octet-streamを使用する。
+    response.headers["Content-Type"] =
+      drive_item_content_type(@drive_item)
+
+    # inlineならブラウザ表示、attachmentならダウンロードを指示する。
+    # ContentDisposition.formatを使うことで、
+    # 日本語や特殊文字を含むファイル名も適切にエンコードされる。
     response.headers["Content-Disposition"] =
       ActionDispatch::Http::ContentDisposition.format(
         disposition: disposition,
@@ -365,24 +403,51 @@ class DriveItemsController < ApplicationController
       )
   end
 
+  # DriveItemの拡張子からContent-Typeを取得する。
+  #
+  # MIMEタイプが見つからない場合は、
+  # 汎用バイナリ形式のapplication/octet-streamを返す。
   def drive_item_content_type(drive_item)
-    Rack::Mime.mime_type(".#{drive_item.extension}", "application/octet-stream")
+    Rack::Mime.mime_type(
+      ".#{drive_item.extension}",
+      "application/octet-stream"
+    )
   end
 
+  # ダウンロード時に使用するファイル名を生成する。
+  #
+  # nameに既に拡張子が含まれている場合はそのまま返し、
+  # 含まれていない場合だけ拡張子を追加する。
   def drive_item_filename(drive_item)
     extension = drive_item.extension.to_s
+
+    # 拡張子が登録されていない場合は、nameをそのまま使用する。
     return drive_item.name if extension.blank?
-    return drive_item.name if drive_item.name.downcase.end_with?(".#{extension.downcase}")
+
+    # 大文字・小文字を無視して、既に同じ拡張子が付いているか確認する。
+    return drive_item.name if drive_item.name.downcase.end_with?(
+      ".#{extension.downcase}"
+    )
 
     "#{drive_item.name}.#{extension}"
   end
 
+  # ファイルのプレビューまたはダウンロード履歴を記録する。
   def record_drive_item_access!(action)
     DriveItemAccessLog.create!(
+      # ログの所属組織は、現在ログインしているユーザーの組織とする。
       organization: current_user.organization,
+
+      # 誰がアクセスしたかを記録する。
       user: current_user,
+
+      # どのファイルへアクセスしたかを記録する。
       drive_item: @drive_item,
+
+      # previewまたはdownloadを記録する。
       action: action,
+
+      # 実際にアクセス処理が行われた時刻を記録する。
       accessed_at: Time.current
     )
   end
