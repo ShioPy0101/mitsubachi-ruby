@@ -121,6 +121,33 @@ CSRF token を返します。
 
 停止済みユーザーの既存 Cookie セッションは、認証必須 API の共通処理で拒否されます。logout は停止後も利用できます。
 
+### `GET /api/v1/me`
+
+現在のセッションで認証されているユーザーを返します。
+
+主なレスポンス:
+
+- `200 OK`
+- `401 Unauthorized`
+
+```json
+{
+  "data": {
+    "id": 1,
+    "organization_id": 1,
+    "organization_name": "Example Organization",
+    "email": "user@example.com",
+    "name": "User Name",
+    "role": "member",
+    "suspended": false,
+    "suspended_at": null,
+    "last_sign_in_at": null,
+    "created_at": "2026-07-16T00:00:00.000Z",
+    "updated_at": "2026-07-16T00:00:00.000Z"
+  }
+}
+```
+
 ### `DELETE /api/v1/logout`
 
 現在のセッションを破棄します。
