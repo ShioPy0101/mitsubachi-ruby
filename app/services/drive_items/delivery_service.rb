@@ -16,11 +16,12 @@ module DriveItems
       end
     end
 
-    def initialize(drive_item:, current_user:, request:, action:)
+    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil)
       @drive_item = drive_item
       @current_user = current_user
       @request = request
       @action = action.to_sym
+      @audit_organization = audit_organization || drive_item.organization
     end
 
     def call
@@ -33,7 +34,7 @@ module DriveItems
       return invalid_delivery("missing_file") unless File.exist?(absolute_path)
 
       audit_result = AuditLogs::Recorder.new(
-        organization: @current_user.organization,
+        organization: @audit_organization,
         user: @current_user,
         drive_item: @drive_item,
         action: @action,
@@ -59,7 +60,7 @@ module DriveItems
     def invalid_delivery(reason)
       Rails.logger.warn(
         "[drive_items.delivery_service] denied reason=#{reason} drive_item_id=#{@drive_item.id} " \
-        "organization_id=#{@current_user.organization.id} user_id=#{@current_user.id} request_id=#{@request.request_id}"
+        "organization_id=#{@audit_organization.id} user_id=#{@current_user.id} request_id=#{@request.request_id}"
       )
       Result.failure(:not_found, "指定されたファイルが見つかりません")
     end

@@ -22,6 +22,10 @@ Rails.application.routes.draw do
         end
         resources :drive_items, only: %i[index show destroy] do
           member do
+            get :preview
+            get :download
+            get :stream
+            delete :purge
             patch :restore
           end
         end

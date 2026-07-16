@@ -51,7 +51,8 @@ class Api::V1::DriveItemsController < ApplicationController
       name: name,
       item_type: item_type,
       parent_id: parent_id,
-      owner_user: current_user
+      owner_user: current_user,
+      upload_ip_address: request.remote_ip
     )
 
     if item_type == "file"
