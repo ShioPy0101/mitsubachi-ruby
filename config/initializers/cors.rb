@@ -20,11 +20,11 @@ if Rails.env.development?
       return @app.call(env) unless @allowed_origins.include?(origin)
 
       if env["REQUEST_METHOD"] == "OPTIONS"
-        return [204, cors_headers(origin), []]
+        return [ 204, cors_headers(origin), [] ]
       end
 
       status, headers, body = @app.call(env)
-      [status, headers.merge(cors_headers(origin)), body]
+      [ status, headers.merge(cors_headers(origin)), body ]
     end
 
     private
