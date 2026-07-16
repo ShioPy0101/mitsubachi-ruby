@@ -58,6 +58,81 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "未認証ユーザーはorganizationを作成できない" do
+    post api_v1_admin_organizations_url, params: {
+      organization: { name: "Acme Inc." }
+    }
+
+    assert_response :unauthorized
+  end
+
+  test "organization_admin はorganizationを作成できない" do
+    sign_in @organization_admin
+
+    post api_v1_admin_organizations_url, params: {
+      organization: { name: "Acme Inc." }
+    }
+
+    assert_response :forbidden
+    assert_equal(
+      {
+        "code" => "forbidden",
+        "message" => "この操作を実行する権限がありません"
+      },
+      response.parsed_body.fetch("error")
+    )
+  end
+
+  test "system_admin はorganizationを作成でき監査ログが作成される" do
+    sign_in @system_admin
+
+    assert_difference "Organization.count", 1 do
+      assert_difference "AdminAuditLog.where(action: 'organization.create').count", 1 do
+        post api_v1_admin_organizations_url, params: {
+          organization: { name: "Acme Inc." }
+        }
+      end
+    end
+
+    assert_response :created
+    data = response.parsed_body.fetch("data")
+    organization = Organization.find(data.fetch("id"))
+    assert_equal "Acme Inc.", organization.name
+    assert_equal(
+      {
+        "id" => organization.id,
+        "name" => "Acme Inc.",
+        "users_count" => 0,
+        "drive_items_count" => 0,
+        "storage_bytes" => 0,
+        "created_at" => organization.created_at.iso8601(3),
+        "updated_at" => organization.updated_at.iso8601(3)
+      },
+      data
+    )
+
+    audit_log = AdminAuditLog.find_by!(
+      action: "organization.create",
+      target_type: "Organization",
+      target_id: organization.id
+    )
+    assert_equal organization, audit_log.organization
+    assert_equal({ "name" => [ nil, "Acme Inc." ] }, audit_log.change_set)
+  end
+
+  test "system_admin のorganization作成は入力エラーを返す" do
+    sign_in @system_admin
+
+    assert_no_difference "Organization.count" do
+      post api_v1_admin_organizations_url, params: {
+        organization: { name: "" }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal({ "errors" => [ "Name can't be blank" ] }, response.parsed_body)
+  end
+
   test "organization_admin は system_admin へ昇格させられない" do
     sign_in @organization_admin
 

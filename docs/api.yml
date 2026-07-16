@@ -449,6 +449,30 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Paginated"
+    post:
+      operationId: postApiV1AdminOrganizations
+      tags: [Admin]
+      summary: Create an organization.
+      description: Only system_admin users may create organizations.
+      requestBody:
+        $ref: "#/components/requestBodies/OrganizationUpdate"
+      responses:
+        "201":
+          description: Created organization.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Organization"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/Errors"
   /api/v1/admin/organizations/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -861,6 +885,35 @@ components:
                 oneOf:
                   - type: string
                   - type: object
+    Errors:
+      description: Validation errors.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [errors]
+            properties:
+              errors:
+                type: array
+                items:
+                  type: string
+    Forbidden:
+      description: The current user is not allowed to perform this operation.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code:
+                    type: string
+                    enum: [forbidden]
+                  message:
+                    type: string
     HealthOk:
       description: Health check succeeded.
       content:
@@ -1002,6 +1055,33 @@ components:
           type: integer
         total_count:
           type: integer
+    Organization:
+      type: object
+      required:
+        - id
+        - name
+        - users_count
+        - drive_items_count
+        - storage_bytes
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        users_count:
+          type: integer
+        drive_items_count:
+          type: integer
+        storage_bytes:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     User:
       type: object
       properties:
