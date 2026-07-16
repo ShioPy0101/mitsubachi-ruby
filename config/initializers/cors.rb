@@ -22,7 +22,7 @@ class ApiCors
     end
 
     status, headers, body = @app.call(env)
-    [ status, headers.merge(cors_headers(origin)), body ]
+    [ status, headers.merge(cors_headers(origin, headers["Vary"])), body ]
   end
 
   private
@@ -42,7 +42,7 @@ class ApiCors
     end
   end
 
-  def cors_headers(origin)
+  def cors_headers(origin, existing_vary = nil)
     {
       "Access-Control-Allow-Origin" => origin,
       "Access-Control-Allow-Credentials" => "true",
@@ -50,8 +50,13 @@ class ApiCors
         "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
       "Access-Control-Allow-Headers" =>
         "Origin, Content-Type, Accept, X-CSRF-Token, X-Requested-With",
-      "Vary" => "Origin"
+      "Vary" => vary_header(existing_vary)
     }
+  end
+
+  def vary_header(existing_vary)
+    values = existing_vary.to_s.split(",").map(&:strip).reject(&:blank?)
+    (values | [ "Origin" ]).join(", ")
   end
 end
 

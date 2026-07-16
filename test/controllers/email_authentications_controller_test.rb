@@ -3,6 +3,10 @@ require "test_helper"
 class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
+  setup do
+    Rails.cache.clear
+  end
+
   test "should require params for create" do
     post api_v1_auth_create_url
     assert_response :bad_request
@@ -11,6 +15,21 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
   test "should require params for verify" do
     post api_v1_auth_verify_url
     assert_response :bad_request
+  end
+
+  test "auth requests are rate limited by email" do
+    5.times do
+      post api_v1_auth_login_url, params: { email: "limited@example.com" }
+    end
+
+    post api_v1_auth_login_url, params: { email: "limited@example.com" }
+
+    assert_response :too_many_requests
+    assert_equal "900", response.headers["Retry-After"]
+    assert_equal(
+      { "error" => "リクエスト数が上限を超えました。しばらく待ってから再試行してください" },
+      response.parsed_body
+    )
   end
 
   test "login rejects provisional invite user" do

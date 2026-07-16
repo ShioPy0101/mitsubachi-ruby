@@ -3,6 +3,7 @@ class ApplicationController < ActionController::API
   include ActionController::RequestForgeryProtection
 
   protect_from_forgery with: :exception, unless: -> { !Rails.configuration.action_controller.allow_forgery_protection }
+  rescue_from ActionController::InvalidAuthenticityToken, with: :render_invalid_authenticity_token
   before_action :reject_suspended_user!
 
   private
@@ -20,5 +21,10 @@ class ApplicationController < ActionController::API
 
   def render_not_found(message = "指定されたリソースが見つかりません")
     render json: { error: message }, status: :not_found
+  end
+
+  def render_invalid_authenticity_token
+    reset_session
+    render json: { error: "CSRF token が無効です" }, status: :unprocessable_entity
   end
 end

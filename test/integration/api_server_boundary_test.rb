@@ -76,6 +76,16 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     assert_equal "Origin", response.headers["Vary"]
   end
 
+  test "security headers are added to api responses" do
+    get api_health_url
+
+    assert_response :ok
+    assert_equal "DENY", response.headers["X-Frame-Options"]
+    assert_equal "nosniff", response.headers["X-Content-Type-Options"]
+    assert_equal "no-referrer", response.headers["Referrer-Policy"]
+    assert_equal "camera=(), microphone=(), geolocation=()", response.headers["Permissions-Policy"]
+  end
+
   test "cors preflight succeeds for allowed frontend origin" do
     process(
       :options,
@@ -108,6 +118,7 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     post api_v1_drive_items_url, params: { name: "csrf-check", item_type: "directory" }
 
     assert_response :unprocessable_entity
+    assert_equal({ "error" => "CSRF token が無効です" }, response.parsed_body)
   ensure
     Rails.configuration.action_controller.allow_forgery_protection = original
   end

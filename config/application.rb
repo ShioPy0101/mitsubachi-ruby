@@ -39,6 +39,13 @@ module MitsubachiRuby
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use config.session_store, config.session_options
 
+    config.action_dispatch.default_headers.merge!(
+      "X-Frame-Options" => "DENY",
+      "X-Content-Type-Options" => "nosniff",
+      "Referrer-Policy" => "no-referrer",
+      "Permissions-Policy" => "camera=(), microphone=(), geolocation=()"
+    )
+
     config.x.file_storage_root = ENV.fetch("FILE_STORAGE_ROOT", Rails.root.join("storage").to_s)
     config.x.max_upload_size_bytes = ENV.fetch("MAX_UPLOAD_SIZE_BYTES", 10.gigabytes.to_s).to_i
   end
