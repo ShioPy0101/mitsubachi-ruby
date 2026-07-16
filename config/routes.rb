@@ -12,7 +12,7 @@ Rails.application.routes.draw do
 
       namespace :admin do
         resource :dashboard, only: :show
-        resources :organizations, only: %i[index show update]
+        resources :organizations, only: %i[index show create update]
         resources :users, only: %i[index show update] do
           member do
             patch :suspend

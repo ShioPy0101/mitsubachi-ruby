@@ -23,6 +23,23 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
     render json: { data: organization_json(organization) }
   end
 
+  def create
+    return render_error(:forbidden, "この操作を実行する権限がありません", :forbidden) unless system_admin?
+
+    organization = Organization.new(organization_params)
+    if organization.save
+      audit_admin_action!(
+        action: "organization.create",
+        target: organization,
+        organization: organization,
+        changes: { name: [ nil, organization.name ] }
+      )
+      render json: { data: organization_json(organization) }, status: :created
+    else
+      render json: { errors: organization.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
   def update
     organization = scoped_organizations.find_by(id: params[:id])
     return render_not_found if organization.nil?

@@ -1,5 +1,6 @@
 class AdminAuditLog < ApplicationRecord
   ACTIONS = %w[
+    organization.create
     organization.update
     user.update
     user.role_change
