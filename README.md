@@ -8,7 +8,8 @@ Rails backend for the drive API. This repository is deployed as an API-only serv
 - Bundler: use the version bundled with the project lockfile
 - Database: PostgreSQL
 - Web server: Puma behind Caddy or Nginx
-- Public origin: `https://drive.shiosalt.com/`
+- Public frontend origin: `https://drive.shiosalt.com/`
+- Public API origin: `https://mitsubachi-api.shiosalt.com/`
 - API base path: `/api/v1`
 - Health checks: `/api/health/live`, `/api/health/ready`
 
@@ -17,8 +18,8 @@ Rails should bind only to a private interface such as `127.0.0.1:3001`. Do not e
 ## Required Environment
 
 ```text
-APP_HOST=drive.shiosalt.com
-FRONTEND_ORIGIN=http://localhost:3000
+APP_HOST=mitsubachi-api.shiosalt.com
+FRONTEND_ORIGIN=https://drive.shiosalt.com
 RAILS_MASTER_KEY=...
 DATABASE_URL=postgres://...
 FILE_STORAGE_ROOT=/srv/mitsubachi/files
@@ -30,7 +31,7 @@ MAIL_FROM=...
 FRONTEND_URL=https://drive.shiosalt.com
 ```
 
-`FRONTEND_ORIGIN` is used only in development CORS. Production is same-origin and does not require CORS.
+`FRONTEND_ORIGIN` is a comma-separated allowlist used by API CORS in every environment. Set it to the browser-visible frontend origin, not the API origin.
 
 ## Setup
 
@@ -78,7 +79,7 @@ Minimal Nginx sketch:
 
 ```nginx
 server {
-  server_name drive.shiosalt.com;
+  server_name mitsubachi-api.shiosalt.com;
 
   location /api/ {
     proxy_pass http://127.0.0.1:3001;
@@ -93,11 +94,7 @@ server {
     alias /srv/mitsubachi/files/;
   }
 
-  location / {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-  }
+  # The frontend is served separately from https://drive.shiosalt.com.
 }
 ```
 

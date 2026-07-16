@@ -24,7 +24,8 @@
 - Rails は API 専用プロセスとして起動し、フロントエンドの view、Importmap、Turbo、Stimulus、asset 配信を担当しない
 - 公開 API は `/api/v1` 配下、health check は `/api/health` 配下に置く
 - 管理 API は通常ユーザー API と分離し、`/api/v1/admin` 配下に置く
-- 本番は `https://drive.shiosalt.com/` の同一オリジン構成を前提とし、`/` は frontend、`/api/*` は Rails に reverse proxy する
+- 本番は frontend の `https://drive.shiosalt.com/` から API の `https://mitsubachi-api.shiosalt.com/` を呼び出す別オリジン構成を前提とする
+- API CORS は `FRONTEND_ORIGIN` の allowlist に一致する `Origin` のみ許可し、404 や認証エラーにも CORS ヘッダーを付与する
 - Rails の内部ポートは `127.0.0.1:3001` などに bind し、インターネットへ直接公開しない
 - Devise の Cookie セッションを使い、Bearer Token や JWT へは変更しない
 - 本番 Cookie は `Secure`、`HttpOnly`、`SameSite=Lax` とする

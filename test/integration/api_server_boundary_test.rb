@@ -67,6 +67,29 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     assert_response :unauthorized
   end
 
+  test "cors headers are added to api not found responses for allowed frontend origin" do
+    get "/api/v1/missing", headers: { "Origin" => "http://localhost:5173" }
+
+    assert_response :not_found
+    assert_equal "http://localhost:5173", response.headers["Access-Control-Allow-Origin"]
+    assert_equal "true", response.headers["Access-Control-Allow-Credentials"]
+    assert_equal "Origin", response.headers["Vary"]
+  end
+
+  test "cors preflight succeeds for allowed frontend origin" do
+    process(
+      :options,
+      api_v1_me_url,
+      headers: {
+        "Origin" => "http://localhost:5173",
+        "Access-Control-Request-Method" => "GET"
+      }
+    )
+
+    assert_response :no_content
+    assert_equal "http://localhost:5173", response.headers["Access-Control-Allow-Origin"]
+  end
+
   test "me endpoint rejects suspended user sessions" do
     sign_in @user
     @user.update!(suspended_at: Time.current)
