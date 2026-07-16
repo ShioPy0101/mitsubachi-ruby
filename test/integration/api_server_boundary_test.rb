@@ -37,6 +37,46 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     assert response.parsed_body["csrf_token"].present?
   end
 
+  test "me endpoint returns the authenticated user" do
+    sign_in @user
+
+    get api_v1_me_url
+
+    assert_response :ok
+    assert_equal(
+      {
+        "id" => @user.id,
+        "organization_id" => @user.organization_id,
+        "organization_name" => @user.organization.name,
+        "email" => @user.email,
+        "name" => @user.name,
+        "role" => @user.role,
+        "suspended" => false,
+        "suspended_at" => nil,
+        "last_sign_in_at" => @user.last_sign_in_at&.iso8601(3),
+        "created_at" => @user.created_at.iso8601(3),
+        "updated_at" => @user.updated_at.iso8601(3)
+      },
+      response.parsed_body.fetch("data")
+    )
+  end
+
+  test "me endpoint requires authentication" do
+    get api_v1_me_url
+
+    assert_response :unauthorized
+  end
+
+  test "me endpoint rejects suspended user sessions" do
+    sign_in @user
+    @user.update!(suspended_at: Time.current)
+
+    get api_v1_me_url
+
+    assert_response :unauthorized
+    assert_equal({ "error" => "このユーザーは停止されています" }, response.parsed_body)
+  end
+
   test "state changing requests require csrf when forgery protection is enabled" do
     original = Rails.configuration.action_controller.allow_forgery_protection
     Rails.configuration.action_controller.allow_forgery_protection = true

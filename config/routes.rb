@@ -8,6 +8,7 @@ Rails.application.routes.draw do
 
     namespace :v1 do
       resource :csrf_token, only: :show
+      resource :me, only: :show, controller: :me
 
       namespace :admin do
         resource :dashboard, only: :show

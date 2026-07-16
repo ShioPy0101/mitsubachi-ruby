@@ -9,6 +9,7 @@
 - `ApplicationController` - API 共通のベースコントローラ。Cookie セッションと CSRF 保護を有効にする
 - `Api::HealthController` - reverse proxy やプロセス監視向けの live / ready check を扱う
 - `Api::V1::DriveItemsController` - ドライブ項目の一覧、作成、移動、削除、復元、ファイル配信、一括ダウンロードを扱う
+- `Api::V1::MeController` - 認証済みユーザー自身のプロフィール情報を返す
 - `Api::V1::EmailAuthenticationsController` - メール認証リンクの発行と検証を扱う
 - `Api::V1::CsrfTokensController` - 同一オリジン frontend が状態変更リクエスト前に使う CSRF token を返す
 - `Api::V1::SessionsController` - logout を扱う
