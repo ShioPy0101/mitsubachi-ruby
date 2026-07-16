@@ -43,6 +43,12 @@ class Api::V1::Admin::BaseController < ApplicationController
     AdminAuditLog.where(organization_id: current_user.organization_id)
   end
 
+  def scoped_audit_events
+    return AuditEvent.all if system_admin?
+
+    AuditEvent.where(organization_id: current_user.organization_id)
+  end
+
   def paginate(scope)
     page = positive_integer(params[:page], 1)
     per_page = [ positive_integer(params[:per_page], DEFAULT_PER_PAGE), MAX_PER_PAGE ].min
@@ -103,6 +109,25 @@ class Api::V1::Admin::BaseController < ApplicationController
       change_set: sanitize_audit_changes(changes),
       ip_address: request.remote_ip,
       user_agent: request.user_agent.to_s
+    )
+    record_audit_event!(
+      action: action,
+      target: target,
+      organization: organization,
+      changes: changes
+    )
+  end
+
+  def record_audit_event!(action:, target: nil, organization: current_user&.organization, outcome: "success", changes: {}, metadata: {})
+    AuditEvents::Recorder.record!(
+      action: action,
+      actor_user: current_user,
+      organization: organization,
+      target: target,
+      outcome: outcome,
+      changes: changes,
+      metadata: metadata,
+      request: request
     )
   end
 

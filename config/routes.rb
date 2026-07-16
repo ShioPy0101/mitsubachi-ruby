@@ -13,6 +13,7 @@ Rails.application.routes.draw do
       namespace :admin do
         resource :dashboard, only: :show
         resources :organizations, only: %i[index show create update]
+        resources :organization_invites, only: :create
         resources :users, only: %i[index show update] do
           member do
             patch :suspend
@@ -25,6 +26,7 @@ Rails.application.routes.draw do
           end
         end
         resources :audit_logs, only: %i[index show]
+        resources :audit_events, only: %i[index show]
       end
 
       post "auth/create", to: "email_authentications#create"

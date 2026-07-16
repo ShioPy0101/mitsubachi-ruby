@@ -133,6 +133,54 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_equal({ "errors" => [ "Name can't be blank" ] }, response.parsed_body)
   end
 
+  test "system_admin は任意のorganizationへ招待コードを発行できる" do
+    sign_in @system_admin
+
+    assert_difference "OrganizationInvite.count", 1 do
+      assert_difference "AdminAuditLog.where(action: 'organization_invite.create').count", 1 do
+        assert_difference "AuditEvent.where(action: 'organization_invite.create').count", 1 do
+          post api_v1_admin_organization_invites_url, params: {
+            organization_invite: {
+              organization_id: @other_organization.id,
+              expires_at: 3.days.from_now.iso8601
+            }
+          }
+        end
+      end
+    end
+
+    assert_response :created
+    data = response.parsed_body.fetch("data")
+    invite = OrganizationInvite.find(data.fetch("id"))
+    assert_equal @other_organization, invite.organization
+    assert_equal invite.code, data.fetch("code")
+    assert invite.expires_at.present?
+  end
+
+  test "organization_admin は自organizationへ招待コードを発行できる" do
+    sign_in @organization_admin
+
+    post api_v1_admin_organization_invites_url, params: {
+      organization_invite: {}
+    }
+
+    assert_response :created
+    invite = OrganizationInvite.find(response.parsed_body.dig("data", "id"))
+    assert_equal @organization, invite.organization
+  end
+
+  test "organization_admin は他organizationへ招待コードを発行できない" do
+    sign_in @organization_admin
+
+    assert_no_difference "OrganizationInvite.count" do
+      post api_v1_admin_organization_invites_url, params: {
+        organization_invite: { organization_id: @other_organization.id }
+      }
+    end
+
+    assert_response :forbidden
+  end
+
   test "organization_admin は system_admin へ昇格させられない" do
     sign_in @organization_admin
 
@@ -286,6 +334,62 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     sign_in @organization_admin
 
     get api_v1_admin_audit_log_url(other_log)
+
+    assert_response :not_found
+  end
+
+  test "system_admin は全般監査イベントを閲覧できる" do
+    own_event = AuditEvent.create!(
+      organization: @organization,
+      actor_user: @organization_admin,
+      action: "test.own",
+      outcome: "success",
+      occurred_at: Time.current
+    )
+    other_event = AuditEvent.create!(
+      organization: @other_organization,
+      actor_user: @other_org_user,
+      action: "test.other",
+      outcome: "success",
+      occurred_at: Time.current
+    )
+
+    sign_in @system_admin
+    get api_v1_admin_audit_events_url, params: { per_page: 100 }
+
+    assert_response :ok
+    ids = response.parsed_body.fetch("data").pluck("id")
+    assert_includes ids, own_event.id
+    assert_includes ids, other_event.id
+  end
+
+  test "organization_admin は自組織の全般監査イベントだけを閲覧できる" do
+    own_event = AuditEvent.create!(
+      organization: @organization,
+      actor_user: @organization_admin,
+      action: "test.own",
+      outcome: "success",
+      occurred_at: Time.current
+    )
+    other_event = AuditEvent.create!(
+      organization: @other_organization,
+      actor_user: @other_org_user,
+      action: "test.other",
+      outcome: "success",
+      occurred_at: Time.current
+    )
+
+    sign_in @organization_admin
+    get api_v1_admin_audit_events_url, params: { per_page: 100 }
+
+    assert_response :ok
+    ids = response.parsed_body.fetch("data").pluck("id")
+    assert_includes ids, own_event.id
+    assert_not_includes ids, other_event.id
+
+    sign_in @organization_admin
+
+    get api_v1_admin_audit_event_url(other_event)
 
     assert_response :not_found
   end

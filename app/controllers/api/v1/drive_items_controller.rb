@@ -77,6 +77,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
         saved = @drive_item.save
         if saved
+          record_drive_item_event!("drive_item.create", @drive_item)
           render json: @drive_item, status: :created
         else
           render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
@@ -98,6 +99,7 @@ class Api::V1::DriveItemsController < ApplicationController
       @drive_item.content_type = nil
 
       if @drive_item.save
+        record_drive_item_event!("drive_item.create", @drive_item)
         render json: @drive_item, status: :created
       else
         render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
@@ -110,6 +112,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def update
+    before = @drive_item.slice("name", "parent_id")
     @drive_item.name = params[:name] if params[:name].present?
 
     if params.key?(:parent_id)
@@ -121,6 +124,11 @@ class Api::V1::DriveItemsController < ApplicationController
     end
 
     if @drive_item.save
+      record_drive_item_event!(
+        "drive_item.update",
+        @drive_item,
+        changes: changed_values(before, @drive_item.slice("name", "parent_id"))
+      )
       render json: @drive_item
     else
       render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
@@ -128,7 +136,9 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def destroy
+    before = @drive_item.deleted_at
     if @drive_item.update(deleted_at: Time.current)
+      record_drive_item_event!("drive_item.delete", @drive_item, changes: { deleted_at: [ before, @drive_item.deleted_at ] })
       render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
     else
       render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
@@ -151,6 +161,7 @@ class Api::V1::DriveItemsController < ApplicationController
     update_drive_items!(active_drive_items_for_bulk) do |drive_item|
       drive_item.update!(parent_id: new_parent_id)
     end
+    record_bulk_drive_item_event!("drive_item.bulk_move", parent_id: new_parent_id) unless performed?
 
     render json: { message: "ファイルまたはフォルダを移動しました" } unless performed?
   end
@@ -161,6 +172,7 @@ class Api::V1::DriveItemsController < ApplicationController
     update_drive_items!(active_drive_items_for_bulk) do |drive_item|
       drive_item.update!(deleted_at: deleted_at)
     end
+    record_bulk_drive_item_event!("drive_item.bulk_delete") unless performed?
 
     render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" } unless performed?
   end
@@ -169,6 +181,7 @@ class Api::V1::DriveItemsController < ApplicationController
     update_drive_items!(deleted_drive_items_for_bulk) do |drive_item|
       drive_item.update!(deleted_at: nil)
     end
+    record_bulk_drive_item_event!("drive_item.bulk_restore") unless performed?
 
     render json: { message: "ファイルまたはフォルダを復元しました" } unless performed?
   end
@@ -207,7 +220,9 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def restore
+    before = @drive_item.deleted_at
     if @drive_item.update(deleted_at: nil)
+      record_drive_item_event!("drive_item.restore", @drive_item, changes: { deleted_at: [ before, nil ] })
       render json: @drive_item
     else
       render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
@@ -379,6 +394,37 @@ class Api::V1::DriveItemsController < ApplicationController
       )
     response.headers["Content-Length"] = result.zip_size.to_s
     self.response_body = TemporaryFileBody.new(result)
+  end
+
+  def record_drive_item_event!(action, drive_item, changes: {}, metadata: {})
+    record_audit_event!(
+      action: action,
+      target: drive_item,
+      organization: current_user.organization,
+      changes: changes,
+      metadata: metadata.merge(
+        item_type: drive_item.item_type,
+        name: drive_item.name,
+        parent_id: drive_item.parent_id
+      )
+    )
+  end
+
+  def record_bulk_drive_item_event!(action, metadata = {})
+    record_audit_event!(
+      action: action,
+      organization: current_user.organization,
+      metadata: metadata.merge(
+        drive_item_ids: Array(params[:drive_item_ids]).map(&:to_i)
+      )
+    )
+  end
+
+  def changed_values(before, after)
+    before.each_with_object({}) do |(key, old_value), changes|
+      new_value = after[key]
+      changes[key] = [ old_value, new_value ] if old_value != new_value
+    end
   end
 
   class TemporaryFileBody
