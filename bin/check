@@ -8,6 +8,10 @@ echo "== Tests =="
 bin/rails test
 
 echo
+echo "== API Spec =="
+bin/check-api-spec
+
+echo
 echo "== RuboCop =="
 bin/rubocop
 

@@ -118,6 +118,8 @@ bin/ai-check
 bin/check
 ```
 
+The API contract is maintained as OpenAPI YAML in `docs/api.yml`. `bin/ai-check` and `bin/check` run `bin/check-api-spec`, which fails when Rails API routes and the YAML paths diverge.
+
 ## Backups
 
 Back up PostgreSQL and `FILE_STORAGE_ROOT`. They must be restored together to keep DriveItem metadata and physical files consistent.

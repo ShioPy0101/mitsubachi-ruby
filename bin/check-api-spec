@@ -1,0 +1,59 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "yaml"
+
+ENV["RAILS_ENV"] ||= "test"
+require_relative "../config/environment"
+
+SPEC_PATH = Rails.root.join("docs/api.yml")
+HTTP_METHODS = %w[get post put patch delete].freeze
+
+def fail_with(message)
+  warn "FAIL: API spec"
+  warn message
+  exit 1
+end
+
+fail_with("#{SPEC_PATH} does not exist") unless SPEC_PATH.file?
+
+spec = YAML.safe_load_file(SPEC_PATH, aliases: true)
+paths = spec.fetch("paths") { fail_with("missing top-level paths") }
+
+spec_routes = paths.flat_map do |path, operations|
+  operations.filter_map do |method, operation|
+    next unless HTTP_METHODS.include?(method)
+
+    fail_with("#{method.upcase} #{path} is missing operationId") unless operation.is_a?(Hash) && operation["operationId"]
+
+    [ method.upcase, path ]
+  end
+end.sort
+
+rails_routes = Rails.application.routes.routes.flat_map do |route|
+  controller = route.defaults[:controller].to_s
+  next [] unless controller.start_with?("api/")
+
+  path = route.path.spec.to_s
+              .delete_suffix("(.:format)")
+              .gsub(/:(\w+)/, '{\1}')
+  route.verb.scan(/[A-Z]+/).filter_map do |verb|
+    next if verb == "HEAD"
+
+    [ verb, path ]
+  end
+end.sort
+
+missing = rails_routes - spec_routes
+extra = spec_routes - rails_routes
+
+if missing.any? || extra.any?
+  lines = []
+  lines << "Routes missing from docs/api.yml:" if missing.any?
+  lines.concat(missing.map { |method, path| "  #{method} #{path}" })
+  lines << "Routes documented but not present in Rails routes:" if extra.any?
+  lines.concat(extra.map { |method, path| "  #{method} #{path}" })
+  fail_with(lines.join("\n"))
+end
+
+puts "PASS: API spec (#{spec_routes.size} operations)"

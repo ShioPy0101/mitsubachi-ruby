@@ -14,6 +14,7 @@ if [[ "$FRAMEWORK" == "unknown" ]]; then
 fi
 
 bin/ai-lint-changed
+bin/check-api-spec
 
 mapfile -t targets < <(ai_list_target_tests "$FRAMEWORK")
 bin/ai-test "${targets[@]}"

@@ -1,0 +1,1037 @@
+openapi: 3.1.0
+info:
+  title: Mitsubachi Rails API
+  version: 1.0.0
+  description: Rails API contract for the Mitsubachi drive frontend.
+servers:
+  - url: https://mitsubachi-api.shiosalt.com
+    description: Production API
+  - url: http://localhost:3001
+    description: Local Rails API
+security:
+  - cookieSession: []
+tags:
+  - name: Health
+  - name: Session
+  - name: DriveItems
+  - name: Admin
+paths:
+  /api/health:
+    get:
+      operationId: getApiHealth
+      tags: [Health]
+      summary: Readiness health check alias.
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/HealthOk"
+        "503":
+          $ref: "#/components/responses/HealthUnavailable"
+  /api/health/live:
+    get:
+      operationId: getApiHealthLive
+      tags: [Health]
+      summary: Liveness health check.
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/HealthOk"
+  /api/health/ready:
+    get:
+      operationId: getApiHealthReady
+      tags: [Health]
+      summary: Readiness health check.
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/HealthOk"
+        "503":
+          $ref: "#/components/responses/HealthUnavailable"
+  /api/v1/csrf_token:
+    get:
+      operationId: getApiV1CsrfToken
+      tags: [Session]
+      summary: Return a CSRF token for state-changing requests.
+      security: []
+      responses:
+        "200":
+          description: CSRF token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [csrf_token]
+                properties:
+                  csrf_token:
+                    type: string
+  /api/v1/me:
+    get:
+      operationId: getApiV1Me
+      tags: [Session]
+      summary: Return the authenticated user.
+      responses:
+        "200":
+          description: Authenticated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/auth/create:
+    post:
+      operationId: postApiV1AuthCreate
+      tags: [Session]
+      summary: Send a registration magic link for an organization invite.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, invite_code]
+              properties:
+                email:
+                  type: string
+                  format: email
+                invite_code:
+                  type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/auth/login:
+    post:
+      operationId: postApiV1AuthLogin
+      tags: [Session]
+      summary: Send a login magic link.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/auth/verify:
+    post:
+      operationId: postApiV1AuthVerify
+      tags: [Session]
+      summary: Verify a magic link token and create a session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message:
+                    type: string
+                  data:
+                    $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/logout:
+    delete:
+      operationId: deleteApiV1Logout
+      tags: [Session]
+      summary: Destroy the current session.
+      responses:
+        "204":
+          description: Session destroyed.
+  /api/v1/drive_items:
+    get:
+      operationId: getApiV1DriveItems
+      tags: [DriveItems]
+      summary: List active drive items.
+      parameters:
+        - $ref: "#/components/parameters/ParentId"
+      responses:
+        "200":
+          description: Drive item list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DriveItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: postApiV1DriveItems
+      tags: [DriveItems]
+      summary: Create a file or directory.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DriveItemCreateRequest"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriveItemCreateRequest"
+      responses:
+        "201":
+          description: Created drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/trash:
+    get:
+      operationId: getApiV1DriveItemsTrash
+      tags: [DriveItems]
+      summary: List deleted drive items.
+      responses:
+        "200":
+          description: Deleted drive item list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DriveItem"
+  /api/v1/drive_items/bulk_move:
+    post:
+      operationId: postApiV1DriveItemsBulkMove
+      tags: [DriveItems]
+      summary: Move multiple drive items to a directory.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkMove"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/bulk_delete:
+    post:
+      operationId: postApiV1DriveItemsBulkDelete
+      tags: [DriveItems]
+      summary: Move multiple drive items to trash.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkIds"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/bulk_restore:
+    post:
+      operationId: postApiV1DriveItemsBulkRestore
+      tags: [DriveItems]
+      summary: Restore multiple deleted drive items.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkIds"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/bulk_download:
+    post:
+      operationId: postApiV1DriveItemsBulkDownload
+      tags: [DriveItems]
+      summary: Download multiple drive items as a ZIP archive.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkIds"
+      responses:
+        "200":
+          description: ZIP archive.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/drive_items/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1DriveItem
+      tags: [DriveItems]
+      summary: Return one active drive item.
+      responses:
+        "200":
+          description: Drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: patchApiV1DriveItem
+      tags: [DriveItems]
+      summary: Update drive item name or parent.
+      requestBody:
+        $ref: "#/components/requestBodies/DriveItemUpdate"
+      responses:
+        "200":
+          description: Updated drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1DriveItem
+      tags: [DriveItems]
+      summary: Update drive item name or parent.
+      requestBody:
+        $ref: "#/components/requestBodies/DriveItemUpdate"
+      responses:
+        "200":
+          description: Updated drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      operationId: deleteApiV1DriveItem
+      tags: [DriveItems]
+      summary: Move a drive item to trash.
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/{id}/preview:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1DriveItemPreview
+      tags: [DriveItems]
+      summary: Deliver a file inline through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/drive_items/{id}/download:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1DriveItemDownload
+      tags: [DriveItems]
+      summary: Deliver a file as an attachment through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/drive_items/{id}/stream:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1DriveItemStream
+      tags: [DriveItems]
+      summary: Deliver a file inline for streaming through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/drive_items/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: postApiV1DriveItemRestore
+      tags: [DriveItems]
+      summary: Restore one deleted drive item.
+      responses:
+        "200":
+          description: Restored drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/admin/dashboard:
+    get:
+      operationId: getApiV1AdminDashboard
+      tags: [Admin]
+      summary: Return administrative dashboard aggregates.
+      responses:
+        "200":
+          description: Dashboard data.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/admin/organizations:
+    get:
+      operationId: getApiV1AdminOrganizations
+      tags: [Admin]
+      summary: List organizations.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at, name]
+        - $ref: "#/components/parameters/Direction"
+      responses:
+        "200":
+          $ref: "#/components/responses/Paginated"
+  /api/v1/admin/organizations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminOrganization
+      tags: [Admin]
+      summary: Return one organization.
+      responses:
+        "200":
+          description: Organization.
+          content:
+            application/json:
+              schema:
+                type: object
+    patch:
+      operationId: patchApiV1AdminOrganization
+      tags: [Admin]
+      summary: Update one organization.
+      requestBody:
+        $ref: "#/components/requestBodies/OrganizationUpdate"
+      responses:
+        "200":
+          description: Updated organization.
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      operationId: putApiV1AdminOrganization
+      tags: [Admin]
+      summary: Update one organization.
+      requestBody:
+        $ref: "#/components/requestBodies/OrganizationUpdate"
+      responses:
+        "200":
+          description: Updated organization.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/admin/users:
+    get:
+      operationId: getApiV1AdminUsers
+      tags: [Admin]
+      summary: List users.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: organization_id
+          in: query
+          schema:
+            type: integer
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [member, organization_admin, system_admin]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, suspended]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at, last_sign_in_at, email, name]
+        - $ref: "#/components/parameters/Direction"
+      responses:
+        "200":
+          $ref: "#/components/responses/Paginated"
+  /api/v1/admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminUser
+      tags: [Admin]
+      summary: Return one user.
+      responses:
+        "200":
+          description: User.
+          content:
+            application/json:
+              schema:
+                type: object
+    patch:
+      operationId: patchApiV1AdminUser
+      tags: [Admin]
+      summary: Update one user.
+      requestBody:
+        $ref: "#/components/requestBodies/UserUpdate"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      operationId: putApiV1AdminUser
+      tags: [Admin]
+      summary: Update one user.
+      requestBody:
+        $ref: "#/components/requestBodies/UserUpdate"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/admin/users/{id}/suspend:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1AdminUserSuspend
+      tags: [Admin]
+      summary: Suspend one user.
+      responses:
+        "200":
+          description: Suspended user.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/admin/users/{id}/unsuspend:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1AdminUserUnsuspend
+      tags: [Admin]
+      summary: Unsuspend one user.
+      responses:
+        "200":
+          description: Unsuspended user.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/admin/drive_items:
+    get:
+      operationId: getApiV1AdminDriveItems
+      tags: [Admin]
+      summary: List drive items for administration.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: organization_id
+          in: query
+          schema:
+            type: integer
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: item_type
+          in: query
+          schema:
+            type: string
+            enum: [file, directory]
+        - name: content_type
+          in: query
+          schema:
+            type: string
+        - name: deleted
+          in: query
+          schema:
+            type: string
+            enum: [active, deleted, "true", "false"]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at, size, name]
+        - $ref: "#/components/parameters/Direction"
+      responses:
+        "200":
+          $ref: "#/components/responses/Paginated"
+  /api/v1/admin/drive_items/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminDriveItem
+      tags: [Admin]
+      summary: Return one drive item for administration.
+      responses:
+        "200":
+          description: Drive item.
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      operationId: deleteApiV1AdminDriveItem
+      tags: [Admin]
+      summary: Move one drive item to trash as an administrator.
+      responses:
+        "200":
+          description: Deleted drive item.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/admin/drive_items/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1AdminDriveItemRestore
+      tags: [Admin]
+      summary: Restore one drive item as an administrator.
+      responses:
+        "200":
+          description: Restored drive item.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/admin/audit_logs:
+    get:
+      operationId: getApiV1AdminAuditLogs
+      tags: [Admin]
+      summary: List admin audit logs.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: actor_user_id
+          in: query
+          schema:
+            type: integer
+        - name: organization_id
+          in: query
+          schema:
+            type: integer
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: target_type
+          in: query
+          schema:
+            type: string
+        - name: created_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: created_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          $ref: "#/components/responses/Paginated"
+  /api/v1/admin/audit_logs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminAuditLog
+      tags: [Admin]
+      summary: Return one admin audit log.
+      responses:
+        "200":
+          description: Admin audit log.
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  securitySchemes:
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: _mitsubachi_ruby_session
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    ParentId:
+      name: parent_id
+      in: query
+      schema:
+        type: integer
+        nullable: true
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+    PerPage:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    Direction:
+      name: direction
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+  requestBodies:
+    BulkIds:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [drive_item_ids]
+            properties:
+              drive_item_ids:
+                type: array
+                items:
+                  type: integer
+    BulkMove:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [drive_item_ids, parent_id]
+            properties:
+              drive_item_ids:
+                type: array
+                items:
+                  type: integer
+              parent_id:
+                type: integer
+                nullable: true
+    DriveItemUpdate:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              name:
+                type: string
+              parent_id:
+                type: integer
+                nullable: true
+    OrganizationUpdate:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [organization]
+            properties:
+              organization:
+                type: object
+                properties:
+                  name:
+                    type: string
+    UserUpdate:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [user]
+            properties:
+              user:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  role:
+                    type: string
+                    enum: [member, organization_admin, system_admin]
+                  organization_id:
+                    type: integer
+  responses:
+    AccelRedirect:
+      description: File delivery delegated to the reverse proxy.
+      headers:
+        X-Accel-Redirect:
+          schema:
+            type: string
+        Content-Type:
+          schema:
+            type: string
+        Content-Disposition:
+          schema:
+            type: string
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                oneOf:
+                  - type: string
+                  - type: object
+    HealthOk:
+      description: Health check succeeded.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status:
+                type: string
+                enum: [ok]
+    HealthUnavailable:
+      description: Health check failed.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status:
+                type: string
+                enum: [unavailable]
+    Message:
+      description: Message response.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [message]
+            properties:
+              message:
+                type: string
+    Paginated:
+      description: Paginated collection.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data, meta]
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+              meta:
+                $ref: "#/components/schemas/PaginationMeta"
+    Unauthorized:
+      description: Authentication is required or the session is rejected.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    ValidationError:
+      description: Validation failed.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+              errors:
+                type: array
+                items:
+                  type: string
+  schemas:
+    DriveItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        organization_id:
+          type: integer
+        owner_user_id:
+          type: integer
+        parent_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        item_type:
+          type: string
+          enum: [file, directory]
+        extension:
+          type: string
+          nullable: true
+        storage_key:
+          type: string
+          nullable: true
+        blob_path:
+          type: string
+          nullable: true
+        content_type:
+          type: string
+          nullable: true
+        file_hash:
+          type: string
+          nullable: true
+        file_size:
+          type: integer
+          nullable: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DriveItemCreateRequest:
+      type: object
+      required: [name, item_type]
+      properties:
+        name:
+          type: string
+        item_type:
+          type: string
+          enum: [file, directory]
+        parent_id:
+          type: integer
+          nullable: true
+        file:
+          type: string
+          format: binary
+    PaginationMeta:
+      type: object
+      required: [current_page, per_page, total_pages, total_count]
+      properties:
+        current_page:
+          type: integer
+        per_page:
+          type: integer
+        total_pages:
+          type: integer
+        total_count:
+          type: integer
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        organization_id:
+          type: integer
+        organization_name:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [member, organization_admin, system_admin]
+        suspended:
+          type: boolean
+        suspended_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_sign_in_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
