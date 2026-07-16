@@ -110,6 +110,11 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
   end
 
   test "health endpoints do not expose internal details" do
+    get api_health_url
+
+    assert_response :ok
+    assert_equal({ "status" => "ok" }, response.parsed_body)
+
     get api_health_live_url
 
     assert_response :ok
