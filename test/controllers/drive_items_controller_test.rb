@@ -76,7 +76,9 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "削除済みアイテムを restore できる" do
     sign_in @user
 
-    post restore_api_v1_drive_item_url(@deleted_folder)
+    assert_difference "AuditEvent.where(action: 'drive_item.restore').count", 1 do
+      post restore_api_v1_drive_item_url(@deleted_folder)
+    end
 
     assert_response :ok
     assert_nil @deleted_folder.reload.deleted_at
@@ -93,7 +95,9 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "update でルート直下へ移動できる" do
     sign_in @user
 
-    patch api_v1_drive_item_url(@child_folder), params: { parent_id: "" }
+    assert_difference "AuditEvent.where(action: 'drive_item.update').count", 1 do
+      patch api_v1_drive_item_url(@child_folder), params: { parent_id: "" }
+    end
 
     assert_response :ok
     assert_nil @child_folder.reload.parent_id
@@ -192,12 +196,14 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItem.count", 1 do
-      post api_v1_drive_items_url, params: {
-        name: @deleted_report.name,
-        item_type: "file",
-        parent_id: @root.id,
-        file: uploaded_file("#{@deleted_report.name}.txt", "new")
-      }
+      assert_difference "AuditEvent.where(action: 'drive_item.create').count", 1 do
+        post api_v1_drive_items_url, params: {
+          name: @deleted_report.name,
+          item_type: "file",
+          parent_id: @root.id,
+          file: uploaded_file("#{@deleted_report.name}.txt", "new")
+        }
+      end
     end
 
     assert_response :created

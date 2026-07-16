@@ -12,8 +12,8 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     end
   end
 
-  VerificationResult = Data.define(:user)
-  RequestResult = Data.define(:email, :token)
+  VerificationResult = Data.define(:user, :organization_invite)
+  RequestResult = Data.define(:email, :token, :user, :organization, :organization_invite)
 
   def create
     email = normalize_email(params[:email])
@@ -24,9 +24,17 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
     result = build_registration_request!(email:, invite_code:)
     deliver_magic_link(result)
+    record_audit_event!(
+      action: "auth.registration_link.create",
+      actor_user: result.user,
+      organization: result.organization,
+      target: result.organization_invite,
+      metadata: { email: result.email }
+    )
 
     render json: { message: "認証リンクを送信しました" }, status: :ok
   rescue AuthFailure => error
+    record_auth_failure!("auth.registration_link.create", email: email, error: error)
     render_error(error.message, error.status)
   end
 
@@ -37,9 +45,17 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
     result = build_login_request!(email:)
     deliver_magic_link(result)
+    record_audit_event!(
+      action: "auth.login_link.create",
+      actor_user: result.user,
+      organization: result.organization,
+      target: result.user,
+      metadata: { email: result.email }
+    )
 
     render json: { message: "認証リンクを送信しました" }, status: :ok
   rescue AuthFailure => error
+    record_auth_failure!("auth.login_link.create", email: email, error: error)
     render_error(error.message, error.status)
   end
 
@@ -50,6 +66,12 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
     result = verify_token!(token)
     sign_in_verified_user(result.user)
+    record_audit_event!(
+      action: result.organization_invite.present? ? "auth.registration.verify" : "auth.login.verify",
+      actor_user: result.user,
+      organization: result.user.organization,
+      target: result.user
+    )
 
     render json: {
       message: "ログインに成功しました",
@@ -59,6 +81,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       }
     }, status: :ok
   rescue AuthFailure => error
+    record_auth_failure!("auth.verify", error: error)
     render_error(error.message, error.status)
   end
 
@@ -68,6 +91,9 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     raw_token = SecureRandom.urlsafe_base64(32)
     hashed_token = Digest::SHA256.hexdigest(raw_token)
     now = Time.current
+
+    stand_by_user = nil
+    invite = nil
 
     ActiveRecord::Base.transaction do
       invite = OrganizationInvite.lock.find_by(code: invite_code)
@@ -98,13 +124,15 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       )
     end
 
-    RequestResult.new(email, raw_token)
+    RequestResult.new(email, raw_token, stand_by_user, invite.organization, invite)
   end
 
   def build_login_request!(email:)
     raw_token = SecureRandom.urlsafe_base64(32)
     hashed_token = Digest::SHA256.hexdigest(raw_token)
     now = Time.current
+
+    user = nil
 
     ActiveRecord::Base.transaction do
       user = find_user_by_email(email)
@@ -123,7 +151,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       )
     end
 
-    RequestResult.new(email, raw_token)
+    RequestResult.new(email, raw_token, user, user.organization, nil)
   end
 
   def verify_token!(raw_token)
@@ -131,6 +159,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     now = Time.current
     verified_user = nil
     failure = nil
+    authentication = nil
 
     ActiveRecord::Base.transaction do
       authentication = EmailAuthentication.lock.find_by(token: hashed_token)
@@ -171,7 +200,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
     raise failure if failure
 
-    VerificationResult.new(verified_user)
+    VerificationResult.new(verified_user, authentication.organization_invite)
   end
 
   def validate_invite_for_registration!(invite, now)
@@ -251,6 +280,18 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   def render_error(message, status)
     render json: { error: message }, status: status
+  end
+
+  def record_auth_failure!(action, email: nil, error:)
+    record_audit_event!(
+      action: action,
+      outcome: "failure",
+      metadata: {
+        email: email,
+        status: error.status,
+        reason: error.message
+      }
+    )
   end
 
   def normalize_email(email)

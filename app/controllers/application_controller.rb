@@ -7,6 +7,25 @@ class ApplicationController < ActionController::API
 
   private
 
+  def record_audit_event!(action:, actor_user: current_user_or_nil, organization: actor_user&.organization, target: nil, outcome: "success", changes: {}, metadata: {})
+    AuditEvents::Recorder.record!(
+      action: action,
+      actor_user: actor_user,
+      organization: organization,
+      target: target,
+      outcome: outcome,
+      changes: changes,
+      metadata: metadata,
+      request: request
+    )
+  end
+
+  def current_user_or_nil
+    current_user
+  rescue StandardError
+    nil
+  end
+
   def reject_suspended_user!
     return unless current_user&.suspended?
     return if devise_controller?

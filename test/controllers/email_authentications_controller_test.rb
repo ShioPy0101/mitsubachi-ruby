@@ -27,8 +27,10 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       stand_by_at: 1.minute.ago
     )
 
-    assert_no_difference "EmailAuthentication.count" do
-      post api_v1_auth_login_url, params: { email: "pending@example.com" }
+    assert_difference "AuditEvent.where(action: 'auth.login_link.create', outcome: 'failure').count", 1 do
+      assert_no_difference "EmailAuthentication.count" do
+        post api_v1_auth_login_url, params: { email: "pending@example.com" }
+      end
     end
 
     assert_response :unauthorized
@@ -70,10 +72,12 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_difference "EmailAuthentication.count", 1 do
-      post api_v1_auth_create_url, params: {
-        email: " stale@example.com ",
-        invite_code: "fresh-invite"
-      }
+      assert_difference "AuditEvent.where(action: 'auth.registration_link.create').count", 1 do
+        post api_v1_auth_create_url, params: {
+          email: " stale@example.com ",
+          invite_code: "fresh-invite"
+        }
+      end
     end
 
     assert_response :ok

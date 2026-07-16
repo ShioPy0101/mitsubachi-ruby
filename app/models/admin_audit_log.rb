@@ -2,6 +2,7 @@ class AdminAuditLog < ApplicationRecord
   ACTIONS = %w[
     organization.create
     organization.update
+    organization_invite.create
     user.update
     user.role_change
     user.suspend

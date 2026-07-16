@@ -3,6 +3,17 @@ class Api::V1::Admin::AuditLogsController < Api::V1::Admin::BaseController
     scope = scoped_admin_audit_logs.includes(:actor_user, :organization)
     scope = apply_filters(scope).order(created_at: :desc, id: :desc)
 
+    record_audit_event!(
+      action: "audit_log.index",
+      metadata: request.query_parameters.slice(
+        "actor_user_id",
+        "organization_id",
+        "action",
+        "target_type",
+        "created_from",
+        "created_to"
+      )
+    )
     render_collection(scope, method(:audit_log_json))
   end
 
@@ -10,6 +21,11 @@ class Api::V1::Admin::AuditLogsController < Api::V1::Admin::BaseController
     audit_log = scoped_admin_audit_logs.includes(:actor_user, :organization).find_by(id: params[:id])
     return render_not_found if audit_log.nil?
 
+    record_audit_event!(
+      action: "audit_log.show",
+      target: audit_log,
+      organization: audit_log.organization
+    )
     render json: { data: audit_log_json(audit_log) }
   end
 

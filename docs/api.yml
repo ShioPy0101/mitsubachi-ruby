@@ -513,6 +513,47 @@ paths:
             application/json:
               schema:
                 type: object
+  /api/v1/admin/organization_invites:
+    post:
+      operationId: postApiV1AdminOrganizationInvites
+      tags: [Admin]
+      summary: Create an organization invite code.
+      description: system_admin may issue invites for any organization; organization_admin may issue invites for their own organization.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [organization_invite]
+              properties:
+                organization_invite:
+                  type: object
+                  properties:
+                    organization_id:
+                      type: integer
+                    expires_at:
+                      type: string
+                      format: date-time
+      responses:
+        "201":
+          description: Created organization invite.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/OrganizationInvite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
   /api/v1/admin/users:
     get:
       operationId: getApiV1AdminUsers
@@ -745,6 +786,62 @@ paths:
       responses:
         "200":
           description: Admin audit log.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/admin/audit_events:
+    get:
+      operationId: getApiV1AdminAuditEvents
+      tags: [Admin]
+      summary: List general audit events.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: actor_user_id
+          in: query
+          schema:
+            type: integer
+        - name: organization_id
+          in: query
+          schema:
+            type: integer
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          schema:
+            type: string
+            enum: [success, failure, denied]
+        - name: target_type
+          in: query
+          schema:
+            type: string
+        - name: occurred_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: occurred_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          $ref: "#/components/responses/Paginated"
+  /api/v1/admin/audit_events/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminAuditEvent
+      tags: [Admin]
+      summary: Return one general audit event.
+      responses:
+        "200":
+          description: Audit event.
           content:
             application/json:
               schema:
@@ -1076,6 +1173,40 @@ components:
           type: integer
         storage_bytes:
           type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OrganizationInvite:
+      type: object
+      properties:
+        id:
+          type: integer
+        organization_id:
+          type: integer
+        organization_name:
+          type: string
+        code:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        used_at:
+          type: string
+          format: date-time
+          nullable: true
+        used_by_user_id:
+          type: integer
+          nullable: true
+        stand_by_at:
+          type: string
+          format: date-time
+          nullable: true
+        stand_by_user_id:
+          type: integer
+          nullable: true
         created_at:
           type: string
           format: date-time
