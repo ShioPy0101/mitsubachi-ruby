@@ -1,6 +1,12 @@
 class Api::V1::EmailAuthenticationsController < ApplicationController
   REGISTRATION_STAND_BY_WINDOW = 15.minutes
   AUTHENTICATION_TOKEN_TTL = 15.minutes
+  AUTH_REQUEST_IP_LIMIT = 20
+  AUTH_REQUEST_IP_PERIOD = 10.minutes
+  AUTH_REQUEST_EMAIL_LIMIT = 5
+  AUTH_REQUEST_EMAIL_PERIOD = 15.minutes
+  VERIFY_REQUEST_IP_LIMIT = 60
+  VERIFY_REQUEST_IP_PERIOD = 10.minutes
 
   AuthFailure = Class.new(StandardError) do
     attr_reader :message, :status
@@ -14,6 +20,9 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   VerificationResult = Data.define(:user, :organization_invite)
   RequestResult = Data.define(:email, :token, :user, :organization, :organization_invite)
+
+  before_action :rate_limit_auth_request!, only: %i[create login]
+  before_action :rate_limit_verify_request!, only: :verify
 
   def create
     email = normalize_email(params[:email])
@@ -332,5 +341,40 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       .where(stand_by_user: user, used_at: nil)
       .where("stand_by_at IS NULL OR stand_by_at <= ?", REGISTRATION_STAND_BY_WINDOW.ago(now))
       .update_all(stand_by_user_id: nil, stand_by_at: nil, updated_at: now)
+  end
+
+  def rate_limit_auth_request!
+    checks = [
+      rate_limit_result("auth-ip", request.remote_ip, AUTH_REQUEST_IP_LIMIT, AUTH_REQUEST_IP_PERIOD)
+    ]
+    normalized_email = normalize_email(params[:email])
+    if normalized_email.present?
+      checks << rate_limit_result("auth-email", normalized_email, AUTH_REQUEST_EMAIL_LIMIT, AUTH_REQUEST_EMAIL_PERIOD)
+    end
+
+    reject_rate_limited_request!(checks)
+  end
+
+  def rate_limit_verify_request!
+    reject_rate_limited_request!([
+      rate_limit_result("auth-verify-ip", request.remote_ip, VERIFY_REQUEST_IP_LIMIT, VERIFY_REQUEST_IP_PERIOD)
+    ])
+  end
+
+  def rate_limit_result(namespace, key, limit, period)
+    Security::RateLimiter.new(
+      namespace: namespace,
+      key: key,
+      limit: limit,
+      period: period
+    ).call
+  end
+
+  def reject_rate_limited_request!(checks)
+    limited_result = checks.find { |result| !result.allowed? }
+    return if limited_result.nil?
+
+    response.headers["Retry-After"] = limited_result.retry_after.to_s
+    render json: { error: "リクエスト数が上限を超えました。しばらく待ってから再試行してください" }, status: :too_many_requests
   end
 end

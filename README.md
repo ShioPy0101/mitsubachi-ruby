@@ -19,6 +19,7 @@ Rails should bind only to a private interface such as `127.0.0.1:3001`. Do not e
 
 ```text
 APP_HOST=mitsubachi-api.shiosalt.com
+APP_HOSTS=mitsubachi-api.shiosalt.com
 FRONTEND_ORIGIN=https://drive.shiosalt.com
 RAILS_MASTER_KEY=...
 DATABASE_URL=postgres://...
@@ -107,7 +108,10 @@ Caddy can terminate TLS and proxy `/api/*` to Rails, but `X-Accel-Redirect` is N
 - Login verification regenerates the session.
 - CSRF protection is enabled for state-changing requests; frontend clients should fetch `/api/v1/csrf_token` and send `X-CSRF-Token`.
 - Production Host Authorization allows `APP_HOST` and does not clear host checks.
+- Set `APP_HOSTS` to the comma-separated public API hostnames accepted by Host Authorization.
 - `config.force_ssl` is enabled in production with reverse proxy TLS termination.
+- Public magic-link endpoints are rate limited by IP and email to reduce abuse from internet exposure.
+- CSRF failures return JSON `422` and reset the session.
 - File paths are derived from generated `storage_key` values, not user filenames.
 - Content-Type is detected with Marcel and does not rely only on the client declaration.
 
