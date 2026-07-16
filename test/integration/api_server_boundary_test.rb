@@ -109,16 +109,21 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     Rails.configuration.x.max_upload_size_bytes = original
   end
 
-  test "health endpoints do not expose internal details" do
-    get api_health_live_url
+  test "health endpoint checks readiness without exposing internal details" do
+    get api_health_url
 
     assert_response :ok
     assert_equal({ "status" => "ok" }, response.parsed_body)
+  end
 
-    get api_health_ready_url
+  test "legacy live and ready health paths are not routed" do
+    get "/api/health/live"
 
-    assert_response :ok
-    assert_equal({ "status" => "ok" }, response.parsed_body)
+    assert_response :not_found
+
+    get "/api/health/ready"
+
+    assert_response :not_found
   end
 
   private

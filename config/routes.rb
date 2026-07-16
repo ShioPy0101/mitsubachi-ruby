@@ -2,9 +2,7 @@ Rails.application.routes.draw do
   devise_for :users, skip: :all
 
   namespace :api do
-    get "health", to: "health#ready"
-    get "health/live", to: "health#live"
-    get "health/ready", to: "health#ready"
+    get "health", to: "health#show"
 
     namespace :v1 do
       resource :csrf_token, only: :show

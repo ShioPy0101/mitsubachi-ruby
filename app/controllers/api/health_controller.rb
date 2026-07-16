@@ -1,11 +1,7 @@
 class Api::HealthController < ApplicationController
   skip_forgery_protection
 
-  def live
-    render json: { status: "ok" }
-  end
-
-  def ready
+  def show
     ActiveRecord::Base.connection.execute("SELECT 1")
     render json: { status: "ok" }
   rescue ActiveRecord::ActiveRecordError
