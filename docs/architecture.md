@@ -7,7 +7,7 @@
 
 ## Controllers
 - `ApplicationController` - API 共通のベースコントローラ。Cookie セッションと CSRF 保護を有効にする
-- `Api::HealthController` - reverse proxy やプロセス監視向けの health check を扱う
+- `Api::HealthController` - reverse proxy やプロセス監視向けの live / ready check を扱う
 - `Api::V1::DriveItemsController` - ドライブ項目の一覧、作成、移動、削除、復元、ファイル配信、一括ダウンロードを扱う
 - `Api::V1::EmailAuthenticationsController` - メール認証リンクの発行と検証を扱う
 - `Api::V1::CsrfTokensController` - 同一オリジン frontend が状態変更リクエスト前に使う CSRF token を返す
@@ -21,7 +21,7 @@
 
 ## API Boundary
 - Rails は API 専用プロセスとして起動し、フロントエンドの view、Importmap、Turbo、Stimulus、asset 配信を担当しない
-- 公開 API は `/api/v1` 配下、health check は `GET /api/health` に統一する
+- 公開 API は `/api/v1` 配下、health check は `/api/health` 配下に置く
 - 管理 API は通常ユーザー API と分離し、`/api/v1/admin` 配下に置く
 - 本番は `https://drive.shiosalt.com/` の同一オリジン構成を前提とし、`/` は frontend、`/api/*` は Rails に reverse proxy する
 - Rails の内部ポートは `127.0.0.1:3001` などに bind し、インターネットへ直接公開しない

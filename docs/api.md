@@ -6,7 +6,7 @@
 
 - `drive_items` 系 API は認証必須です
 - API は `/api/v1` 配下で公開します
-- ヘルスチェックは `GET /api/health` に統一します
+- ヘルスチェックは `/api/health` 配下で公開します
 - organization は URL ではなく `current_user.organization` から決まります
 - 他 organization の `drive_item` は取得できず、通常は `404 Not Found` を返します
 - ファイル本体の配信は `X-Accel-Redirect` を使い、Rails は認可とレスポンスヘッダー生成を担当します
@@ -529,6 +529,12 @@ updated_at
 
 ### `GET /api/health`
 
-DB 接続を含む health check です。正常時は `200 OK` と `{ "status": "ok" }` を返します。DB 接続に失敗した場合は `503 Service Unavailable` と `{ "status": "unavailable" }` を返します。
+DB 接続を含む ready check です。正常時は `200 OK` と `{ "status": "ok" }` を返します。DB 接続に失敗した場合は `503 Service Unavailable` と `{ "status": "unavailable" }` を返します。
 
-`/api/health/live` と `/api/health/ready` は公開しません。
+### `GET /api/health/live`
+
+プロセス生存確認です。DB 接続は確認せず、正常時は `200 OK` と `{ "status": "ok" }` を返します。
+
+### `GET /api/health/ready`
+
+DB 接続を含む ready check です。正常時は `200 OK` と `{ "status": "ok" }` を返します。DB 接続に失敗した場合は `503 Service Unavailable` と `{ "status": "unavailable" }` を返します。
