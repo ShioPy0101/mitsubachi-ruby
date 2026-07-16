@@ -198,11 +198,11 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_difference "DriveItem.count", 1 do
       assert_difference "AuditEvent.where(action: 'drive_item.create').count", 1 do
         post api_v1_drive_items_url, params: {
-          name: @deleted_report.name,
-          item_type: "file",
-          parent_id: @root.id,
-          file: uploaded_file("#{@deleted_report.name}.txt", "new")
-        }
+        name: @deleted_report.name,
+        item_type: "file",
+        parent_id: @root.id,
+        file: uploaded_file("#{@deleted_report.name}.txt", "new")
+      }, headers: { "REMOTE_ADDR" => "198.51.100.10" }
       end
     end
 
@@ -210,6 +210,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     created = DriveItem.order(:id).last
     assert_nil created.deleted_at
     assert_equal @deleted_report.name, created.name
+    assert_equal "198.51.100.10", created.upload_ip_address
   ensure
     cleanup_created_file(created) if defined?(created) && created&.persisted?
   end

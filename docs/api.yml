@@ -714,6 +714,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/AdminDriveItem"
     delete:
       operationId: deleteApiV1AdminDriveItem
       tags: [Admin]
@@ -725,6 +729,82 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/AdminDriveItem"
+  /api/v1/admin/drive_items/{id}/preview:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminDriveItemPreview
+      tags: [Admin]
+      summary: Deliver an administratively authorized file inline through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/drive_items/{id}/download:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminDriveItemDownload
+      tags: [Admin]
+      summary: Deliver an administratively authorized file as an attachment through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/drive_items/{id}/stream:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminDriveItemStream
+      tags: [Admin]
+      summary: Deliver an administratively authorized file inline for streaming through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/admin/drive_items/{id}/purge:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: deleteApiV1AdminDriveItemPurge
+      tags: [Admin]
+      summary: Permanently purge a soft-deleted drive item.
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
   /api/v1/admin/drive_items/{id}/restore:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -739,6 +819,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/AdminDriveItem"
   /api/v1/admin/audit_logs:
     get:
       operationId: getApiV1AdminAuditLogs
@@ -1080,6 +1164,53 @@ components:
                 items:
                   type: string
   schemas:
+    AdminDriveItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        organization_id:
+          type: integer
+        organization_name:
+          type: string
+        owner_user_id:
+          type: integer
+        owner_email:
+          type: string
+          format: email
+        parent_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        item_type:
+          type: string
+          enum: [file, directory]
+        extension:
+          type: string
+          nullable: true
+        content_type:
+          type: string
+          nullable: true
+        file_size:
+          type: integer
+          nullable: true
+        upload_ip_address:
+          type: string
+          nullable: true
+        uploaded_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     DriveItem:
       type: object
       properties:

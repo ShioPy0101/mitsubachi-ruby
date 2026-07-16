@@ -38,6 +38,39 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
     end
   end
 
+  def preview
+    deliver_admin_drive_item(:preview)
+  end
+
+  def download
+    deliver_admin_drive_item(:download)
+  end
+
+  def stream
+    deliver_admin_drive_item(:stream)
+  end
+
+  def purge
+    return render_error(:forbidden, "この操作を実行する権限がありません", :forbidden) unless system_admin?
+
+    drive_item = find_scoped_drive_item
+    return render_not_found if drive_item.nil?
+
+    result = Admin::DriveItems::PurgeService.new(drive_item: drive_item).call
+    unless result.success?
+      render json: { error: result.message }, status: result.status
+      return
+    end
+
+    audit_admin_action!(
+      action: "drive_item.purge",
+      target: drive_item,
+      organization: drive_item.organization,
+      changes: { purged_at: [ nil, Time.current ] }
+    )
+    render json: { message: result.message }
+  end
+
   def restore
     drive_item = find_scoped_drive_item
     return render_not_found if drive_item.nil?
@@ -60,6 +93,38 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
 
   def find_scoped_drive_item
     scoped_drive_items.includes(:organization, :owner_user).find_by(id: params[:id])
+  end
+
+  def find_deliverable_drive_item
+    scoped_drive_items.active.includes(:organization, :owner_user).find_by(id: params[:id])
+  end
+
+  def deliver_admin_drive_item(action)
+    drive_item = find_deliverable_drive_item
+    return render_not_found if drive_item.nil?
+
+    result = DriveItems::DeliveryService.new(
+      drive_item: drive_item,
+      current_user: current_user,
+      request: request,
+      action: action,
+      audit_organization: drive_item.organization
+    ).call
+
+    unless result.success?
+      render json: { error: result.error_message }, status: result.status
+      return
+    end
+
+    audit_admin_action!(
+      action: "drive_item.#{action}",
+      target: drive_item,
+      organization: drive_item.organization
+    )
+    result.headers.each do |key, value|
+      response.headers[key] = value
+    end
+    head result.status
   end
 
   def apply_filters(scope)
@@ -104,6 +169,8 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
       extension: drive_item.extension,
       content_type: drive_item.content_type,
       file_size: drive_item.file_size,
+      upload_ip_address: drive_item.upload_ip_address,
+      uploaded_at: drive_item.created_at,
       deleted_at: drive_item.deleted_at,
       created_at: drive_item.created_at,
       updated_at: drive_item.updated_at
