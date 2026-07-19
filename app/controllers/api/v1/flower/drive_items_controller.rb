@@ -1,39 +1,54 @@
 class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
-  before_action :set_active_drive_item, only: :show
-  before_action :set_deliverable_drive_item, only: :download
+  before_action :rate_limit_download!, only: :download
 
   def index
-    drive_items = drive_item_query.list(parent_id: params[:parent_id], query: params[:query])
-    record_flower_event!("flower.drive_items.index", metadata: { parent_id: params[:parent_id], query_present: params[:query].present? })
+    result = Flower::DriveItems::List.new(organization: current_organization, params: params).call
+    record_flower_event!(
+      "flower.drive_item.listed",
+      metadata: {
+        result: "success",
+        query_present: params[:query].present?,
+        returned_count: result.items.size,
+        client_version: current_flower_token.flower_device_authorization&.client_metadata&.fetch("client_version", nil)
+      }
+    )
 
-    render json: { items: drive_items.map { |drive_item| drive_item_json(drive_item) } }
+    render json: {
+      items: result.items.map { |drive_item| Flower::DriveItems::Serializer.new(drive_item).list_json },
+      pagination: {
+        next_cursor: result.next_cursor
+      }
+    }
   end
 
   def show
-    record_flower_event!("flower.drive_items.show", target: @drive_item, metadata: { drive_item_id: @drive_item.id })
-    render json: { item: drive_item_json(@drive_item, include_deleted_at: true) }
-  end
-
-  def resolve
-    result = DriveItems::Resolve.new(organization: current_organization, items: params[:items]).call
-    unless result.success?
-      render_api_error(:validation_failed, result.error_message, status: result.status)
-      return
-    end
+    drive_item = Flower::DriveItems::Show.new(organization: current_organization, id: params[:id]).call
+    return render_flower_not_found if drive_item.nil?
 
     record_flower_event!(
-      "flower.drive_items.resolve",
-      metadata: {
-        requested_count: Array(params[:items]).size,
-        statuses: result.items.group_by { |item| item[:status] }.transform_values(&:size)
-      }
+      "flower.drive_item.viewed",
+      target: drive_item,
+      metadata: { drive_item_id: drive_item.id, result: "success" }
     )
-    render json: { items: result.items }
+    render json: Flower::DriveItems::Serializer.new(drive_item).detail_json
   end
 
   def download
+    authorization = Flower::Downloads::Authorize.new(
+      organization: current_organization,
+      token: current_flower_token,
+      id: params[:id]
+    ).call
+
+    unless authorization.success?
+      record_download_denied(authorization)
+      render_flower_error(authorization.error_code, authorization.message, status: authorization.status)
+      return
+    end
+
+    drive_item = authorization.drive_item
     result = DriveItems::DeliveryService.new(
-      drive_item: @drive_item,
+      drive_item: drive_item,
       current_user: current_user,
       request: request,
       action: :download,
@@ -41,61 +56,51 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
     ).call
 
     unless result.success?
-      record_flower_event!(
-        "flower.drive_item.download_denied",
-        target: @drive_item,
-        outcome: "denied",
-        metadata: download_metadata(@drive_item).merge(status: result.status, reason: result.error_message)
-      )
-      render_api_error(error_code_for_status(result.status), result.error_message, status: result.status)
+      record_download_denied(result, drive_item: drive_item)
+      render_flower_error(error_code_for_status(result.status), result.error_message, status: result.status)
       return
     end
 
-    record_flower_event!("flower.drive_item.download_started", target: @drive_item, metadata: download_metadata(@drive_item))
+    record_flower_event!(
+      "flower.file.downloaded",
+      target: drive_item,
+      metadata: download_metadata(drive_item).merge(result: "success")
+    )
     result.headers.each { |key, value| response.headers[key] = value }
-    head result.status
+    self.status = result.status
+    self.response_body = ""
   end
 
   private
 
-  def set_active_drive_item
-    @drive_item = drive_item_query.find_active(params[:id])
-    return if @drive_item.present?
-
-    render_flower_not_found
+  def required_flower_scopes
+    action_name == "download" ? [ "flower:download" ] : [ "flower:read" ]
   end
 
-  def set_deliverable_drive_item
-    @drive_item = drive_item_query.find_deliverable(params[:id])
-    if @drive_item.blank?
-      record_flower_event!(
-        "flower.drive_item.download_denied",
-        outcome: "denied",
-        metadata: { drive_item_id: params[:id], reason: "not_found" }
-      )
-      render_flower_not_found
-    end
+  def rate_limit_download!
+    result = Security::RateLimiter.new(
+      namespace: "flower-download-token",
+      key: current_flower_token&.id || request.remote_ip,
+      limit: 120,
+      period: 1.minute
+    ).call
+    return if result.allowed?
+
+    render_flower_error("rate_limited", "Too many download requests.", status: :too_many_requests)
   end
 
-  def drive_item_json(drive_item, include_deleted_at: false)
-    data = {
-      id: drive_item.id.to_s,
-      parent_id: drive_item.parent_id&.to_s,
-      parent_name: drive_item.parent&.name,
-      name: drive_item.name,
-      extension: drive_item.directory? ? nil : drive_item.extension,
-      display_name: drive_item.filename,
-      item_type: drive_item.item_type,
-      content_type: drive_item.directory? ? nil : drive_item.content_type,
-      file_size: drive_item.directory? ? nil : drive_item.file_size,
-      file_hash: drive_item.directory? ? nil : drive_item.file_hash,
-      owner_user_id: drive_item.owner_user_id,
-      owner_display_name: drive_item.owner_user&.safe_display_name,
-      created_at: drive_item.created_at,
-      updated_at: drive_item.updated_at
-    }
-    data[:deleted_at] = drive_item.deleted_at if include_deleted_at
-    data
+  def record_download_denied(result, drive_item: nil)
+    record_flower_event!(
+      "flower.download.denied",
+      target: drive_item,
+      outcome: "denied",
+      metadata: {
+        drive_item_id: drive_item&.id || params[:id],
+        result: "denied",
+        denial_reason: result.respond_to?(:error_code) ? result.error_code : error_code_for_status(result.status),
+        downloaded_bytes: 0
+      }
+    )
   end
 
   def record_flower_event!(action, target: nil, outcome: "success", metadata: {})
@@ -104,7 +109,10 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
       target: target,
       organization: current_organization,
       outcome: outcome,
-      metadata: flower_metadata(metadata)
+      metadata: flower_metadata(metadata).merge(
+        flower_access_token_id: current_flower_token&.id,
+        device_authorization_id: current_flower_token&.flower_device_authorization_id
+      )
     )
   end
 
@@ -112,19 +120,21 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
     {
       drive_item_id: drive_item.id,
       file_hash: drive_item.file_hash,
-      file_size: drive_item.file_size
+      file_size: drive_item.file_size,
+      downloaded_bytes: drive_item.file_size
     }
   end
 
   def error_code_for_status(status)
     case Rack::Utils.status_code(status)
-    when 401 then :unauthorized
-    when 403 then :forbidden
-    when 404 then :not_found
-    when 413 then :payload_too_large
-    when 422 then :validation_failed
-    when 500..599 then :internal_error
-    else :validation_failed
+    when 401 then "invalid_token"
+    when 403 then "insufficient_scope"
+    when 404 then "not_found"
+    when 409 then "conflict"
+    when 422 then "invalid_request"
+    when 429 then "rate_limited"
+    when 500..599 then "internal_error"
+    else "invalid_request"
     end
   end
 end

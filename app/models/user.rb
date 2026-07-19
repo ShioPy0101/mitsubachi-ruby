@@ -23,6 +23,9 @@ class User < ApplicationRecord
            foreign_key: :actor_user_id,
            dependent: :restrict_with_error
 
+  has_many :flower_device_authorizations, dependent: :restrict_with_error
+  has_many :flower_access_tokens, dependent: :restrict_with_error
+
   scope :active, -> { where(suspended_at: nil) }
   scope :suspended, -> { where.not(suspended_at: nil) }
 

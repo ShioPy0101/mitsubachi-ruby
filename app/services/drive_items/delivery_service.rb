@@ -47,7 +47,12 @@ module DriveItems
       Result.success(
         "X-Accel-Redirect" => x_accel_redirect(storage_key),
         "Content-Type" => content_type(absolute_path),
-        "Content-Disposition" => content_disposition
+        "Content-Disposition" => content_disposition,
+        "ETag" => etag,
+        "Accept-Ranges" => "bytes",
+        "X-Mitsubachi-Drive-Item-Id" => @drive_item.id.to_s,
+        "X-Mitsubachi-File-Sha256" => normalized_sha256.to_s,
+        "X-Mitsubachi-Updated-At" => @drive_item.updated_at.iso8601(3)
       )
     rescue StandardError => error
       Rails.logger.error(
@@ -86,6 +91,18 @@ module DriveItems
 
     def sanitized_filename
       @drive_item.filename.to_s.delete("\r\n")
+    end
+
+    def etag
+      value = normalized_sha256.presence || @drive_item.cache_key_with_version
+      %("#{value}")
+    end
+
+    def normalized_sha256
+      value = @drive_item.file_hash.to_s.downcase.delete_prefix("sha256:")
+      return unless value.match?(/\A[0-9a-f]{64}\z/)
+
+      "sha256:#{value}"
     end
   end
 end

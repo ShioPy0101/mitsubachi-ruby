@@ -1,6 +1,10 @@
 Rails.application.routes.draw do
   devise_for :users, skip: :all
 
+  namespace :flower do
+    resource :activate, only: :show, controller: :activations
+  end
+
   namespace :api do
     get "health", to: "health#ready"
     get "health/live", to: "health#live"
@@ -12,21 +16,17 @@ Rails.application.routes.draw do
       resource :group, only: %i[show update], controller: :groups
 
       namespace :flower do
-        resource :csrf_token, only: :show, controller: :csrf_tokens
-        scope "auth", controller: :auth do
-          post :create
-          post :login
-          post :verify
-          delete :logout
+        resources :device_authorizations, only: %i[create show], param: :device_code do
+          collection do
+            post :approve, to: "device_authorization_approvals#approve"
+            post :deny, to: "device_authorization_approvals#deny"
+          end
         end
+        resources :tokens, only: :create
         resource :me, only: :show, controller: :me
         resources :drive_items, only: %i[index show] do
           member do
             get :download
-          end
-
-          collection do
-            post :resolve
           end
         end
       end
