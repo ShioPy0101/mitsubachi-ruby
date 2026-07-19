@@ -371,11 +371,15 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def active_drive_items_for_bulk
-    current_user.organization.drive_items.active.where(id: params[:drive_item_ids])
+    current_user.organization.drive_items.active.where(id: bulk_drive_item_ids)
   end
 
   def deleted_drive_items_for_bulk
-    current_user.organization.drive_items.deleted.where(id: params[:drive_item_ids])
+    current_user.organization.drive_items.deleted.where(id: bulk_drive_item_ids)
+  end
+
+  def bulk_drive_item_ids
+    Array(params[:drive_item_ids].presence || params[:ids]).map(&:to_i)
   end
 
   def apply_drive_item_search(items, query)
@@ -605,7 +609,7 @@ class Api::V1::DriveItemsController < ApplicationController
       action: action,
       organization: current_user.organization,
       metadata: metadata.merge(
-        drive_item_ids: Array(params[:drive_item_ids]).map(&:to_i)
+        drive_item_ids: bulk_drive_item_ids
       )
     )
   end

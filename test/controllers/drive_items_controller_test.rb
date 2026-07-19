@@ -294,6 +294,19 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @root.id, movable.reload.parent_id
   end
 
+  test "bulk_move は ids パラメータでも移動できる" do
+    sign_in @user
+    destination = create_directory(name: "ids_destination")
+
+    post bulk_move_api_v1_drive_items_url, params: {
+      ids: [ @file.id ],
+      parent_id: destination.id
+    }
+
+    assert_response :ok
+    assert_equal destination.id, @file.reload.parent_id
+  end
+
   test "DB保存失敗時にアップロード済みファイルが削除される" do
     sign_in @user
     original_save = DriveItem.instance_method(:save)
