@@ -1,4 +1,5 @@
 require "test_helper"
+require "digest"
 require "tempfile"
 require "fileutils"
 require "stringio"
@@ -429,8 +430,46 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_response :conflict
     assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
     assert_equal "name", response.parsed_body.dig("error", "details", "field")
-    assert_equal @file.name, response.parsed_body.dig("error", "details", "conflicting_name")
+    assert_equal "#{@file.name}.#{@file.extension}", response.parsed_body.dig("error", "details", "conflicting_name")
     assert response.parsed_body.dig("error", "request_id").present?
+  end
+
+  test "同名アップロードは利用可能な最小連番を候補として返す" do
+    sign_in @user
+    create_named_file(name: "ファイル", extension: "txt", body: "first", parent: @root)
+    create_named_file(name: "ファイル（1）", extension: "txt", body: "second", parent: @root)
+    create_named_file(name: "ファイル（3）", extension: "txt", body: "third", parent: @root)
+
+    post api_v1_drive_items_url, params: {
+      name: "ファイル",
+      item_type: "file",
+      parent_id: @root.id,
+      file: uploaded_file("ファイル.txt", "different")
+    }
+
+    assert_response :conflict
+    assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
+    assert_equal "name", response.parsed_body.dig("error", "details", "duplicate_kind")
+    assert_equal "ファイル（2）", response.parsed_body.dig("error", "details", "suggested_name")
+    assert_equal "ファイル（2）.txt", response.parsed_body.dig("error", "details", "suggested_filename")
+  end
+
+  test "同一内容アップロードは重複内容として返す" do
+    sign_in @user
+    create_named_file(name: "ファイル", extension: "txt", body: "same-content", parent: @root)
+
+    post api_v1_drive_items_url, params: {
+      name: "ファイル",
+      item_type: "file",
+      parent_id: @root.id,
+      file: uploaded_file("ファイル.txt", "same-content")
+    }
+
+    assert_response :conflict
+    assert_equal "duplicate_content", response.parsed_body.dig("error", "code")
+    assert_equal "same_content", response.parsed_body.dig("error", "details", "duplicate_kind")
+    assert_equal "同じ内容のファイルがすでに存在します。", response.parsed_body.dig("error", "message")
+    assert_equal "ファイル（1）.txt", response.parsed_body.dig("error", "details", "suggested_filename")
   end
 
   test "複数ファイルをZIPで取得できる" do
@@ -634,6 +673,25 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       blob_path: storage_key,
       storage_key: storage_key,
       deleted_at: deleted_at
+    )
+  end
+
+  def create_named_file(name:, extension:, body:, parent: nil)
+    storage_key = "#{SecureRandom.uuid}.#{extension}"
+    write_storage_file(storage_key, body)
+
+    DriveItem.create!(
+      organization: @organization,
+      owner_user: @user,
+      parent: parent,
+      name: name,
+      item_type: "file",
+      extension: extension,
+      blob_path: storage_key,
+      storage_key: storage_key,
+      file_hash: Digest::SHA256.hexdigest(body),
+      file_size: body.bytesize,
+      content_type: "text/plain"
     )
   end
 
