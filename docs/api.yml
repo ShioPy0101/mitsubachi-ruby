@@ -530,6 +530,33 @@ paths:
                 $ref: "#/components/schemas/DriveItem"
         "422":
           $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/{id}/move:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1DriveItemMove
+      tags: [DriveItems]
+      summary: Move one active drive item to another folder.
+      requestBody:
+        $ref: "#/components/requestBodies/DriveItemMove"
+      responses:
+        "200":
+          description: Moved drive item.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DriveItem"
+                  request_id:
+                    type: string
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/admin/dashboard:
     get:
       operationId: getApiV1AdminDashboard
@@ -1122,6 +1149,17 @@ components:
               parent_id:
                 type: integer
                 nullable: true
+    DriveItemMove:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [parent_id]
+            properties:
+              parent_id:
+                type: integer
+                nullable: true
     OrganizationUpdate:
       required: true
       content:
@@ -1325,6 +1363,18 @@ components:
         updated_at:
           type: string
           format: date-time
+        breadcrumbs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriveBreadcrumb"
+    DriveBreadcrumb:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
     DriveItem:
       type: object
       properties:

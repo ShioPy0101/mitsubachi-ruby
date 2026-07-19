@@ -53,6 +53,7 @@ Rails.application.routes.draw do
           get :preview
           get :download
           get :stream
+          patch :move
           post :restore
         end
       end

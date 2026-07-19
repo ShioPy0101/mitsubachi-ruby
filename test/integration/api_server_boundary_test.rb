@@ -108,7 +108,9 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     get api_v1_me_url
 
     assert_response :unauthorized
-    assert_equal({ "error" => "このユーザーは停止されています" }, response.parsed_body)
+    assert_equal "unauthorized", response.parsed_body.dig("error", "code")
+    assert_equal "このユーザーは停止されています", response.parsed_body.dig("error", "message")
+    assert response.parsed_body.dig("error", "request_id").present?
   end
 
   test "state changing requests require csrf when forgery protection is enabled" do
@@ -119,7 +121,9 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     post api_v1_drive_items_url, params: { name: "csrf-check", item_type: "directory" }
 
     assert_response :unprocessable_entity
-    assert_equal({ "error" => "CSRF token が無効です" }, response.parsed_body)
+    assert_equal "validation_failed", response.parsed_body.dig("error", "code")
+    assert_equal "認証情報の確認に失敗しました。再読み込みしてからやり直してください", response.parsed_body.dig("error", "message")
+    assert response.parsed_body.dig("error", "request_id").present?
   ensure
     Rails.configuration.action_controller.allow_forgery_protection = original
   end
@@ -143,7 +147,9 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     get api_v1_drive_items_url
 
     assert_response :unauthorized
-    assert_equal({ "error" => "このユーザーは停止されています" }, response.parsed_body)
+    assert_equal "unauthorized", response.parsed_body.dig("error", "code")
+    assert_equal "このユーザーは停止されています", response.parsed_body.dig("error", "message")
+    assert response.parsed_body.dig("error", "request_id").present?
   end
 
   test "suspended user can still call logout" do
