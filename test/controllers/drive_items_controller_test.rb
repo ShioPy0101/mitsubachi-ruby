@@ -495,6 +495,27 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, response.parsed_body.dig("error", "details", "duplicate_files").first.fetch("deleted")
   end
 
+  test "他組織の同一内容ファイルは重複内容として通知しない" do
+    sign_in @user
+    create_named_file(
+      name: "他組織",
+      extension: "txt",
+      body: "tenant-content",
+      organization: organizations(:two),
+      owner_user: users(:two)
+    )
+
+    post api_v1_drive_items_url, params: {
+      name: "新規",
+      item_type: "file",
+      parent_id: @root.id,
+      file: uploaded_file("新規.txt", "tenant-content")
+    }
+
+    assert_response :created
+    assert_equal "新規", response.parsed_body.fetch("name")
+  end
+
   test "同一内容の継続アップロード時は保存先の名前重複を再検証する" do
     sign_in @user
     create_named_file(name: "別名", extension: "txt", body: "same-content", parent: create_directory(name: "別フォルダ"))
@@ -717,13 +738,13 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
-  def create_named_file(name:, extension:, body:, parent: nil, deleted_at: nil)
+  def create_named_file(name:, extension:, body:, parent: nil, deleted_at: nil, organization: @organization, owner_user: @user)
     storage_key = "#{SecureRandom.uuid}.#{extension}"
     write_storage_file(storage_key, body)
 
     DriveItem.create!(
-      organization: @organization,
-      owner_user: @user,
+      organization: organization,
+      owner_user: owner_user,
       parent: parent,
       name: name,
       item_type: "file",
