@@ -12,12 +12,13 @@ module AuditLogs
 
     STREAM_DEDUP_WINDOW = 5.minutes
 
-    def initialize(organization:, user:, drive_item:, action:, request:)
+    def initialize(organization:, user:, drive_item:, action:, request:, metadata: {})
       @organization = organization
       @user = user
       @drive_item = drive_item
       @action = action.to_s
       @request = request
+      @metadata = metadata
     end
 
     def call
@@ -62,8 +63,9 @@ module AuditLogs
       {
         filename: @drive_item.filename,
         content_type: @drive_item.content_type,
-        storage_key: @drive_item.storage_key
-      }
+        file_hash: @drive_item.file_hash,
+        file_size: @drive_item.file_size
+      }.merge(@metadata)
     end
   end
 end

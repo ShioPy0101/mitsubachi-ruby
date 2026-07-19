@@ -11,6 +11,12 @@
 - `Api::V1::DriveItemsController` - ドライブ項目の一覧、作成、移動、削除、復元、ファイル配信、一括ダウンロードを扱う
 - `Api::V1::MeController` - 認証済みユーザー自身のプロフィール情報を返す
 - `Api::V1::EmailAuthenticationsController` - メール認証リンクの発行と検証を扱う
+- `Api::V1::Flower::DeviceAuthorizationsController` - flower device authorization の作成と状態参照を扱う
+- `Api::V1::Flower::DeviceAuthorizationApprovalsController` - ログイン済みブラウザ session による approve / deny を扱う
+- `Api::V1::Flower::TokensController` - device code から短命 Bearer token を発行する
+- `Api::V1::Flower::DriveItemsController` - Bearer token 認証済み flower 向け read-only 一覧、詳細、download を扱う
+- `Api::V1::Flower::MeController` - Bearer token 認証済み flower ユーザー情報を最小限返す
+- `Flower::ActivationsController` - ブラウザで user code を承認するための activation entrypoint
 - `Api::V1::CsrfTokensController` - 同一オリジン frontend が状態変更リクエスト前に使う CSRF token を返す
 - `Api::V1::SessionsController` - logout を扱う
 - `Api::V1::Admin::BaseController` - 管理 API 共通の認証、role 認可、テナント scope、ページネーション、エラーレスポンス、管理監査ログ記録を扱う
@@ -24,12 +30,14 @@
 - Rails は API 専用プロセスとして起動し、フロントエンドの view、Importmap、Turbo、Stimulus、asset 配信を担当しない
 - 公開 API は `/api/v1` 配下、health check は `/api/health` 配下に置く
 - 管理 API は通常ユーザー API と分離し、`/api/v1/admin` 配下に置く
+- flower API は `/api/v1/flower` 配下に置き、After Effects 側は Bearer token のみで認証する。ブラウザ Cookie session への fallback はしない
 - 本番は frontend の `https://drive.shiosalt.com/` から API の `https://mitsubachi-api.shiosalt.com/` を呼び出す別オリジン構成を前提とする
 - API CORS は `FRONTEND_ORIGIN` の allowlist に一致する `Origin` のみ許可し、404 や認証エラーにも CORS ヘッダーを付与する
 - Rails の内部ポートは `127.0.0.1:3001` などに bind し、インターネットへ直接公開しない
-- Devise の Cookie セッションを使い、Bearer Token や JWT へは変更しない
+- ブラウザ API は Devise の Cookie セッションを使い、flower API は device authorization と短命 Bearer token を使う
 - 本番 Cookie は `Secure`、`HttpOnly`、`SameSite=Lax` とする
 - 停止済み User の既存 Cookie セッションは、認証必須 API の共通 before action で拒否する。logout は停止後も利用できるように除外する
+- flower Bearer token は `Authorization` header だけから受け取り、query parameter token は拒否する
 
 ## Models
 - `Organization` - ユーザー、招待、ドライブ項目を束ねる組織
@@ -40,6 +48,8 @@
 - `DriveItemAccessLog` - ドライブ項目アクセスの記録
 - `OrganizationInvite` - 組織招待と stand-by 状態の管理
 - `EmailAuthentication` - メール認証トークンと有効期限の管理
+- `FlowerDeviceAuthorization` - device code / user code の digest、状態、有効期限、承認 user / organization を管理する
+- `FlowerAccessToken` - flower Bearer token の digest、scope、有効期限、失効状態を管理する
 - `ApplicationRecord` - Active Record 共通ベース
 
 ## Email Authentication
@@ -55,6 +65,14 @@
 - 登録用 verify では OrganizationInvite もロックし、使用済み、有効期限、stand-by user と認証対象 User の一致を再検証する
 - User が token 発行後に停止された場合、セッションを作成せず、token は使用済み扱いにする
 - token は SHA-256 hash を DB に保存し、平文 token はメール送信用にのみ扱う
+
+## Flower API
+- flower は After Effects 連携向けの専用 API 入口で、通常 Web API の Controller を直接使わない
+- device authorization は `FlowerDeviceAuthorization` に digest のみ保存し、状態は `pending`、`approved`、`denied`、`consumed`、`expired` とする
+- access token は `FlowerAccessToken` に SHA-256 digest のみ保存し、初期 PoC では 15 分の短命 token とする。refresh token rotation は Phase 3
+- flower DriveItem 一覧と詳細は organization 起点の active file scope を使い、画像 / 動画だけを返す
+- `/api/v1/flower/drive_items/:id/download` は `DriveItems::DeliveryService` を利用し、Rails から実ファイルを配信せず `X-Accel-Redirect` を返す
+- CEP / Nginx / Range は Rails 自動テストとは分離して実機確認する
 
 ## Admin Authorization
 - `User#role` は `member`、`organization_admin`、`system_admin` の enum
@@ -74,6 +92,13 @@
 
 ## Services
 - `AuditLogs::Recorder` - preview / download / stream の監査ログ記録を集約する。動画の Range リクエストで `stream` ログが増え続けないよう、同一 organization / user / drive_item は 5 分間重複記録を抑制する
+- `Auth::MagicLinks` - ブラウザ向け magic link 発行と検証の業務ロジックを集約する
+- `DriveItems::Query` - organization 境界内の DriveItem 一覧、詳細、配信対象取得を集約する
+- `Flower::DeviceAuthorizations::Create` - device code / user code の生成と digest 保存を扱う
+- `Flower::DeviceAuthorizations::Approve` / `Deny` - ブラウザ session による承認状態遷移を扱う
+- `Flower::Tokens::Exchange` / `Authenticate` - device code polling と Bearer token 認証を扱う
+- `Flower::DriveItems::List` / `Show` - flower 用 read-only DriveItem 取得を扱う
+- `Flower::Downloads::Authorize` - flower download scope と対象 DriveItem を検証する
 - `DriveItems::DeliveryService` - 配信対象ファイルの検証、監査ログ記録、`X-Accel-Redirect` 用レスポンスヘッダー生成を担当する
 - `DriveItems::BulkDownloadService` - 複数 drive_item から ZIP を作成し、directory 配下の active file を再帰的に含める
 - `DriveItems::StoredFileInspector` - アップロードファイルを保存しながらサイズ、SHA-256、Content-Type を算出する

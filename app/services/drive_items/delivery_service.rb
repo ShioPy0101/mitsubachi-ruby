@@ -16,12 +16,13 @@ module DriveItems
       end
     end
 
-    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil)
+    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil, client_type: "web")
       @drive_item = drive_item
       @current_user = current_user
       @request = request
       @action = action.to_sym
       @audit_organization = audit_organization || drive_item.organization
+      @client_type = client_type
     end
 
     def call
@@ -38,14 +39,20 @@ module DriveItems
         user: @current_user,
         drive_item: @drive_item,
         action: @action,
-        request: @request
+        request: @request,
+        metadata: { client_type: @client_type }
       ).call
       return Result.failure(:service_unavailable, audit_result.error_message) unless audit_result.success?
 
       Result.success(
         "X-Accel-Redirect" => x_accel_redirect(storage_key),
         "Content-Type" => content_type(absolute_path),
-        "Content-Disposition" => content_disposition
+        "Content-Disposition" => content_disposition,
+        "ETag" => etag,
+        "Accept-Ranges" => "bytes",
+        "X-Mitsubachi-Drive-Item-Id" => @drive_item.id.to_s,
+        "X-Mitsubachi-File-Sha256" => normalized_sha256.to_s,
+        "X-Mitsubachi-Updated-At" => @drive_item.updated_at.iso8601(3)
       )
     rescue StandardError => error
       Rails.logger.error(
@@ -84,6 +91,18 @@ module DriveItems
 
     def sanitized_filename
       @drive_item.filename.to_s.delete("\r\n")
+    end
+
+    def etag
+      value = normalized_sha256.presence || @drive_item.cache_key_with_version
+      %("#{value}")
+    end
+
+    def normalized_sha256
+      value = @drive_item.file_hash.to_s.downcase.delete_prefix("sha256:")
+      return unless value.match?(/\A[0-9a-f]{64}\z/)
+
+      "sha256:#{value}"
     end
   end
 end
