@@ -1,4 +1,5 @@
 require "test_helper"
+require "digest"
 require "tempfile"
 require "fileutils"
 require "stringio"
@@ -429,8 +430,108 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_response :conflict
     assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
     assert_equal "name", response.parsed_body.dig("error", "details", "field")
-    assert_equal @file.name, response.parsed_body.dig("error", "details", "conflicting_name")
+    assert_equal "#{@file.name}.#{@file.extension}", response.parsed_body.dig("error", "details", "conflicting_name")
     assert response.parsed_body.dig("error", "request_id").present?
+  end
+
+  test "同名アップロードは利用可能な最小連番を候補として返す" do
+    sign_in @user
+    create_named_file(name: "ファイル", extension: "txt", body: "first", parent: @root)
+    create_named_file(name: "ファイル（1）", extension: "txt", body: "second", parent: @root)
+    create_named_file(name: "ファイル（3）", extension: "txt", body: "third", parent: @root)
+
+    post api_v1_drive_items_url, params: {
+      name: "ファイル",
+      item_type: "file",
+      parent_id: @root.id,
+      file: uploaded_file("ファイル.txt", "different")
+    }
+
+    assert_response :conflict
+    assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
+    assert_equal "name", response.parsed_body.dig("error", "details", "duplicate_kind")
+    assert_equal "ファイル（2）", response.parsed_body.dig("error", "details", "suggested_name")
+    assert_equal "ファイル（2）.txt", response.parsed_body.dig("error", "details", "suggested_filename")
+  end
+
+  test "同一内容アップロードは組織内の別フォルダでも重複内容として返す" do
+    sign_in @user
+    other_folder = create_directory(name: "other-folder")
+    create_named_file(name: "別名", extension: "txt", body: "same-content", parent: other_folder)
+
+    post api_v1_drive_items_url, params: {
+      name: "ファイル",
+      item_type: "file",
+      parent_id: @root.id,
+      file: uploaded_file("ファイル.txt", "same-content")
+    }
+
+    assert_response :conflict
+    assert_equal "duplicate_content", response.parsed_body.dig("error", "code")
+    assert_equal "same_content", response.parsed_body.dig("error", "details", "duplicate_kind")
+    assert_equal "同じ内容のファイルが、この組織内にすでに存在します。", response.parsed_body.dig("error", "message")
+    duplicate_files = response.parsed_body.dig("error", "details", "duplicate_files")
+    assert_equal 1, duplicate_files.size
+    assert_equal "別名.txt", duplicate_files.first.fetch("name")
+    assert_equal other_folder.name, duplicate_files.first.fetch("parent_name")
+    assert_equal @user.safe_display_name, duplicate_files.first.fetch("owner_display_name")
+    assert_equal false, duplicate_files.first.fetch("deleted")
+  end
+
+  test "同一内容がごみ箱だけにある場合も重複内容として返す" do
+    sign_in @user
+    create_named_file(name: "削除済み", extension: "txt", body: "trash-content", parent: @root, deleted_at: Time.current)
+
+    post api_v1_drive_items_url, params: {
+      name: "新規",
+      item_type: "file",
+      parent_id: @root.id,
+      file: uploaded_file("新規.txt", "trash-content")
+    }
+
+    assert_response :conflict
+    assert_equal "duplicate_content", response.parsed_body.dig("error", "code")
+    assert_equal "同じ内容のファイルが、この組織のごみ箱に存在します。", response.parsed_body.dig("error", "message")
+    assert_equal true, response.parsed_body.dig("error", "details", "duplicate_files").first.fetch("deleted")
+  end
+
+  test "他組織の同一内容ファイルは重複内容として通知しない" do
+    sign_in @user
+    create_named_file(
+      name: "他組織",
+      extension: "txt",
+      body: "tenant-content",
+      organization: organizations(:two),
+      owner_user: users(:two)
+    )
+
+    post api_v1_drive_items_url, params: {
+      name: "新規",
+      item_type: "file",
+      parent_id: @root.id,
+      file: uploaded_file("新規.txt", "tenant-content")
+    }
+
+    assert_response :created
+    assert_equal "新規", response.parsed_body.fetch("name")
+  end
+
+  test "同一内容の継続アップロード時は保存先の名前重複を再検証する" do
+    sign_in @user
+    create_named_file(name: "別名", extension: "txt", body: "same-content", parent: create_directory(name: "別フォルダ"))
+    create_named_file(name: "ファイル", extension: "txt", body: "other-content", parent: @root)
+
+    post api_v1_drive_items_url, params: {
+      name: "ファイル",
+      item_type: "file",
+      parent_id: @root.id,
+      allow_duplicate_content: "true",
+      file: uploaded_file("ファイル.txt", "same-content")
+    }
+
+    assert_response :conflict
+    assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
+    assert_equal "ファイル（1）", response.parsed_body.dig("error", "details", "suggested_name")
   end
 
   test "複数ファイルをZIPで取得できる" do
@@ -633,6 +734,26 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       extension: extension,
       blob_path: storage_key,
       storage_key: storage_key,
+      deleted_at: deleted_at
+    )
+  end
+
+  def create_named_file(name:, extension:, body:, parent: nil, deleted_at: nil, organization: @organization, owner_user: @user)
+    storage_key = "#{SecureRandom.uuid}.#{extension}"
+    write_storage_file(storage_key, body)
+
+    DriveItem.create!(
+      organization: organization,
+      owner_user: owner_user,
+      parent: parent,
+      name: name,
+      item_type: "file",
+      extension: extension,
+      blob_path: storage_key,
+      storage_key: storage_key,
+      file_hash: Digest::SHA256.hexdigest(body),
+      file_size: body.bytesize,
+      content_type: "text/plain",
       deleted_at: deleted_at
     )
   end

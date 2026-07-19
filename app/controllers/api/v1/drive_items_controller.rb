@@ -1,5 +1,7 @@
+require "digest"
 require "fileutils"
 require "securerandom"
+require "set"
 
 class Api::V1::DriveItemsController < ApplicationController
   before_action :authenticate_user!
@@ -67,11 +69,6 @@ class Api::V1::DriveItemsController < ApplicationController
 
     extension = item_type == "file" ? get_extension_from_filename(params[:file].original_filename) : nil
 
-    if duplicate_active_item?(parent_id:, name:, extension:)
-      render_name_conflict(name)
-      return
-    end
-
     @drive_item = current_user.organization.drive_items.new(
       name: name,
       item_type: item_type,
@@ -84,6 +81,17 @@ class Api::V1::DriveItemsController < ApplicationController
       uploaded_file = params[:file]
       if upload_too_large?(uploaded_file)
         render_api_error(:payload_too_large, "ファイルサイズが上限を超えています", status: :content_too_large)
+        return
+      end
+
+      upload_hash = digest_uploaded_file(uploaded_file)
+      if !allow_duplicate_content? && duplicate_content_items(upload_hash).exists?
+        render_duplicate_content(upload_hash)
+        return
+      end
+
+      if duplicate_active_item?(parent_id:, name:, extension:)
+        render_name_conflict(name, parent_id:, extension:)
         return
       end
 
@@ -117,6 +125,11 @@ class Api::V1::DriveItemsController < ApplicationController
         cleanup_uploaded_file!(generated_storage_key) if file_saved && !saved
       end
     else
+      if duplicate_active_item?(parent_id:, name:, extension:)
+        render_name_conflict(name, parent_id:, extension:)
+        return
+      end
+
       @drive_item.extension = nil
       @drive_item.storage_key = nil
       @drive_item.blob_path = nil
@@ -150,7 +163,7 @@ class Api::V1::DriveItemsController < ApplicationController
     end
 
     if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension: @drive_item.extension, excluding_id: @drive_item.id)
-      render_name_conflict(@drive_item.name)
+      render_name_conflict(@drive_item.name, parent_id: @drive_item.parent_id, extension: @drive_item.extension)
       return
     end
 
@@ -171,7 +184,7 @@ class Api::V1::DriveItemsController < ApplicationController
     return unless assign_parent_for_move!(@drive_item, normalized_parent_id)
 
     if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension: @drive_item.extension, excluding_id: @drive_item.id)
-      render_duplicate_name(@drive_item.name)
+      render_duplicate_name(@drive_item.name, parent_id: @drive_item.parent_id, extension: @drive_item.extension)
       return
     end
 
@@ -216,7 +229,7 @@ class Api::V1::DriveItemsController < ApplicationController
       return if invalid_move_target?(drive_item, new_parent_id)
 
       if duplicate_active_item?(parent_id: new_parent_id, name: drive_item.name, extension: drive_item.extension, excluding_id: drive_item.id)
-        render_duplicate_name(drive_item.name)
+        render_duplicate_name(drive_item.name, parent_id: new_parent_id, extension: drive_item.extension)
         return
       end
     end
@@ -475,12 +488,33 @@ class Api::V1::DriveItemsController < ApplicationController
     false
   end
 
-  def render_duplicate_name(name)
+  def render_duplicate_name(name, parent_id: nil, extension: nil)
+    details = duplicate_name_details(name, parent_id:, extension:)
     render_api_error(
-      :duplicate_name,
-      "同じ名前のファイルまたはフォルダーが存在します。",
+      details[:code],
+      details[:message],
       status: :conflict,
-      details: { field: "name", conflicting_name: name }
+      details: details.except(:code, :message)
+    )
+  end
+
+  def render_duplicate_content(upload_hash)
+    files = duplicate_content_items(upload_hash).includes(:owner_user, :parent).order(deleted_at: :asc, created_at: :desc)
+    message =
+      if files.all? { |drive_item| drive_item.deleted_at.present? }
+        "同じ内容のファイルが、この組織のごみ箱に存在します。"
+      else
+        "同じ内容のファイルが、この組織内にすでに存在します。"
+      end
+
+    render_api_error(
+      :duplicate_content,
+      message,
+      status: :conflict,
+      details: {
+        duplicate_kind: "same_content",
+        duplicate_files: files.map { |drive_item| duplicate_content_file_json(drive_item) }
+      }
     )
   end
 
@@ -496,8 +530,8 @@ class Api::V1::DriveItemsController < ApplicationController
     end
   end
 
-  def render_name_conflict(name)
-    render_duplicate_name(name)
+  def render_name_conflict(name, parent_id: nil, extension: nil)
+    render_duplicate_name(name, parent_id:, extension:)
   end
 
   def update_drive_items!(drive_items)
@@ -520,6 +554,77 @@ class Api::V1::DriveItemsController < ApplicationController
       filename: uploaded_file.original_filename,
       storage_key: storage_key
     )
+  end
+
+  def digest_uploaded_file(uploaded_file)
+    io = uploaded_file.tempfile
+    io.rewind
+    digest = Digest::SHA256.new
+    digest.update(io.read(5.megabytes)) until io.eof?
+    digest.hexdigest
+  ensure
+    io&.rewind
+  end
+
+  def duplicate_name_details(name, parent_id:, extension:)
+    suggested_name = next_available_name(parent_id:, name:, extension:)
+    {
+      code: :duplicate_name,
+      message: "同じ名前のファイルまたはフォルダーが存在します。",
+      field: "name",
+      conflicting_name: display_filename(name, extension),
+      duplicate_kind: "name",
+      suggested_name: suggested_name,
+      suggested_filename: display_filename(suggested_name, extension)
+    }
+  end
+
+  def active_duplicate_item(parent_id:, name:, extension:)
+    current_user.organization.drive_items.active.find_by(parent_id:, name:, extension:)
+  end
+
+  def duplicate_content_items(upload_hash)
+    current_user.organization.drive_items.file.where(file_hash: upload_hash)
+  end
+
+  def duplicate_content_file_json(drive_item)
+    {
+      id: drive_item.id,
+      name: drive_item.filename,
+      parent_id: drive_item.parent_id,
+      parent_name: drive_item.parent&.name,
+      owner_display_name: drive_item.owner_user&.safe_display_name,
+      created_at: drive_item.created_at,
+      file_size: drive_item.file_size,
+      deleted: drive_item.deleted_at.present?
+    }
+  end
+
+  def allow_duplicate_content?
+    ActiveModel::Type::Boolean.new.cast(params[:allow_duplicate_content])
+  end
+
+  def next_available_name(parent_id:, name:, extension:)
+    existing_names = current_user
+      .organization
+      .drive_items
+      .active
+      .where(parent_id:, extension:)
+      .pluck(:name)
+      .to_set
+    return name unless existing_names.include?(name)
+
+    index = 1
+    loop do
+      candidate = "#{name}（#{index}）"
+      return candidate unless existing_names.include?(candidate)
+
+      index += 1
+    end
+  end
+
+  def display_filename(name, extension)
+    extension.present? ? "#{name}.#{extension}" : name
   end
 
   def build_storage_key(extension)
