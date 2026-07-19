@@ -235,6 +235,72 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/auth/registration/verify:
+    post:
+      operationId: postApiV1AuthRegistrationVerify
+      tags: [Session]
+      summary: Verify a registration magic link token and create a session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message:
+                    type: string
+                  data:
+                    $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/auth/login/verify:
+    post:
+      operationId: postApiV1AuthLoginVerify
+      tags: [Session]
+      summary: Verify a login magic link token and create a session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message:
+                    type: string
+                  data:
+                    $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/logout:
     delete:
       operationId: deleteApiV1Logout

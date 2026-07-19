@@ -18,11 +18,11 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     end
   end
 
-  VerificationResult = Data.define(:user, :organization_invite)
-  RequestResult = Data.define(:email, :token, :user, :organization, :organization_invite)
+  VerificationResult = Data.define(:user, :organization_invite, :purpose)
+  RequestResult = Data.define(:email, :token, :user, :organization, :organization_invite, :authentication)
 
   before_action :rate_limit_auth_request!, only: %i[create login]
-  before_action :rate_limit_verify_request!, only: :verify
+  before_action :rate_limit_verify_request!, only: %i[verify verify_registration verify_login]
 
   def create
     email = normalize_email(params[:email])
@@ -76,24 +76,29 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     return render_error("token は必須です", :bad_request) if token.blank?
 
     result = verify_token!(token)
-    sign_in_verified_user(result.user)
-    record_audit_event!(
-      action: result.organization_invite.present? ? "auth.registration.verify" : "auth.login.verify",
-      actor_user: result.user,
-      organization: result.user.organization,
-      target: result.user
-    )
-
-    render json: {
-      message: "ログインに成功しました",
-      user: {
-        id: result.user.id,
-        email: result.user.email,
-        display_name: result.user.display_name
-      }
-    }, status: :ok
+    render_verified_user(result)
   rescue AuthFailure => error
     record_auth_failure!("auth.verify", error: error)
+    render_error(error.message, error.status)
+  end
+
+  def verify_registration
+    verify_for_purpose!("registration")
+  end
+
+  def verify_login
+    verify_for_purpose!("login")
+  end
+
+  def verify_for_purpose!(purpose)
+    token = params[:token]
+
+    return render_error("token は必須です", :bad_request) if token.blank?
+
+    result = verify_token!(token, expected_purpose: purpose)
+    render_verified_user(result)
+  rescue AuthFailure => error
+    record_auth_failure!("auth.#{purpose}.verify", error: error)
     render_error(error.message, error.status)
   end
 
@@ -106,6 +111,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
     stand_by_user = nil
     invite = nil
+    authentication = nil
 
     ActiveRecord::Base.transaction do
       invite = OrganizationInvite.lock.find_by(code: invite_code)
@@ -130,15 +136,16 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
         stand_by_user: stand_by_user
       )
 
-      EmailAuthentication.create!(
+      authentication = EmailAuthentication.create!(
         email: email,
         token: hashed_token,
-        expires_at: AUTHENTICATION_TOKEN_TTL.from_now,
+        expires_at: now + AUTHENTICATION_TOKEN_TTL,
+        purpose: "registration",
         organization_invite: invite
       )
     end
 
-    RequestResult.new(email, raw_token, stand_by_user, invite.organization, invite)
+    RequestResult.new(email, raw_token, stand_by_user, invite.organization, invite, authentication)
   end
 
   def build_login_request!(email:)
@@ -147,6 +154,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     now = Time.current
 
     user = nil
+    authentication = nil
 
     ActiveRecord::Base.transaction do
       user = find_user_by_email(email)
@@ -158,17 +166,18 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
       expire_active_login_authentications!(email, now)
 
-      EmailAuthentication.create!(
+      authentication = EmailAuthentication.create!(
         email: email,
         token: hashed_token,
-        expires_at: AUTHENTICATION_TOKEN_TTL.from_now
+        expires_at: now + AUTHENTICATION_TOKEN_TTL,
+        purpose: "login"
       )
     end
 
-    RequestResult.new(email, raw_token, user, user.organization, nil)
+    RequestResult.new(email, raw_token, user, user.organization, nil, authentication)
   end
 
-  def verify_token!(raw_token)
+  def verify_token!(raw_token, expected_purpose: nil)
     hashed_token = Digest::SHA256.hexdigest(raw_token)
     now = Time.current
     verified_user = nil
@@ -178,6 +187,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     ActiveRecord::Base.transaction do
       authentication = EmailAuthentication.lock.find_by(token: hashed_token)
       validate_authentication!(authentication, now)
+      validate_authentication_purpose!(authentication, expected_purpose) if expected_purpose.present?
 
       user = find_user_by_email(authentication.email)
       validate_user_presence!(user)
@@ -191,12 +201,16 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       end
 
       invite = authentication.organization_invite
-      if invite.nil?
+      if authentication.login?
+        raise AuthFailure.new("ログイン用リンクが正しくありません", :unauthorized) if invite.present?
+
         reject_provisional_login_user!(user)
         mark_authentication_used!(authentication, now)
         verified_user = user
         next
       end
+
+      raise AuthFailure.new("登録用リンクが正しくありません", :unauthorized) if invite.nil?
 
       invite.lock!
       invite.reload
@@ -214,7 +228,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
     raise failure if failure
 
-    VerificationResult.new(verified_user, authentication.organization_invite)
+    VerificationResult.new(verified_user, authentication.organization_invite, authentication.purpose)
   end
 
   def validate_invite_for_registration!(invite, now)
@@ -263,6 +277,12 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     raise AuthFailure.new("リンクの有効期限が切れています", :unauthorized) if authentication.expires_at <= now
   end
 
+  def validate_authentication_purpose!(authentication, expected_purpose)
+    return if authentication.purpose == expected_purpose
+
+    raise AuthFailure.new("リンクの用途が正しくありません", :unauthorized)
+  end
+
   def validate_invite_for_verification!(invite, user, now)
     raise AuthFailure.new("この invite_code は既に使用されています", :unauthorized) if invite.used_at.present?
     raise AuthFailure.new("この invite_code の有効期限が切れています", :unauthorized) if invite.expires_at <= now
@@ -276,7 +296,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   def expire_active_login_authentications!(email, now)
     EmailAuthentication
-      .where(organization_invite_id: nil, used_at: nil)
+      .where(purpose: "login", used_at: nil)
       .where("expires_at > ?", now)
       .where("LOWER(email) = ?", email.downcase)
       .update_all(used_at: now, updated_at: now)
@@ -285,16 +305,43 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   def expire_active_registration_authentications!(invite, now)
     invite
       .email_authentications
-      .where(used_at: nil)
+      .where(purpose: "registration", used_at: nil)
       .where("expires_at > ?", now)
       .update_all(used_at: now, updated_at: now)
   end
 
   def deliver_magic_link(result)
-    EmailAuthenticationMailer
-      .with(email: result.email, token: result.token)
-      .send_magic_link
-      .deliver_later
+    mailer = EmailAuthenticationMailer.with(
+      email: result.email,
+      token: result.token,
+      organization: result.organization,
+      authentication: result.authentication
+    )
+
+    if result.authentication.registration?
+      mailer.registration_link.deliver_later
+    else
+      mailer.login_link.deliver_later
+    end
+  end
+
+  def render_verified_user(result)
+    sign_in_verified_user(result.user)
+    record_audit_event!(
+      action: "auth.#{result.purpose}.verify",
+      actor_user: result.user,
+      organization: result.user.organization,
+      target: result.user
+    )
+
+    render json: {
+      message: "ログインに成功しました",
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        display_name: result.user.display_name
+      }
+    }, status: :ok
   end
 
   def sign_in_verified_user(user)
