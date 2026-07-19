@@ -11,11 +11,36 @@ class Api::V1::DriveItemsController < ApplicationController
     @drive_items =
       current_user.organization
                   .drive_items
+                  .includes(:owner_user, :parent)
                   .active
                   .where(parent_id: params[:parent_id])
                   .order(item_type: :desc, name: :asc)
 
-    render json: @drive_items
+    render json: @drive_items.map { |drive_item| drive_item_json(drive_item) }
+  end
+
+  def search
+    query = params[:q].to_s.strip
+    scope = params[:scope].presence || "current"
+    page = [ params[:page].to_i, 1 ].max
+    per_page = params[:per_page].present? ? params[:per_page].to_i.clamp(1, 50) : 20
+
+    items = current_user.organization.drive_items.includes(:owner_user, :parent).active
+    items = items.where(parent_id: params[:parent_id]) if scope == "current"
+    items = apply_drive_item_search(items, query) if query.present?
+
+    total_count = items.count
+    drive_items = items.order(item_type: :desc, name: :asc).offset((page - 1) * per_page).limit(per_page)
+
+    render json: {
+      data: drive_items.map { |drive_item| drive_item_json(drive_item) },
+      meta: {
+        current_page: page,
+        per_page: per_page,
+        total_pages: (total_count.to_f / per_page).ceil,
+        total_count: total_count
+      }
+    }
   end
 
   def create
@@ -43,7 +68,7 @@ class Api::V1::DriveItemsController < ApplicationController
     extension = item_type == "file" ? get_extension_from_filename(params[:file].original_filename) : nil
 
     if duplicate_active_item?(parent_id:, name:, extension:)
-      render json: { error: "同じ名前のファイルまたはフォルダが既に存在します" }, status: :unprocessable_entity
+      render_name_conflict(name)
       return
     end
 
@@ -79,7 +104,7 @@ class Api::V1::DriveItemsController < ApplicationController
         saved = @drive_item.save
         if saved
           record_drive_item_event!("drive_item.create", @drive_item)
-          render json: @drive_item, status: :created
+          render json: drive_item_json(@drive_item), status: :created
         else
           render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
         end
@@ -101,7 +126,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
       if @drive_item.save
         record_drive_item_event!("drive_item.create", @drive_item)
-        render json: @drive_item, status: :created
+        render json: drive_item_json(@drive_item), status: :created
       else
         render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
       end
@@ -109,7 +134,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def show
-    render json: @drive_item
+    render json: drive_item_json(@drive_item)
   end
 
   def update
@@ -124,13 +149,18 @@ class Api::V1::DriveItemsController < ApplicationController
       @drive_item.parent_id = new_parent_id
     end
 
+    if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension: @drive_item.extension, excluding_id: @drive_item.id)
+      render_name_conflict(@drive_item.name)
+      return
+    end
+
     if @drive_item.save
       record_drive_item_event!(
         "drive_item.update",
         @drive_item,
         changes: changed_values(before, @drive_item.slice("name", "parent_id"))
       )
-      render json: @drive_item
+      render json: drive_item_json(@drive_item)
     else
       render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
     end
@@ -150,9 +180,10 @@ class Api::V1::DriveItemsController < ApplicationController
     @drive_items =
       current_user.organization
                   .drive_items
+                  .includes(:owner_user, :parent)
                   .deleted
                   .order(deleted_at: :desc)
-    render json: @drive_items
+    render json: @drive_items.map { |drive_item| drive_item_json(drive_item) }
   end
 
   def bulk_move
@@ -224,7 +255,7 @@ class Api::V1::DriveItemsController < ApplicationController
     before = @drive_item.deleted_at
     if @drive_item.update(deleted_at: nil)
       record_drive_item_event!("drive_item.restore", @drive_item, changes: { deleted_at: [ before, nil ] })
-      render json: @drive_item
+      render json: drive_item_json(@drive_item)
     else
       render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
     end
@@ -291,12 +322,14 @@ class Api::V1::DriveItemsController < ApplicationController
     true
   end
 
-  def duplicate_active_item?(parent_id:, name:, extension:)
-    current_user
+  def duplicate_active_item?(parent_id:, name:, extension:, excluding_id: nil)
+    scope = current_user
       .organization
       .drive_items
       .active
-      .exists?(parent_id: parent_id, name: name, extension: extension)
+      .where(parent_id: parent_id, name: name, extension: extension)
+    scope = scope.where.not(id: excluding_id) if excluding_id.present?
+    scope.exists?
   end
 
   def active_drive_items_for_bulk
@@ -305,6 +338,46 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def deleted_drive_items_for_bulk
     current_user.organization.drive_items.deleted.where(id: params[:drive_item_ids])
+  end
+
+  def apply_drive_item_search(items, query)
+    pattern = "%#{ActiveRecord::Base.sanitize_sql_like(query.downcase)}%"
+    items.joins("LEFT JOIN users owner_users ON owner_users.id = drive_items.owner_user_id").where(
+      "LOWER(drive_items.name) LIKE :pattern OR " \
+      "LOWER(COALESCE(drive_items.extension, '')) LIKE :pattern OR " \
+      "LOWER(COALESCE(owner_users.display_name, owner_users.name, '')) LIKE :pattern",
+      pattern: pattern
+    )
+  end
+
+  def drive_item_json(drive_item)
+    {
+      id: drive_item.id,
+      parent_id: drive_item.parent_id,
+      parent_name: drive_item.parent&.name,
+      name: drive_item.name,
+      item_type: drive_item.item_type,
+      extension: drive_item.extension,
+      content_type: drive_item.content_type,
+      file_size: drive_item.file_size,
+      owner_user_id: drive_item.owner_user_id,
+      owner_display_name: drive_item.owner_user&.safe_display_name,
+      deleted_at: drive_item.deleted_at,
+      created_at: drive_item.created_at,
+      updated_at: drive_item.updated_at
+    }
+  end
+
+  def render_name_conflict(name)
+    render json: {
+      error: {
+        code: "name_conflict",
+        message: "同じ名前の項目が存在します",
+        field: "name",
+        conflicting_name: name,
+        request_id: request.request_id
+      }
+    }, status: :conflict
   end
 
   def update_drive_items!(drive_items)

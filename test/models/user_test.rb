@@ -64,4 +64,29 @@ class UserTest < ActiveSupport::TestCase
       ])
     end
   end
+
+  test "display_name is normalized and unique within organization" do
+    user = users(:one)
+    user.update!(display_name: "  しお  ")
+
+    assert_equal "しお", user.display_name
+
+    duplicate = User.new(
+      organization: user.organization,
+      email: "duplicate@example.com",
+      password: "password123",
+      display_name: "しお"
+    )
+
+    assert_not duplicate.valid?
+    assert_includes duplicate.errors[:display_name], "has already been taken"
+  end
+
+  test "display_name rejects control characters" do
+    user = users(:one)
+    user.display_name = "bad\nname"
+
+    assert_not user.valid?
+    assert_includes user.errors[:display_name], "に制御文字は使用できません"
+  end
 end

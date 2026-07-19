@@ -215,6 +215,80 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     cleanup_created_file(created) if defined?(created) && created&.persisted?
   end
 
+  test "index は作成者表示名を含めメールアドレスを含めない" do
+    sign_in @user
+
+    get api_v1_drive_items_url, params: { parent_id: @root.id }
+
+    assert_response :ok
+    item = response.parsed_body.find { |entry| entry.fetch("id") == @file.id }
+    assert_equal "User One", item.fetch("owner_display_name")
+    assert_not_includes item.keys, "owner_email"
+  end
+
+  test "search は名前と拡張子と作成者表示名で検索できる" do
+    sign_in @user
+    @user.update!(display_name: "佐藤")
+    create_file_item(name: "meeting_notes.txt", body: "notes", parent: @root)
+
+    get search_api_v1_drive_items_url, params: { q: "佐藤", scope: "organization" }
+
+    assert_response :ok
+    names = response.parsed_body.fetch("data").pluck("name")
+    assert_includes names, "meeting_notes.txt"
+
+    sign_in @user
+    get search_api_v1_drive_items_url, params: { q: "pdf", scope: "organization" }
+
+    assert_response :ok
+    assert_includes response.parsed_body.fetch("data").pluck("name"), @file.name
+  end
+
+  test "search は他organizationと削除済みアイテムを含めない" do
+    sign_in @user
+
+    get search_api_v1_drive_items_url, params: { q: "sample", scope: "organization" }
+
+    assert_response :ok
+    ids = response.parsed_body.fetch("data").pluck("id")
+    assert_not_includes ids, @other_item.id
+
+    sign_in @user
+    get search_api_v1_drive_items_url, params: { q: @deleted_report.name, scope: "organization" }
+
+    assert_response :ok
+    assert_empty response.parsed_body.fetch("data")
+  end
+
+  test "search はページネーションメタを返す" do
+    sign_in @user
+    create_file_item(name: "page-one.txt", body: "one", parent: @root)
+    create_file_item(name: "page-two.txt", body: "two", parent: @root)
+
+    get search_api_v1_drive_items_url, params: { q: "page", scope: "organization", per_page: 1, page: 2 }
+
+    assert_response :ok
+    assert_equal 1, response.parsed_body.fetch("data").size
+    assert_equal 2, response.parsed_body.dig("meta", "current_page")
+    assert_equal 2, response.parsed_body.dig("meta", "total_count")
+  end
+
+  test "重複名の作成は409と機械判定可能なコードを返す" do
+    sign_in @user
+
+    post api_v1_drive_items_url, params: {
+      name: @file.name,
+      item_type: "file",
+      parent_id: @root.id,
+      file: uploaded_file("#{@file.name}.#{@file.extension}", "duplicate")
+    }
+
+    assert_response :conflict
+    assert_equal "name_conflict", response.parsed_body.dig("error", "code")
+    assert_equal "name", response.parsed_body.dig("error", "field")
+    assert_equal @file.name, response.parsed_body.dig("error", "conflicting_name")
+  end
+
   test "複数ファイルをZIPで取得できる" do
     sign_in @user
     file_a = create_file_item(name: "alpha.txt", body: "alpha")

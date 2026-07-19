@@ -33,8 +33,17 @@ class User < ApplicationRecord
          :validatable
 
   before_validation :normalize_email
+  before_validation :normalize_display_name
 
   validates :email, uniqueness: { case_sensitive: false }
+  validates :display_name,
+            length: { maximum: 50 },
+            uniqueness: { scope: :organization_id, allow_blank: true }
+  validate :display_name_has_no_control_characters
+
+  def safe_display_name
+    display_name.presence || name.presence || "未設定ユーザー"
+  end
 
   def suspended?
     suspended_at.present?
@@ -44,5 +53,16 @@ class User < ApplicationRecord
 
   def normalize_email
     self.email = email.to_s.strip.downcase if email.present?
+  end
+
+  def normalize_display_name
+    self.display_name = display_name.to_s.strip.presence if display_name.present?
+  end
+
+  def display_name_has_no_control_characters
+    return if display_name.blank?
+    return unless display_name.match?(/[[:cntrl:]]/)
+
+    errors.add(:display_name, "に制御文字は使用できません")
   end
 end

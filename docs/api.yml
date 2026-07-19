@@ -82,6 +82,74 @@ paths:
                     $ref: "#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/group:
+    get:
+      operationId: getApiV1Group
+      tags: [Session]
+      summary: Return the current user's group dashboard data.
+      responses:
+        "200":
+          description: Group dashboard.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Group"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: patchApiV1Group
+      tags: [Session]
+      summary: Update the current organization group profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupUpdateRequest"
+      responses:
+        "200":
+          description: Updated group.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Group"
+        "403":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1Group
+      tags: [Session]
+      summary: Update the current organization group profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupUpdateRequest"
+      responses:
+        "200":
+          description: Updated group.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Group"
+        "403":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/auth/create:
     post:
       operationId: postApiV1AuthCreate
@@ -221,6 +289,52 @@ paths:
           $ref: "#/components/responses/Error"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/drive_items/search:
+    get:
+      operationId: getApiV1DriveItemsSearch
+      tags: [DriveItems]
+      summary: Search active drive items within the current organization.
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [current, organization]
+        - $ref: "#/components/parameters/ParentId"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DriveItem"
+                  meta:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/drive_items/trash:
     get:
       operationId: getApiV1DriveItemsTrash
@@ -1220,8 +1334,14 @@ components:
           type: integer
         owner_user_id:
           type: integer
+        owner_display_name:
+          type: string
+          nullable: true
         parent_id:
           type: integer
+          nullable: true
+        parent_name:
+          type: string
           nullable: true
         name:
           type: string
@@ -1256,6 +1376,52 @@ components:
         updated_at:
           type: string
           format: date-time
+    Group:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        member_count:
+          type: integer
+        current_user_role:
+          type: string
+          enum: [member, organization_admin, system_admin]
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupMember"
+    GroupMember:
+      type: object
+      properties:
+        id:
+          type: integer
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [member, organization_admin, system_admin]
+        joined_at:
+          type: string
+          format: date-time
+        suspended:
+          type: boolean
+    GroupUpdateRequest:
+      type: object
+      required: [group]
+      properties:
+        group:
+          type: object
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+              nullable: true
     DriveItemCreateRequest:
       type: object
       required: [name, item_type]
@@ -1358,6 +1524,9 @@ components:
           format: email
         name:
           type: string
+        display_name:
+          type: string
+          nullable: true
         role:
           type: string
           enum: [member, organization_admin, system_admin]

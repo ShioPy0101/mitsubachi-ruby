@@ -14,6 +14,7 @@ class Api::V1::MeController < ApplicationController
       organization_name: user.organization.name,
       email: user.email,
       name: user.name,
+      display_name: user.display_name,
       role: user.role,
       suspended: user.suspended?,
       suspended_at: user.suspended_at,

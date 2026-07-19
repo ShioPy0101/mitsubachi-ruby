@@ -9,6 +9,7 @@ Rails.application.routes.draw do
     namespace :v1 do
       resource :csrf_token, only: :show
       resource :me, only: :show, controller: :me
+      resource :group, only: %i[show update], controller: :groups
 
       namespace :admin do
         resource :dashboard, only: :show
@@ -40,6 +41,7 @@ Rails.application.routes.draw do
 
       resources :drive_items do
         collection do
+          get :search
           get :trash
           post :bulk_move
           post :bulk_delete
