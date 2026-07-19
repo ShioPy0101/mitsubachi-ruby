@@ -105,10 +105,10 @@ Caddy can terminate TLS and proxy `/api/*` to Rails, but `X-Accel-Redirect` is N
 ## Security Notes
 
 - Authentication uses Devise Cookie sessions.
-- Flower uses the same Devise Cookie session mechanism through dedicated `/api/v1/flower/*` entrypoints. Sessions created by flower verification store `session[:client_type] = "flower"` server-side.
+- Flower uses dedicated device authorization and short-lived Bearer tokens through `/api/v1/flower/*`; protected flower endpoints do not fallback to browser Cookie sessions.
 - Production cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`.
 - Login verification regenerates the session.
-- CSRF protection is enabled for state-changing requests; frontend clients should fetch `/api/v1/csrf_token` and flower clients should fetch `/api/v1/flower/csrf_token`, then send `X-CSRF-Token`.
+- CSRF protection is enabled for browser state-changing requests. Flower device authorization and token polling are non-Cookie endpoints; browser approval still uses the existing Cookie session and CSRF protection.
 - Production Host Authorization allows `APP_HOST` and does not clear host checks.
 - Set `APP_HOSTS` to the comma-separated public API hostnames accepted by Host Authorization.
 - `config.force_ssl` is enabled in production with reverse proxy TLS termination.

@@ -1,160 +1,239 @@
 # Flower API
 
-The flower API is the dedicated Mitsubachi entrypoint for After Effects integration. Its purpose is audit separation: requests enter `/api/v1/flower/*`, while authentication, authorization, tenant scoping, DriveItem lookup, and X-Accel-Redirect delivery reuse shared server logic.
+The flower API is the dedicated Mitsubachi boundary for After Effects integration. Flower does not reuse browser Cookie sessions for API access. It uses device authorization for browser approval and short-lived Bearer tokens for CEP/Node API calls.
 
-## Authentication
+## Authentication Boundary
 
-Flower uses the existing Cookie session and magic link flow.
+Browser UI:
 
-1. Fetch CSRF token: `GET /api/v1/flower/csrf_token`.
-2. Request login link: `POST /api/v1/flower/auth/login`.
-3. Verify login token: `POST /api/v1/flower/auth/verify`.
-4. Use the returned Cookie session for flower API requests.
-5. Logout: `DELETE /api/v1/flower/auth/logout`.
+- Existing magic link login.
+- Existing Cookie session.
+- CSRF protection remains enabled.
+- Device approval endpoints use this browser session.
 
-Successful flower verification regenerates the session and stores `session[:client_type] = "flower"` on the server. Normal Web login stores `web`, and flower protected endpoints reject non-flower sessions. Clients cannot set `client_type` with a request parameter or header.
+Flower client:
 
-The Cookie name is `_mitsubachi_ruby_session`. Production Cookie attributes are `Secure`, `HttpOnly`, and `SameSite=Lax`. CORS remains allowlist-based through `FRONTEND_ORIGIN` and credentials are allowed only for configured origins. The application does not disable CSRF globally or relax SameSite/HttpOnly/Secure for flower.
+- `POST /api/v1/flower/device_authorizations`
+- `POST /api/v1/flower/tokens`
+- `Authorization: Bearer <access_token>`
+- CSRF is skipped only for non-Cookie flower client endpoints.
+- Protected flower endpoints never fallback to Cookie auth and never accept query parameter tokens.
 
-CEP behavior for Cookie persistence, CSRF token handling, and Origin allowlisting is not verified in code and must be tested on the target After Effects host, including Windows.
+Access tokens are generated as cryptographic random values. Rails stores only SHA-256 digests in `flower_access_tokens.access_token_digest`. Device codes and user codes are also stored by digest only. Raw device codes, user codes, access tokens, refresh tokens, token digests, Authorization headers, Cookies, CSRF tokens, and internal paths must not be logged.
 
-## Endpoints
+Initial PoC does not return refresh tokens. Access tokens expire after 15 minutes; expiry requires reauthorization. `flower_access_tokens.refresh_token_digest` exists for Phase 3 refresh-token rotation.
 
-`POST /api/v1/flower/auth/login`
-
-Request:
-
-```json
-{ "email": "user@example.com" }
-```
-
-Response:
-
-```json
-{ "message": "認証リンクを送信しました" }
-```
-
-`POST /api/v1/flower/auth/verify`
+## Device Authorization
 
 Request:
 
+```http
+POST /api/v1/flower/device_authorizations
+```
+
 ```json
-{ "token": "magic-link-token" }
+{
+  "client_name": "mitsubachi-flower",
+  "client_version": "0.1.0",
+  "device_name": "After Effects 2022 on Windows"
+}
 ```
 
 Response:
 
 ```json
 {
-  "message": "ログインに成功しました",
-  "user": { "id": 1, "email": "user@example.com", "display_name": "User One" }
+  "device_code": "secret-random-value",
+  "user_code": "ABCD-EFGH",
+  "verification_uri": "https://mitsubachi.shiosalt.com/flower/activate",
+  "verification_uri_complete": "https://mitsubachi.shiosalt.com/flower/activate?user_code=ABCD-EFGH",
+  "expires_in": 600,
+  "interval": 5
 }
+```
+
+`device_code` is never stored as plaintext. `user_code` uses uppercase non-confusing characters and is normalized by removing separators and case before digest lookup.
+
+Device authorization statuses are `pending`, `approved`, `denied`, `consumed`, and `expired`.
+
+## Browser Approval
+
+The logged-in browser user opens:
+
+```http
+GET /flower/activate?user_code=ABCD-EFGH
+```
+
+The API-only implementation returns the current user's selectable organization list. The current data model allows one organization per user, so approval accepts only `current_user.organization_id`.
+
+Approve:
+
+```http
+POST /api/v1/flower/device_authorizations/approve
+```
+
+```json
+{
+  "user_code": "ABCD-EFGH",
+  "organization_id": "1"
+}
+```
+
+Deny:
+
+```http
+POST /api/v1/flower/device_authorizations/deny
+```
+
+```json
+{ "user_code": "ABCD-EFGH" }
+```
+
+Approval and denial use the existing Cookie session and CSRF protection. Suspended users, expired authorizations, consumed authorizations, denied authorizations, and non-owned organizations are rejected.
+
+## Token Polling
+
+```http
+POST /api/v1/flower/tokens
+```
+
+```json
+{
+  "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+  "device_code": "..."
+}
+```
+
+Possible error codes are `authorization_pending`, `slow_down`, `access_denied`, `expired_token`, and `invalid_grant`.
+
+Success:
+
+```json
+{
+  "token_type": "Bearer",
+  "access_token": "...",
+  "expires_in": 900,
+  "scope": "flower:read flower:download",
+  "organization_id": "1"
+}
+```
+
+Polling interval is enforced per device authorization using `last_polled_at` and `interval_seconds` under row lock. Once a token is issued, the device authorization becomes `consumed` and cannot issue another token.
+
+## Protected Endpoints
+
+All protected requests require:
+
+```http
+Authorization: Bearer <access_token>
 ```
 
 `GET /api/v1/flower/me`
 
-Requires a flower session. Returns the current user, organization, role, and `client_type`.
+```json
+{
+  "user": { "id": "1", "name": "User One" },
+  "organization": { "id": "1", "name": "Team" },
+  "scopes": ["flower:read", "flower:download"]
+}
+```
+
+Email is intentionally not returned.
 
 `GET /api/v1/flower/drive_items`
 
-Query parameters: `parent_id`, `query`.
+Query parameters: `parent_id`, `query`, `cursor`, `limit`. Limit is clamped to 1..100. Pagination is cursor-based over DriveItem IDs.
 
-Response:
+Only active image/video files in the token organization are returned. Directories, trashed items, other organizations, storage keys, blob paths, and internal paths are not returned.
 
-```json
-{
-  "items": [
-    {
-      "id": "21",
-      "parent_id": null,
-      "parent_name": null,
-      "name": "IMG_1515",
-      "extension": "mov",
-      "display_name": "IMG_1515.mov",
-      "item_type": "file",
-      "content_type": "video/quicktime",
-      "file_size": 46553959,
-      "file_hash": "sha256:abcdef",
-      "owner_user_id": 1,
-      "owner_display_name": "未設定ユーザー",
-      "created_at": "2026-07-17T08:35:29.009+09:00",
-      "updated_at": "2026-07-17T08:35:29.009+09:00"
-    }
-  ]
-}
+Hash format:
+
+```text
+sha256:<64 lowercase hexadecimal characters>
 ```
 
-Directories return `null` for `extension`, `content_type`, `file_size`, and `file_hash`. The API returns stored DB hashes and does not rehash files during listing.
+If existing `drive_items.file_hash` is missing or not a 64-character SHA-256 hex value, `sha256` is returned as `null`. Listing never rehashes files.
 
 `GET /api/v1/flower/drive_items/:id`
 
-Returns one active DriveItem in the current organization. Tenant-boundary misses are `404`.
+Returns one active image/video file with `download.available`.
 
 `GET /api/v1/flower/drive_items/:id/download`
 
-Returns `X-Accel-Redirect`, `Content-Type`, and `Content-Disposition: attachment`. Rails does not stream the file body. Directories, deleted files, missing files, invalid storage keys, and tenant-boundary misses are rejected without returning storage internals.
+The selected strategy is A: flower sends Bearer token to Rails, Rails authenticates and authorizes, then returns `X-Accel-Redirect` so Nginx serves the file. Rails does not read the full file and does not use `send_data`.
 
-`POST /api/v1/flower/drive_items/resolve`
+Safe response headers:
 
-Maximum request size is `100` items.
+- `X-Accel-Redirect`
+- `Content-Type`
+- `Content-Disposition`
+- `ETag`
+- `Accept-Ranges`
+- `X-Mitsubachi-Drive-Item-Id`
+- `X-Mitsubachi-File-Sha256`
+- `X-Mitsubachi-Updated-At`
+- `X-Request-Id`
 
-Request:
+`Content-Disposition` is generated by Rails helpers and strips CR/LF from filenames. `Content-Length` is not asserted by Rails unit tests because the Rails response body is empty for X-Accel-Redirect; Nginx integration must confirm the final file response length.
 
-```json
-{
-  "items": [
-    { "id": "21", "known_file_hash": "sha256:old" },
-    { "id": "104", "known_file_hash": "sha256:current" }
-  ]
-}
-```
+## Range Requests
 
-Response statuses are `current`, `updated`, `deleted`, `not_found`, and `invalid`. `forbidden` is not exposed externally because tenant-boundary resources are intentionally indistinguishable from missing resources.
+Rails does not implement Range parsing. Range support is delegated to Nginx after `X-Accel-Redirect`.
 
-```json
-{
-  "items": [
-    {
-      "id": "21",
-      "status": "updated",
-      "file_hash": "sha256:new",
-      "file_size": 46553959,
-      "content_type": "video/quicktime",
-      "updated_at": "2026-07-20T10:00:00.000+09:00"
-    },
-    {
-      "id": "104",
-      "status": "current",
-      "file_hash": "sha256:current",
-      "file_size": 651493,
-      "content_type": "audio/mpeg",
-      "updated_at": "2026-07-19T20:28:30.071+09:00"
-    }
-  ]
-}
-```
+Rails automated tests verify:
 
-Duplicate IDs are preserved in response order so a client can map each request entry directly to a response entry.
+- Bearer auth is required.
+- Organization boundary is enforced.
+- Deleted items and directories are rejected.
+- Download scope is required.
+- X-Accel-Redirect and safe metadata headers are emitted.
+
+Nginx integration tests must verify:
+
+- No Range returns final `200`.
+- `Range: bytes=0-0` returns final `206`.
+- Unsatisfiable Range returns final `416`.
+- Final `Content-Length` and `Content-Range` are correct.
+
+AE/CEP real-device tests must separately verify token storage, network stack behavior, and download behavior on Windows.
 
 ## Errors
 
-Protected flower APIs use the common API error object:
+Flower API errors use:
 
 ```json
 {
   "error": {
-    "code": "not_found",
-    "message": "指定されたファイルが見つかりません",
-    "details": {},
+    "code": "authorization_pending",
+    "message": "Authorization is still pending.",
     "request_id": "..."
   }
 }
 ```
 
-Authentication failure responses do not expose whether the email or user exists. Request IDs are available in logs and response bodies according to the existing API error behavior.
+Known codes: `invalid_request`, `invalid_grant`, `authorization_pending`, `slow_down`, `access_denied`, `expired_token`, `invalid_token`, `insufficient_scope`, `not_found`, `conflict`, `rate_limited`, and `internal_error`.
+
+## Rate Limit
+
+- Device authorization creation: IP based, 20 requests per 10 minutes.
+- Token polling: device authorization `interval_seconds`, initially 5 seconds.
+- Download: token ID based, 120 requests per minute.
+
+Rate limit keys never use plaintext access tokens.
 
 ## Audit Events
 
-Flower writes dedicated `audit_events` actions and includes `metadata.client_type = "flower"`. Downloads also write `drive_item_access_logs` through the shared delivery service.
+Events:
 
-Recorded metadata may include DriveItem ID, stored file hash, file size, status, reason, request count, and status counts. Raw tokens, Cookie values, CSRF tokens, Authorization headers, secret URLs, local paths, and full email bodies must not be recorded.
+- `flower.device_authorization.created`
+- `flower.authorization.approved`
+- `flower.authorization.denied`
+- `flower.token.issued`
+- `flower.drive_item.listed`
+- `flower.drive_item.viewed`
+- `flower.file.downloaded`
+- `flower.download.denied`
+
+Metadata may include user ID through associations, organization ID, drive item ID, client version, device authorization ID, result, denial reason, downloaded bytes, request ID, IP address, and User-Agent through the recorder.
+
+`flower.token.refreshed`, `flower.token.revoked`, refresh rotation, and reuse detection are Phase 3.

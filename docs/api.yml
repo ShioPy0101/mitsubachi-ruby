@@ -65,71 +65,95 @@ paths:
                 properties:
                   csrf_token:
                     type: string
-  /api/v1/flower/csrf_token:
+  /api/v1/flower/device_authorizations:
+    post:
+      operationId: postApiV1FlowerDeviceAuthorizations
+      tags: [Flower]
+      summary: Start flower device authorization.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_name:
+                  type: string
+                client_version:
+                  type: string
+                device_name:
+                  type: string
+      responses:
+        "200":
+          description: Device and user code.
+        "429":
+          $ref: "#/components/responses/FlowerError"
+  /api/v1/flower/device_authorizations/approve:
+    post:
+      operationId: postApiV1FlowerDeviceAuthorizationsApprove
+      tags: [Flower]
+      summary: Approve a pending flower device authorization from an authenticated browser session.
+      security:
+        - cookieSession: []
+      responses:
+        "200":
+          description: Approved.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/flower/device_authorizations/deny:
+    post:
+      operationId: postApiV1FlowerDeviceAuthorizationsDeny
+      tags: [Flower]
+      summary: Deny a pending flower device authorization from an authenticated browser session.
+      security:
+        - cookieSession: []
+      responses:
+        "200":
+          description: Denied.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/flower/device_authorizations/{device_code}:
     get:
-      operationId: getApiV1FlowerCsrfToken
+      operationId: getApiV1FlowerDeviceAuthorization
       tags: [Flower]
-      summary: Return a CSRF token for flower state-changing requests.
+      summary: Read device authorization status by device code.
       security: []
+      parameters:
+        - name: device_code
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         "200":
-          description: CSRF token.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [csrf_token]
-                properties:
-                  csrf_token:
-                    type: string
-  /api/v1/flower/auth/create:
+          description: Authorization status.
+        "404":
+          $ref: "#/components/responses/FlowerError"
+  /api/v1/flower/tokens:
     post:
-      operationId: postApiV1FlowerAuthCreate
+      operationId: postApiV1FlowerTokens
       tags: [Flower]
-      summary: Alias for requesting a flower login magic link.
+      summary: Exchange an approved device code for a short-lived bearer token.
       security: []
       responses:
         "200":
-          description: Login link requested.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-  /api/v1/flower/auth/login:
-    post:
-      operationId: postApiV1FlowerAuthLogin
-      tags: [Flower]
-      summary: Request a flower login magic link.
-      security: []
-      responses:
-        "200":
-          description: Login link requested.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-  /api/v1/flower/auth/verify:
-    post:
-      operationId: postApiV1FlowerAuthVerify
-      tags: [Flower]
-      summary: Verify a flower login magic link and create a flower session.
-      security: []
-      responses:
-        "200":
-          description: Flower session created.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-  /api/v1/flower/auth/logout:
-    delete:
-      operationId: deleteApiV1FlowerAuthLogout
-      tags: [Flower]
-      summary: Destroy the current flower session.
-      responses:
-        "204":
-          description: Logged out.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Bearer access token.
+        "400":
+          $ref: "#/components/responses/FlowerError"
+        "429":
+          $ref: "#/components/responses/FlowerError"
   /api/v1/flower/me:
     get:
       operationId: getApiV1FlowerMe
       tags: [Flower]
       summary: Return the authenticated flower user.
+      security:
+        - flowerBearer: []
       responses:
         "200":
           description: Flower user.
@@ -139,35 +163,39 @@ paths:
     get:
       operationId: getApiV1FlowerDriveItems
       tags: [Flower]
-      summary: List active DriveItems for flower.
+      summary: List active image and video files for flower.
+      security:
+        - flowerBearer: []
       parameters:
         - $ref: "#/components/parameters/ParentId"
         - name: query
           in: query
           schema:
             type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
       responses:
         "200":
           description: DriveItems.
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /api/v1/flower/drive_items/resolve:
-    post:
-      operationId: postApiV1FlowerDriveItemsResolve
-      tags: [Flower]
-      summary: Resolve flower asset state in bulk.
-      responses:
-        "200":
-          description: Resolve results.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "422":
-          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/FlowerError"
   /api/v1/flower/drive_items/{id}:
     get:
       operationId: getApiV1FlowerDriveItem
       tags: [Flower]
       summary: Return one active DriveItem for flower.
+      security:
+        - flowerBearer: []
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -182,6 +210,8 @@ paths:
       operationId: getApiV1FlowerDriveItemDownload
       tags: [Flower]
       summary: Deliver a flower DriveItem download through X-Accel-Redirect.
+      security:
+        - flowerBearer: []
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -189,6 +219,8 @@ paths:
           $ref: "#/components/responses/AccelRedirect"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/FlowerError"
         "404":
           $ref: "#/components/responses/NotFound"
   /api/v1/me:
@@ -1270,6 +1302,9 @@ components:
       type: apiKey
       in: cookie
       name: _mitsubachi_ruby_session
+    flowerBearer:
+      type: http
+      scheme: bearer
   parameters:
     Id:
       name: id
@@ -1411,6 +1446,37 @@ components:
                 oneOf:
                   - type: string
                   - type: object
+    FlowerError:
+      description: Flower API error response.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message, request_id]
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - invalid_request
+                      - invalid_grant
+                      - authorization_pending
+                      - slow_down
+                      - access_denied
+                      - expired_token
+                      - invalid_token
+                      - insufficient_scope
+                      - not_found
+                      - conflict
+                      - rate_limited
+                      - internal_error
+                  message:
+                    type: string
+                  request_id:
+                    type: string
     Errors:
       description: Validation errors.
       content:

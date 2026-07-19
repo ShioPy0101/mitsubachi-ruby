@@ -57,8 +57,6 @@ class ApplicationController < ActionController::API
     return if devise_controller?
     return if controller_path == "api/v1/sessions"
     return if controller_path == "api/v1/csrf_tokens"
-    return if controller_path.start_with?("api/v1/flower/auth")
-    return if controller_path == "api/v1/flower/csrf_tokens"
 
     sign_out(current_user)
     reset_session
