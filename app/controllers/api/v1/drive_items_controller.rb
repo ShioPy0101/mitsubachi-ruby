@@ -11,12 +11,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def index
     @drive_items =
-      current_user.organization
-                  .drive_items
-                  .includes(:owner_user, :parent)
-                  .active
-                  .where(parent_id: params[:parent_id])
-                  .order(item_type: :desc, name: :asc)
+      drive_item_query.list(parent_id: params[:parent_id])
 
     render json: @drive_items.map { |drive_item| drive_item_json(drive_item) }
   end
@@ -27,7 +22,7 @@ class Api::V1::DriveItemsController < ApplicationController
     page = [ params[:page].to_i, 1 ].max
     per_page = params[:per_page].present? ? params[:per_page].to_i.clamp(1, 50) : 20
 
-    items = current_user.organization.drive_items.includes(:owner_user, :parent).active
+    items = drive_item_query.active.includes(:owner_user, :parent)
     items = items.where(parent_id: params[:parent_id]) if scope == "current"
     items = apply_drive_item_search(items, query) if query.present?
 
@@ -315,7 +310,7 @@ class Api::V1::DriveItemsController < ApplicationController
   private
 
   def set_active_drive_item
-    @drive_item = current_user.organization.drive_items.active.find_by(id: params[:id])
+    @drive_item = drive_item_query.find_active(params[:id])
     return if @drive_item.present?
 
     render_not_found
@@ -329,7 +324,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def set_deliverable_drive_item
-    @drive_item = current_user.organization.drive_items.active.find_by(id: params[:id])
+    @drive_item = drive_item_query.find_deliverable(params[:id])
     return if @drive_item.present?
 
     render_not_found
@@ -403,6 +398,10 @@ class Api::V1::DriveItemsController < ApplicationController
       "LOWER(COALESCE(owner_users.display_name, owner_users.name, '')) LIKE :pattern",
       pattern: pattern
     )
+  end
+
+  def drive_item_query
+    @drive_item_query ||= DriveItems::Query.new(organization: current_user.organization)
   end
 
   def drive_item_json(drive_item, include_breadcrumbs: false)

@@ -22,9 +22,28 @@ class ApplicationController < ActionController::API
       target: target,
       outcome: outcome,
       changes: changes,
-      metadata: metadata,
+      metadata: { client_type: current_client_type }.merge(metadata),
       request: request
     )
+  end
+
+  def current_organization
+    current_user&.organization
+  end
+
+  def current_client_type
+    session[:client_type].presence_in(%w[web flower]) || "web"
+  end
+
+  def create_authenticated_session!(user, client_type:)
+    reset_session
+    sign_in(user)
+    session[:client_type] = client_type.presence_in(%w[web flower]) || "web"
+  end
+
+  def destroy_authenticated_session!
+    sign_out(current_user) if current_user
+    reset_session
   end
 
   def current_user_or_nil
@@ -38,6 +57,8 @@ class ApplicationController < ActionController::API
     return if devise_controller?
     return if controller_path == "api/v1/sessions"
     return if controller_path == "api/v1/csrf_tokens"
+    return if controller_path.start_with?("api/v1/flower/auth")
+    return if controller_path == "api/v1/flower/csrf_tokens"
 
     sign_out(current_user)
     reset_session

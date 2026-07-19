@@ -16,12 +16,13 @@ module DriveItems
       end
     end
 
-    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil)
+    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil, client_type: "web")
       @drive_item = drive_item
       @current_user = current_user
       @request = request
       @action = action.to_sym
       @audit_organization = audit_organization || drive_item.organization
+      @client_type = client_type
     end
 
     def call
@@ -38,7 +39,8 @@ module DriveItems
         user: @current_user,
         drive_item: @drive_item,
         action: @action,
-        request: @request
+        request: @request,
+        metadata: { client_type: @client_type }
       ).call
       return Result.failure(:service_unavailable, audit_result.error_message) unless audit_result.success?
 

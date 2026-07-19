@@ -11,6 +11,26 @@ Rails.application.routes.draw do
       resource :me, only: :show, controller: :me
       resource :group, only: %i[show update], controller: :groups
 
+      namespace :flower do
+        resource :csrf_token, only: :show, controller: :csrf_tokens
+        scope "auth", controller: :auth do
+          post :create
+          post :login
+          post :verify
+          delete :logout
+        end
+        resource :me, only: :show, controller: :me
+        resources :drive_items, only: %i[index show] do
+          member do
+            get :download
+          end
+
+          collection do
+            post :resolve
+          end
+        end
+      end
+
       namespace :admin do
         resource :dashboard, only: :show
         resources :organizations, only: %i[index show create update]
