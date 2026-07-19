@@ -45,6 +45,8 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     get api_v1_drive_item_url(@other_item)
 
     assert_response :not_found
+    assert_equal "not_found", response.parsed_body.dig("error", "code")
+    assert response.parsed_body.dig("error", "request_id").present?
   end
 
   test "削除済みアイテムは show できない" do
@@ -130,6 +132,118 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @root.id, @child_folder.reload.parent_id
   end
 
+  test "show はルートから現在地までのbreadcrumbsを返す" do
+    sign_in @user
+    h1 = create_directory(name: "h1")
+    h2 = create_directory(name: "h2", parent: h1)
+    h3 = create_directory(name: "h3", parent: h2)
+    world = create_directory(name: "world", parent: h3)
+
+    get api_v1_drive_item_url(world)
+
+    assert_response :ok
+    assert_equal(
+      [
+        { "id" => nil, "name" => "共有ドライブ" },
+        { "id" => h1.id, "name" => "h1" },
+        { "id" => h2.id, "name" => "h2" },
+        { "id" => h3.id, "name" => "h3" },
+        { "id" => world.id, "name" => "world" }
+      ],
+      response.parsed_body.fetch("breadcrumbs")
+    )
+  end
+
+  test "move API は移動後の項目とrequest_idを返し監査ログを記録する" do
+    sign_in @user
+    destination = create_directory(name: "destination")
+
+    assert_difference "AuditEvent.where(action: 'drive_item.move').count", 1 do
+      patch move_api_v1_drive_item_url(@file), params: { parent_id: destination.id }
+    end
+
+    assert_response :ok
+    assert_equal destination.id, @file.reload.parent_id
+    assert_equal @file.id, response.parsed_body.dig("data", "id")
+    assert response.parsed_body.fetch("request_id").present?
+    event = AuditEvent.where(action: "drive_item.move").last
+    assert_equal [ @root.id, destination.id ], event.change_set["parent_id"]
+  end
+
+  test "move API は別organizationの親を拒否する" do
+    sign_in @user
+
+    patch move_api_v1_drive_item_url(@file), params: { parent_id: @other_item.id }
+
+    assert_response :not_found
+    assert_equal "invalid_parent", response.parsed_body.dig("error", "code")
+    assert_equal @root.id, @file.reload.parent_id
+  end
+
+  test "move API は自分自身への移動を拒否する" do
+    sign_in @user
+
+    patch move_api_v1_drive_item_url(@child_folder), params: { parent_id: @child_folder.id }
+
+    assert_response :unprocessable_entity
+    assert_equal "validation_failed", response.parsed_body.dig("error", "code")
+    assert_equal @root.id, @child_folder.reload.parent_id
+  end
+
+  test "move API は子孫への移動を拒否する" do
+    sign_in @user
+
+    patch move_api_v1_drive_item_url(@child_folder), params: { parent_id: @grandchild_folder.id }
+
+    assert_response :unprocessable_entity
+    assert_equal "validation_failed", response.parsed_body.dig("error", "code")
+    assert_equal @root.id, @child_folder.reload.parent_id
+  end
+
+  test "move API は削除済みフォルダーへの移動を拒否する" do
+    sign_in @user
+
+    patch move_api_v1_drive_item_url(@file), params: { parent_id: @deleted_folder.id }
+
+    assert_response :not_found
+    assert_equal "invalid_parent", response.parsed_body.dig("error", "code")
+    assert_equal @root.id, @file.reload.parent_id
+  end
+
+  test "move API は同じ親への移動を拒否する" do
+    sign_in @user
+
+    patch move_api_v1_drive_item_url(@file), params: { parent_id: @root.id }
+
+    assert_response :unprocessable_entity
+    assert_equal "validation_failed", response.parsed_body.dig("error", "code")
+    assert_equal @root.id, @file.reload.parent_id
+  end
+
+  test "move API は同名衝突を409で返す" do
+    sign_in @user
+    destination = create_directory(name: "destination")
+    storage_key = "#{SecureRandom.uuid}.#{@file.extension}"
+    write_storage_file(storage_key, "duplicate")
+    DriveItem.create!(
+      organization: @organization,
+      owner_user: @user,
+      parent: destination,
+      name: @file.name,
+      item_type: "file",
+      extension: @file.extension,
+      blob_path: storage_key,
+      storage_key: storage_key
+    )
+
+    patch move_api_v1_drive_item_url(@file), params: { parent_id: destination.id }
+
+    assert_response :conflict
+    assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
+    assert_equal "name", response.parsed_body.dig("error", "details", "field")
+    assert_equal @root.id, @file.reload.parent_id
+  end
+
   test "bulk_move は途中失敗時にロールバックする" do
     sign_in @user
     movable = DriveItem.create!(
@@ -162,6 +276,22 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_equal @root.id, movable.reload.parent_id
     assert_equal @root.id, ancestor.reload.parent_id
+  end
+
+  test "bulk_move は同名衝突時にロールバックし409を返す" do
+    sign_in @user
+    movable = create_directory(name: "movable", parent: @root)
+    destination = create_directory(name: "destination")
+    create_directory(name: "movable", parent: destination)
+
+    post bulk_move_api_v1_drive_items_url, params: {
+      drive_item_ids: [ movable.id ],
+      parent_id: destination.id
+    }
+
+    assert_response :conflict
+    assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
+    assert_equal @root.id, movable.reload.parent_id
   end
 
   test "DB保存失敗時にアップロード済みファイルが削除される" do
@@ -284,9 +414,10 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :conflict
-    assert_equal "name_conflict", response.parsed_body.dig("error", "code")
-    assert_equal "name", response.parsed_body.dig("error", "field")
-    assert_equal @file.name, response.parsed_body.dig("error", "conflicting_name")
+    assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
+    assert_equal "name", response.parsed_body.dig("error", "details", "field")
+    assert_equal @file.name, response.parsed_body.dig("error", "details", "conflicting_name")
+    assert response.parsed_body.dig("error", "request_id").present?
   end
 
   test "複数ファイルをZIPで取得できる" do
@@ -362,7 +493,9 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ missing_file.id ] }
 
     assert_response :not_found
-    assert_equal({ "error" => "実ファイルが見つからないファイルが含まれています" }, response.parsed_body)
+    assert_equal "not_found", response.parsed_body.dig("error", "code")
+    assert_equal "実ファイルが見つからないファイルが含まれています", response.parsed_body.dig("error", "message")
+    assert response.parsed_body.dig("error", "request_id").present?
   end
 
   test "ファイル名にパス区切り文字があってもZIP Slipが起きない" do
@@ -428,7 +561,8 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ file.id ] }
 
     assert_response :unprocessable_entity
-    assert_equal({ "error" => "ZIPファイルを送信できませんでした" }, response.parsed_body)
+    assert_equal "validation_failed", response.parsed_body.dig("error", "code")
+    assert_equal "ZIPファイルを送信できませんでした", response.parsed_body.dig("error", "message")
     assert captured_result
     assert_not File.exist?(captured_result.zip_path)
   ensure
@@ -441,7 +575,8 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [] }
 
     assert_response :unprocessable_entity
-    assert_equal({ "error" => "対象が指定されていません" }, response.parsed_body)
+    assert_equal "validation_failed", response.parsed_body.dig("error", "code")
+    assert_equal "対象が指定されていません", response.parsed_body.dig("error", "message")
   end
 
   private

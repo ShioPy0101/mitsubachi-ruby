@@ -8,6 +8,12 @@ class ApplicationController < ActionController::API
 
   private
 
+  def authenticate_user!(_options = {})
+    return if user_signed_in?
+
+    render_api_error(:unauthorized, "ログインが必要です。", status: :unauthorized)
+  end
+
   def record_audit_event!(action:, actor_user: current_user_or_nil, organization: actor_user&.organization, target: nil, outcome: "success", changes: {}, metadata: {})
     AuditEvents::Recorder.record!(
       action: action,
@@ -35,15 +41,43 @@ class ApplicationController < ActionController::API
 
     sign_out(current_user)
     reset_session
-    render json: { error: "このユーザーは停止されています" }, status: :unauthorized
+    render_api_error(:unauthorized, "このユーザーは停止されています", status: :unauthorized)
   end
 
   def render_not_found(message = "指定されたリソースが見つかりません")
-    render json: { error: message }, status: :not_found
+    render_api_error(:not_found, message, status: :not_found)
   end
 
   def render_invalid_authenticity_token
     reset_session
-    render json: { error: "CSRF token が無効です" }, status: :unprocessable_entity
+    render_api_error(:validation_failed, "認証情報の確認に失敗しました。再読み込みしてからやり直してください", status: :unprocessable_entity)
+  end
+
+  def render_api_error(code, message, status:, details: {})
+    status = :unprocessable_content if status == :unprocessable_entity
+    Rails.logger.info("api_error request_id=#{request.request_id} code=#{code} status=#{Rack::Utils.status_code(status)}")
+    render json: {
+      error: {
+        code: code.to_s,
+        message: message,
+        details: details,
+        request_id: request.request_id
+      }
+    }, status: status
+  end
+
+  def render_validation_failed(record_or_messages)
+    messages =
+      if record_or_messages.respond_to?(:errors)
+        record_or_messages.errors.full_messages
+      else
+        Array(record_or_messages)
+      end
+    render_api_error(
+      :validation_failed,
+      messages.first || "入力内容を確認してください",
+      status: :unprocessable_entity,
+      details: { messages: messages }
+    )
   end
 end

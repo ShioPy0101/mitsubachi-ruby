@@ -31,7 +31,7 @@ class Api::V1::GroupsController < ApplicationController
       )
       render json: { data: { id: organization.id, name: organization.name, description: organization.description } }
     else
-      render json: { errors: organization.errors.full_messages }, status: :unprocessable_entity
+      render_validation_failed(organization)
     end
   end
 
@@ -52,7 +52,7 @@ class Api::V1::GroupsController < ApplicationController
   end
 
   def render_forbidden
-    render json: { error: "この操作を実行する権限がありません" }, status: :forbidden
+    render_api_error(:forbidden, "この操作を実行する権限がありません", status: :forbidden)
   end
 
   def changed_values(before, after)

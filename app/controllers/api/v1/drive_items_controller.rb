@@ -3,7 +3,7 @@ require "securerandom"
 
 class Api::V1::DriveItemsController < ApplicationController
   before_action :authenticate_user!
-  before_action :set_active_drive_item, only: %i[show update destroy]
+  before_action :set_active_drive_item, only: %i[show update move destroy]
   before_action :set_deleted_drive_item, only: %i[restore]
   before_action :set_deliverable_drive_item, only: %i[preview download stream]
 
@@ -49,17 +49,17 @@ class Api::V1::DriveItemsController < ApplicationController
     item_type = params[:item_type]
 
     unless valid_item_type?(item_type)
-      render json: { error: "ファイルタイプは file または directory のいずれかである必要があります" }, status: :unprocessable_entity
+      render_api_error(:validation_failed, "ファイルタイプは file または directory のいずれかである必要があります", status: :unprocessable_entity)
       return
     end
 
     if file_item_without_upload?(item_type)
-      render json: { error: "ファイルが指定されていません" }, status: :unprocessable_entity
+      render_api_error(:invalid_file, "ファイルが指定されていません", status: :unprocessable_entity)
       return
     end
 
     if directory_item_with_upload?(item_type)
-      render json: { error: "ディレクトリ作成時にファイルは指定できません" }, status: :unprocessable_entity
+      render_api_error(:invalid_file, "ディレクトリ作成時にファイルは指定できません", status: :unprocessable_entity)
       return
     end
 
@@ -83,7 +83,7 @@ class Api::V1::DriveItemsController < ApplicationController
     if item_type == "file"
       uploaded_file = params[:file]
       if upload_too_large?(uploaded_file)
-        render json: { error: "ファイルサイズが上限を超えています" }, status: :content_too_large
+        render_api_error(:payload_too_large, "ファイルサイズが上限を超えています", status: :content_too_large)
         return
       end
 
@@ -106,13 +106,13 @@ class Api::V1::DriveItemsController < ApplicationController
           record_drive_item_event!("drive_item.create", @drive_item)
           render json: drive_item_json(@drive_item), status: :created
         else
-          render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+          render_validation_failed(@drive_item)
         end
       rescue ActiveRecord::ActiveRecordError => error
         Rails.logger.error("[drive_items.create] failed to save drive_item error=#{error.class}: #{error.message}")
-        render json: { error: "ファイルを保存できませんでした" }, status: :unprocessable_entity
+        render_api_error(:validation_failed, "ファイルを保存できませんでした", status: :unprocessable_entity)
       rescue DriveItems::StoredFileInspector::UploadTooLargeError
-        render json: { error: "ファイルサイズが上限を超えています" }, status: :content_too_large
+        render_api_error(:payload_too_large, "ファイルサイズが上限を超えています", status: :content_too_large)
       ensure
         cleanup_uploaded_file!(generated_storage_key) if file_saved && !saved
       end
@@ -128,13 +128,13 @@ class Api::V1::DriveItemsController < ApplicationController
         record_drive_item_event!("drive_item.create", @drive_item)
         render json: drive_item_json(@drive_item), status: :created
       else
-        render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+        render_validation_failed(@drive_item)
       end
     end
   end
 
   def show
-    render json: drive_item_json(@drive_item)
+    render json: drive_item_json(@drive_item, include_breadcrumbs: true)
   end
 
   def update
@@ -162,7 +162,28 @@ class Api::V1::DriveItemsController < ApplicationController
       )
       render json: drive_item_json(@drive_item)
     else
-      render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+      render_validation_failed(@drive_item)
+    end
+  end
+
+  def move
+    before = @drive_item.slice("parent_id")
+    return unless assign_parent_for_move!(@drive_item, normalized_parent_id)
+
+    if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension: @drive_item.extension, excluding_id: @drive_item.id)
+      render_duplicate_name(@drive_item.name)
+      return
+    end
+
+    if @drive_item.save
+      record_drive_item_event!(
+        "drive_item.move",
+        @drive_item,
+        changes: changed_values(before, @drive_item.slice("parent_id"))
+      )
+      render json: { data: drive_item_json(@drive_item), request_id: request.request_id }
+    else
+      render_validation_failed(@drive_item)
     end
   end
 
@@ -172,7 +193,7 @@ class Api::V1::DriveItemsController < ApplicationController
       record_drive_item_event!("drive_item.delete", @drive_item, changes: { deleted_at: [ before, @drive_item.deleted_at ] })
       render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
     else
-      render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+      render_validation_failed(@drive_item)
     end
   end
 
@@ -190,10 +211,27 @@ class Api::V1::DriveItemsController < ApplicationController
     new_parent_id = normalized_parent_id
     return unless validate_parent_id(new_parent_id, not_found_message: "指定された新しい親フォルダが見つかりません", invalid_message: "新しい親にはディレクトリを指定してください")
 
-    update_drive_items!(active_drive_items_for_bulk) do |drive_item|
-      drive_item.update!(parent_id: new_parent_id)
+    drive_items = active_drive_items_for_bulk.to_a
+    drive_items.each do |drive_item|
+      return if invalid_move_target?(drive_item, new_parent_id)
+
+      if duplicate_active_item?(parent_id: new_parent_id, name: drive_item.name, extension: drive_item.extension, excluding_id: drive_item.id)
+        render_duplicate_name(drive_item.name)
+        return
+      end
     end
-    record_bulk_drive_item_event!("drive_item.bulk_move", parent_id: new_parent_id) unless performed?
+
+    update_drive_items!(drive_items) do |drive_item|
+      old_parent_id = drive_item.parent_id
+      drive_item.update!(parent_id: new_parent_id)
+      record_drive_item_event!(
+        "drive_item.move",
+        drive_item,
+        changes: { parent_id: [ old_parent_id, new_parent_id ] },
+        metadata: { bulk: true, count: drive_items.size }
+      )
+    end
+    record_bulk_drive_item_event!("drive_item.bulk_move", parent_id: new_parent_id, count: drive_items.size) unless performed?
 
     render json: { message: "ファイルまたはフォルダを移動しました" } unless performed?
   end
@@ -225,7 +263,7 @@ class Api::V1::DriveItemsController < ApplicationController
     ).call
 
     unless result.success?
-      render json: { error: result.error_message }, status: result.status
+      render_api_error(error_code_for_status(result.status), result.error_message, status: result.status)
       return
     end
 
@@ -236,7 +274,7 @@ class Api::V1::DriveItemsController < ApplicationController
     Rails.logger.error("[drive_items.bulk_download] failed to send zip error=#{error.class}: #{error.message}")
     return if performed?
 
-    render json: { error: "ZIPファイルを送信できませんでした" }, status: :unprocessable_entity
+    render_api_error(:validation_failed, "ZIPファイルを送信できませんでした", status: :unprocessable_entity)
   end
 
   def preview
@@ -257,7 +295,7 @@ class Api::V1::DriveItemsController < ApplicationController
       record_drive_item_event!("drive_item.restore", @drive_item, changes: { deleted_at: [ before, nil ] })
       render json: drive_item_json(@drive_item)
     else
-      render json: { errors: @drive_item.errors.full_messages }, status: :unprocessable_entity
+      render_validation_failed(@drive_item)
     end
   end
 
@@ -290,7 +328,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def normalized_parent_id
     parent_id = params[:parent_id]
-    parent_id.present? ? parent_id : nil
+    parent_id.present? ? parent_id.to_i : nil
   end
 
   def valid_item_type?(item_type)
@@ -310,12 +348,12 @@ class Api::V1::DriveItemsController < ApplicationController
 
     parent = current_user.organization.drive_items.active.find_by(id: parent_id)
     if parent.nil?
-      render json: { error: not_found_message }, status: :not_found
+      render_api_error(:invalid_parent, not_found_message, status: :not_found)
       return false
     end
 
     unless parent.directory?
-      render json: { error: invalid_message }, status: :unprocessable_entity
+      render_api_error(:invalid_parent, invalid_message, status: :unprocessable_entity)
       return false
     end
 
@@ -350,8 +388,8 @@ class Api::V1::DriveItemsController < ApplicationController
     )
   end
 
-  def drive_item_json(drive_item)
-    {
+  def drive_item_json(drive_item, include_breadcrumbs: false)
+    data = {
       id: drive_item.id,
       parent_id: drive_item.parent_id,
       parent_name: drive_item.parent&.name,
@@ -366,31 +404,109 @@ class Api::V1::DriveItemsController < ApplicationController
       created_at: drive_item.created_at,
       updated_at: drive_item.updated_at
     }
+    data[:breadcrumbs] = breadcrumbs_for(drive_item) if include_breadcrumbs
+    data
+  end
+
+  def breadcrumbs_for(drive_item)
+    ancestors = []
+    current = drive_item
+
+    while current.present?
+      return root_breadcrumbs if current.deleted_at.present?
+      return root_breadcrumbs if current.organization_id != current_user.organization_id
+
+      ancestors.unshift({ id: current.id, name: current.name })
+      current = current.parent
+    end
+
+    root_breadcrumbs + ancestors
+  end
+
+  def root_breadcrumbs
+    [ { id: nil, name: "共有ドライブ" } ]
+  end
+
+  def assign_parent_for_move!(drive_item, parent_id)
+    return false if invalid_move_target?(drive_item, parent_id)
+    return true if parent_id.blank? && drive_item.parent_id.nil?
+
+    return false unless validate_parent_id(parent_id, not_found_message: "指定された移動先フォルダが見つかりません", invalid_message: "移動先にはフォルダーを指定してください")
+
+    drive_item.parent_id = parent_id
+    true
+  end
+
+  def invalid_move_target?(drive_item, parent_id)
+    if parent_id.present? && parent_id.to_i == drive_item.id
+      render_invalid_move("自分自身へ移動できません")
+      return true
+    end
+
+    if drive_item.parent_id == parent_id
+      render_invalid_move("同じ場所へは移動できません")
+      return true
+    end
+
+    if parent_id.present? && drive_item.directory? && descendant_id?(drive_item, parent_id.to_i)
+      render_invalid_move("フォルダーを自身の配下へ移動できません")
+      return true
+    end
+
+    false
+  end
+
+  def descendant_id?(drive_item, parent_id)
+    current = current_user.organization.drive_items.active.find_by(id: parent_id)
+    while current.present?
+      return true if current.parent_id == drive_item.id
+
+      current = current.parent
+    end
+    false
+  end
+
+  def render_invalid_move(message)
+    render_api_error(:validation_failed, message, status: :unprocessable_entity)
+    false
+  end
+
+  def render_duplicate_name(name)
+    render_api_error(
+      :duplicate_name,
+      "同じ名前のファイルまたはフォルダーが存在します。",
+      status: :conflict,
+      details: { field: "name", conflicting_name: name }
+    )
+  end
+
+  def error_code_for_status(status)
+    case Rack::Utils.status_code(status)
+    when 401 then :unauthorized
+    when 403 then :forbidden
+    when 404 then :not_found
+    when 413 then :payload_too_large
+    when 422 then :validation_failed
+    when 500..599 then :internal_error
+    else :validation_failed
+    end
   end
 
   def render_name_conflict(name)
-    render json: {
-      error: {
-        code: "name_conflict",
-        message: "同じ名前の項目が存在します",
-        field: "name",
-        conflicting_name: name,
-        request_id: request.request_id
-      }
-    }, status: :conflict
+    render_duplicate_name(name)
   end
 
   def update_drive_items!(drive_items)
     ActiveRecord::Base.transaction do
-      drive_items.find_each do |drive_item|
+      drive_items.each do |drive_item|
         yield drive_item
       end
     end
   rescue ActiveRecord::RecordInvalid => error
-    render json: { errors: error.record.errors.full_messages }, status: :unprocessable_entity
+    render_validation_failed(error.record)
   rescue ActiveRecord::ActiveRecordError => error
     Rails.logger.error("[drive_items.bulk] failed error=#{error.class}: #{error.message}")
-    render json: { error: "一括操作に失敗しました" }, status: :unprocessable_entity
+    render_api_error(:validation_failed, "一括操作に失敗しました", status: :unprocessable_entity)
   end
 
   def save_uploaded_file(uploaded_file, storage_key)
@@ -427,7 +543,7 @@ class Api::V1::DriveItemsController < ApplicationController
     ).call
 
     unless result.success?
-      render json: { error: result.error_message }, status: result.status
+      render_api_error(error_code_for_status(result.status), result.error_message, status: result.status)
       return
     end
 
@@ -439,7 +555,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def render_not_found
-    render json: { error: "指定されたファイルが見つかりません" }, status: :not_found
+    render_api_error(:not_found, "指定されたファイルが見つかりません", status: :not_found)
   end
 
   def record_bulk_download_access!(drive_items)
