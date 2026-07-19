@@ -141,6 +141,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
         token: hashed_token,
         expires_at: now + AUTHENTICATION_TOKEN_TTL,
         purpose: "registration",
+        delivery_token: raw_token,
         organization_invite: invite
       )
     end
@@ -170,7 +171,8 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
         email: email,
         token: hashed_token,
         expires_at: now + AUTHENTICATION_TOKEN_TTL,
-        purpose: "login"
+        purpose: "login",
+        delivery_token: raw_token
       )
     end
 
@@ -311,18 +313,11 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   end
 
   def deliver_magic_link(result)
-    mailer = EmailAuthenticationMailer.with(
+    EmailAuthentications::MagicLinkDelivery.call(
       email: result.email,
-      token: result.token,
       organization: result.organization,
       authentication: result.authentication
     )
-
-    if result.authentication.registration?
-      mailer.registration_link.deliver_later
-    else
-      mailer.login_link.deliver_later
-    end
   end
 
   def render_verified_user(result)

@@ -33,4 +33,19 @@ class EmailAuthenticationTest < ActiveSupport::TestCase
     assert_not authentication.valid?
     assert_includes authentication.errors[:token], "has already been taken"
   end
+
+  test "stores delivery token encrypted separately from hashed token" do
+    raw_token = "raw-delivery-token"
+    authentication = EmailAuthentication.create!(
+      email: "delivery-token@example.com",
+      token: Digest::SHA256.hexdigest(raw_token),
+      expires_at: 1.hour.from_now,
+      purpose: "login",
+      delivery_token: raw_token
+    )
+
+    assert_equal raw_token, authentication.delivery_token
+    assert_not_equal raw_token, authentication.delivery_token_ciphertext
+    assert_equal Digest::SHA256.hexdigest(raw_token), authentication.token
+  end
 end
