@@ -22,9 +22,14 @@ class EmailAuthenticationMailer < ApplicationMailer
   def assign_authentication_mail_values
     @organization = params.fetch(:organization)
     @authentication = params.fetch(:authentication)
-    @auth_url = authentication_url(params.fetch(:token), @authentication.purpose)
+    @auth_url = authentication_url(authentication_token, @authentication.purpose)
     @issued_at = format_mail_time(@authentication.created_at)
     @expires_at = format_mail_time(@authentication.expires_at)
+  end
+
+  def authentication_token
+    params[:token].presence || params.fetch(:authentication).delivery_token.presence ||
+      raise(ArgumentError, "Email authentication delivery token is unavailable")
   end
 
   def authentication_url(token, purpose)

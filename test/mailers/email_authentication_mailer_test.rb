@@ -22,12 +22,12 @@ class EmailAuthenticationMailerTest < ActionMailer::TestCase
         token: Digest::SHA256.hexdigest(raw_token),
         expires_at: 15.minutes.from_now,
         purpose: "registration",
+        delivery_token: raw_token,
         organization_invite: organization_invites(:one)
       )
 
       mail = EmailAuthenticationMailer.with(
         email: authentication.email,
-        token: raw_token,
         organization: organization,
         authentication: authentication
       ).registration_link
@@ -67,12 +67,12 @@ class EmailAuthenticationMailerTest < ActionMailer::TestCase
         email: "login-mail@example.com",
         token: Digest::SHA256.hexdigest(raw_token),
         expires_at: 15.minutes.from_now,
-        purpose: "login"
+        purpose: "login",
+        delivery_token: raw_token
       )
 
       mail = EmailAuthenticationMailer.with(
         email: authentication.email,
-        token: raw_token,
         organization: organization,
         authentication: authentication
       ).login_link
@@ -102,6 +102,49 @@ class EmailAuthenticationMailerTest < ActionMailer::TestCase
       assert_match(/2026年7月19日 22:30 JST/, text_body)
       refute_includes text_body, "アカウント登録"
       refute_includes text_body, "招待が届いています"
+    end
+  end
+
+  test "parameterized login link accepts existing queued token params" do
+    travel_to Time.zone.local(2026, 7, 19, 22, 30, 0) do
+      authentication = EmailAuthentication.create!(
+        email: "queued-login@example.com",
+        token: Digest::SHA256.hexdigest("queued-login-token"),
+        expires_at: 15.minutes.from_now,
+        purpose: "login"
+      )
+
+      message = EmailAuthenticationMailer.with(
+        email: authentication.email,
+        token: "queued-login-token",
+        organization: organizations(:one),
+        authentication: authentication
+      ).login_link.message
+
+      assert_equal "【Mitsubachi】ログインリンクのご案内", message.subject
+      assert_includes message.text_part.decoded, "queued-login-token"
+    end
+  end
+
+  test "parameterized registration link accepts existing queued token params" do
+    travel_to Time.zone.local(2026, 7, 19, 22, 30, 0) do
+      authentication = EmailAuthentication.create!(
+        email: "queued-registration@example.com",
+        token: Digest::SHA256.hexdigest("queued-registration-token"),
+        expires_at: 15.minutes.from_now,
+        purpose: "registration",
+        organization_invite: organization_invites(:one)
+      )
+
+      message = EmailAuthenticationMailer.with(
+        email: authentication.email,
+        token: "queued-registration-token",
+        organization: organizations(:one),
+        authentication: authentication
+      ).registration_link.message
+
+      assert_equal "【Mitsubachi】アカウント登録のご案内", message.subject
+      assert_includes message.text_part.decoded, "queued-registration-token"
     end
   end
 end
