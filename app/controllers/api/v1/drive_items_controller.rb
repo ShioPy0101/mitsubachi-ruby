@@ -85,8 +85,13 @@ class Api::V1::DriveItemsController < ApplicationController
       end
 
       upload_hash = digest_uploaded_file(uploaded_file)
+      if !allow_duplicate_content? && duplicate_content_items(upload_hash).exists?
+        render_duplicate_content(upload_hash)
+        return
+      end
+
       if duplicate_active_item?(parent_id:, name:, extension:)
-        render_name_conflict(name, parent_id:, extension:, upload_hash:)
+        render_name_conflict(name, parent_id:, extension:)
         return
       end
 
@@ -483,13 +488,33 @@ class Api::V1::DriveItemsController < ApplicationController
     false
   end
 
-  def render_duplicate_name(name, parent_id: nil, extension: nil, upload_hash: nil)
-    details = duplicate_name_details(name, parent_id:, extension:, upload_hash:)
+  def render_duplicate_name(name, parent_id: nil, extension: nil)
+    details = duplicate_name_details(name, parent_id:, extension:)
     render_api_error(
       details[:code],
       details[:message],
       status: :conflict,
       details: details.except(:code, :message)
+    )
+  end
+
+  def render_duplicate_content(upload_hash)
+    files = duplicate_content_items(upload_hash).includes(:owner_user, :parent).order(deleted_at: :asc, created_at: :desc)
+    message =
+      if files.all? { |drive_item| drive_item.deleted_at.present? }
+        "同じ内容のファイルが、この組織のごみ箱に存在します。"
+      else
+        "同じ内容のファイルが、この組織内にすでに存在します。"
+      end
+
+    render_api_error(
+      :duplicate_content,
+      message,
+      status: :conflict,
+      details: {
+        duplicate_kind: "same_content",
+        duplicate_files: files.map { |drive_item| duplicate_content_file_json(drive_item) }
+      }
     )
   end
 
@@ -505,8 +530,8 @@ class Api::V1::DriveItemsController < ApplicationController
     end
   end
 
-  def render_name_conflict(name, parent_id: nil, extension: nil, upload_hash: nil)
-    render_duplicate_name(name, parent_id:, extension:, upload_hash:)
+  def render_name_conflict(name, parent_id: nil, extension: nil)
+    render_duplicate_name(name, parent_id:, extension:)
   end
 
   def update_drive_items!(drive_items)
@@ -541,16 +566,14 @@ class Api::V1::DriveItemsController < ApplicationController
     io&.rewind
   end
 
-  def duplicate_name_details(name, parent_id:, extension:, upload_hash: nil)
-    duplicate = active_duplicate_item(parent_id:, name:, extension:)
+  def duplicate_name_details(name, parent_id:, extension:)
     suggested_name = next_available_name(parent_id:, name:, extension:)
-    same_content = duplicate&.file? && upload_hash.present? && duplicate.file_hash == upload_hash
     {
-      code: same_content ? :duplicate_content : :duplicate_name,
-      message: same_content ? "同じ内容のファイルがすでに存在します。" : "同じ名前のファイルまたはフォルダーが存在します。",
+      code: :duplicate_name,
+      message: "同じ名前のファイルまたはフォルダーが存在します。",
       field: "name",
       conflicting_name: display_filename(name, extension),
-      duplicate_kind: same_content ? "same_content" : "name",
+      duplicate_kind: "name",
       suggested_name: suggested_name,
       suggested_filename: display_filename(suggested_name, extension)
     }
@@ -558,6 +581,27 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def active_duplicate_item(parent_id:, name:, extension:)
     current_user.organization.drive_items.active.find_by(parent_id:, name:, extension:)
+  end
+
+  def duplicate_content_items(upload_hash)
+    current_user.organization.drive_items.file.where(file_hash: upload_hash)
+  end
+
+  def duplicate_content_file_json(drive_item)
+    {
+      id: drive_item.id,
+      name: drive_item.filename,
+      parent_id: drive_item.parent_id,
+      parent_name: drive_item.parent&.name,
+      owner_display_name: drive_item.owner_user&.safe_display_name,
+      created_at: drive_item.created_at,
+      file_size: drive_item.file_size,
+      deleted: drive_item.deleted_at.present?
+    }
+  end
+
+  def allow_duplicate_content?
+    ActiveModel::Type::Boolean.new.cast(params[:allow_duplicate_content])
   end
 
   def next_available_name(parent_id:, name:, extension:)
