@@ -14,6 +14,7 @@ tags:
   - name: Health
   - name: Session
   - name: DriveItems
+  - name: Flower
   - name: Admin
 paths:
   /api/health:
@@ -64,6 +65,132 @@ paths:
                 properties:
                   csrf_token:
                     type: string
+  /api/v1/flower/csrf_token:
+    get:
+      operationId: getApiV1FlowerCsrfToken
+      tags: [Flower]
+      summary: Return a CSRF token for flower state-changing requests.
+      security: []
+      responses:
+        "200":
+          description: CSRF token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [csrf_token]
+                properties:
+                  csrf_token:
+                    type: string
+  /api/v1/flower/auth/create:
+    post:
+      operationId: postApiV1FlowerAuthCreate
+      tags: [Flower]
+      summary: Alias for requesting a flower login magic link.
+      security: []
+      responses:
+        "200":
+          description: Login link requested.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/flower/auth/login:
+    post:
+      operationId: postApiV1FlowerAuthLogin
+      tags: [Flower]
+      summary: Request a flower login magic link.
+      security: []
+      responses:
+        "200":
+          description: Login link requested.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/flower/auth/verify:
+    post:
+      operationId: postApiV1FlowerAuthVerify
+      tags: [Flower]
+      summary: Verify a flower login magic link and create a flower session.
+      security: []
+      responses:
+        "200":
+          description: Flower session created.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/flower/auth/logout:
+    delete:
+      operationId: deleteApiV1FlowerAuthLogout
+      tags: [Flower]
+      summary: Destroy the current flower session.
+      responses:
+        "204":
+          description: Logged out.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/flower/me:
+    get:
+      operationId: getApiV1FlowerMe
+      tags: [Flower]
+      summary: Return the authenticated flower user.
+      responses:
+        "200":
+          description: Flower user.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/flower/drive_items:
+    get:
+      operationId: getApiV1FlowerDriveItems
+      tags: [Flower]
+      summary: List active DriveItems for flower.
+      parameters:
+        - $ref: "#/components/parameters/ParentId"
+        - name: query
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: DriveItems.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/flower/drive_items/resolve:
+    post:
+      operationId: postApiV1FlowerDriveItemsResolve
+      tags: [Flower]
+      summary: Resolve flower asset state in bulk.
+      responses:
+        "200":
+          description: Resolve results.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/flower/drive_items/{id}:
+    get:
+      operationId: getApiV1FlowerDriveItem
+      tags: [Flower]
+      summary: Return one active DriveItem for flower.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: DriveItem.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/flower/drive_items/{id}/download:
+    get:
+      operationId: getApiV1FlowerDriveItemDownload
+      tags: [Flower]
+      summary: Deliver a flower DriveItem download through X-Accel-Redirect.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/me:
     get:
       operationId: getApiV1Me
@@ -1368,6 +1495,17 @@ components:
             properties:
               error:
                 type: string
+    NotFound:
+      description: Resource was not found or is outside the tenant boundary.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                oneOf:
+                  - type: string
+                  - type: object
     ValidationError:
       description: Validation failed.
       content:

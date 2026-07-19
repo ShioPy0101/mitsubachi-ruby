@@ -11,6 +11,7 @@ Rails backend for the drive API. This repository is deployed as an API-only serv
 - Public frontend origin: `https://drive.shiosalt.com/`
 - Public API origin: `https://mitsubachi-api.shiosalt.com/`
 - API base path: `/api/v1`
+- Flower API base path: `/api/v1/flower`
 - Health checks: `/api/health/live`, `/api/health/ready`
 
 Rails should bind only to a private interface such as `127.0.0.1:3001`. Do not expose the Rails port directly to the internet.
@@ -104,9 +105,10 @@ Caddy can terminate TLS and proxy `/api/*` to Rails, but `X-Accel-Redirect` is N
 ## Security Notes
 
 - Authentication uses Devise Cookie sessions.
+- Flower uses the same Devise Cookie session mechanism through dedicated `/api/v1/flower/*` entrypoints. Sessions created by flower verification store `session[:client_type] = "flower"` server-side.
 - Production cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`.
 - Login verification regenerates the session.
-- CSRF protection is enabled for state-changing requests; frontend clients should fetch `/api/v1/csrf_token` and send `X-CSRF-Token`.
+- CSRF protection is enabled for state-changing requests; frontend clients should fetch `/api/v1/csrf_token` and flower clients should fetch `/api/v1/flower/csrf_token`, then send `X-CSRF-Token`.
 - Production Host Authorization allows `APP_HOST` and does not clear host checks.
 - Set `APP_HOSTS` to the comma-separated public API hostnames accepted by Host Authorization.
 - `config.force_ssl` is enabled in production with reverse proxy TLS termination.
@@ -131,3 +133,5 @@ Back up PostgreSQL and `FILE_STORAGE_ROOT`. They must be restored together to ke
 ## Logs
 
 Production logs go to STDOUT and include Rails request IDs. Do not log passwords, cookies, authorization headers, CSRF tokens, magic link tokens, or file contents.
+
+Flower operations are identified in `audit_events.metadata.client_type` and file access logs. See `docs/flower-api.md` and `docs/audit-logs.md`.

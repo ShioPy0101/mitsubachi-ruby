@@ -11,6 +11,9 @@
 - `Api::V1::DriveItemsController` - ドライブ項目の一覧、作成、移動、削除、復元、ファイル配信、一括ダウンロードを扱う
 - `Api::V1::MeController` - 認証済みユーザー自身のプロフィール情報を返す
 - `Api::V1::EmailAuthenticationsController` - メール認証リンクの発行と検証を扱う
+- `Api::V1::Flower::AuthController` - flower 専用 URL でログインリンク発行、検証、logout を扱い、共通認証サービスを利用する
+- `Api::V1::Flower::DriveItemsController` - flower 専用 URL で drive item の一覧、詳細、resolve、download を扱い、共通 Query / Delivery service を利用する
+- `Api::V1::Flower::MeController` - flower セッションの認証済みユーザー情報を返す
 - `Api::V1::CsrfTokensController` - 同一オリジン frontend が状態変更リクエスト前に使う CSRF token を返す
 - `Api::V1::SessionsController` - logout を扱う
 - `Api::V1::Admin::BaseController` - 管理 API 共通の認証、role 認可、テナント scope、ページネーション、エラーレスポンス、管理監査ログ記録を扱う
@@ -24,12 +27,14 @@
 - Rails は API 専用プロセスとして起動し、フロントエンドの view、Importmap、Turbo、Stimulus、asset 配信を担当しない
 - 公開 API は `/api/v1` 配下、health check は `/api/health` 配下に置く
 - 管理 API は通常ユーザー API と分離し、`/api/v1/admin` 配下に置く
+- flower API は監査上の入口を分けるため `/api/v1/flower` 配下に置く。認証、tenant 境界、DriveItem 取得、配信処理は通常 API と共通の service / concern を使う
 - 本番は frontend の `https://drive.shiosalt.com/` から API の `https://mitsubachi-api.shiosalt.com/` を呼び出す別オリジン構成を前提とする
 - API CORS は `FRONTEND_ORIGIN` の allowlist に一致する `Origin` のみ許可し、404 や認証エラーにも CORS ヘッダーを付与する
 - Rails の内部ポートは `127.0.0.1:3001` などに bind し、インターネットへ直接公開しない
 - Devise の Cookie セッションを使い、Bearer Token や JWT へは変更しない
 - 本番 Cookie は `Secure`、`HttpOnly`、`SameSite=Lax` とする
 - 停止済み User の既存 Cookie セッションは、認証必須 API の共通 before action で拒否する。logout は停止後も利用できるように除外する
+- `session[:client_type]` は server-side に `web` または `flower` を保存する。flower の保護 API は flower 認証 Controller で作成された `flower` セッションを要求し、任意ヘッダーでは client type を変更できない
 
 ## Models
 - `Organization` - ユーザー、招待、ドライブ項目を束ねる組織
@@ -56,6 +61,14 @@
 - User が token 発行後に停止された場合、セッションを作成せず、token は使用済み扱いにする
 - token は SHA-256 hash を DB に保存し、平文 token はメール送信用にのみ扱う
 
+## Flower API
+- flower は After Effects 連携向けの専用 API 入口で、通常 Web API の Controller を直接使わない
+- `Auth::MagicLinks` がメール正規化、token 生成、SHA-256 保存、有効期限、単回使用、invite lock、停止ユーザー拒否を担当し、Web 認証と flower 認証が共有する
+- `DriveItems::Query` が organization 起点の active DriveItem scope、一覧、詳細、配信対象取得を担当する
+- `DriveItems::Resolve` は最大 100 件を organization 内で一括取得し、他 organization や存在しない ID は外部レスポンスで `not_found` にまとめる
+- `/api/v1/flower/drive_items/:id/download` は `DriveItems::DeliveryService` を利用し、Rails から実ファイルを配信せず `X-Accel-Redirect` を返す
+- CEP パネルで Cookie、CSRF、SameSite=Lax、CORS allowlist が成立するかは実機検証項目とする
+
 ## Admin Authorization
 - `User#role` は `member`、`organization_admin`、`system_admin` の enum
 - `member` は管理 API を利用できない
@@ -74,6 +87,9 @@
 
 ## Services
 - `AuditLogs::Recorder` - preview / download / stream の監査ログ記録を集約する。動画の Range リクエストで `stream` ログが増え続けないよう、同一 organization / user / drive_item は 5 分間重複記録を抑制する
+- `Auth::MagicLinks` - Web / flower の magic link 発行と検証の業務ロジックを集約する
+- `DriveItems::Query` - organization 境界内の DriveItem 一覧、詳細、配信対象取得を集約する
+- `DriveItems::Resolve` - flower の素材一括状態確認を扱う
 - `DriveItems::DeliveryService` - 配信対象ファイルの検証、監査ログ記録、`X-Accel-Redirect` 用レスポンスヘッダー生成を担当する
 - `DriveItems::BulkDownloadService` - 複数 drive_item から ZIP を作成し、directory 配下の active file を再帰的に含める
 - `DriveItems::StoredFileInspector` - アップロードファイルを保存しながらサイズ、SHA-256、Content-Type を算出する
