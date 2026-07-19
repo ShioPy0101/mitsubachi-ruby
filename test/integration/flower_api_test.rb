@@ -194,7 +194,10 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
 
   def write_storage_file(drive_item, body)
     FileUtils.mkdir_p(DriveItem.storage_root.join("drive_items"))
+    storage_key = "#{SecureRandom.uuid}.#{drive_item.extension}"
     drive_item.update_columns(
+      storage_key: storage_key,
+      blob_path: DriveItem.storage_relative_path_for(storage_key),
       file_hash: Digest::SHA256.hexdigest(body),
       file_size: body.bytesize,
       content_type: "application/pdf"
