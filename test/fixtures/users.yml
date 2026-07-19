@@ -2,8 +2,10 @@ one:
   organization: one
   email: test1@example.com
   name: MyString
+  display_name: User One
 
 two:
   organization: two
   email: test2@example.com
   name: MyString
+  display_name: User Two

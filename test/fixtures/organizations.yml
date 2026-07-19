@@ -2,6 +2,8 @@
 
 one:
   name: MyString
+  description: Team one description
 
 two:
   name: MyString
+  description: Team two description

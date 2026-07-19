@@ -27,11 +27,13 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   def create
     email = normalize_email(params[:email])
     invite_code = params[:invite_code]
+    display_name = normalize_display_name(params[:display_name])
 
     return render_error("email は必須です", :bad_request) if email.blank?
     return render_error("invite_code は必須です", :bad_request) if invite_code.blank?
+    return render_error("表示名は50文字以内で入力してください", :bad_request) if display_name&.length.to_i > 50
 
-    result = build_registration_request!(email:, invite_code:)
+    result = build_registration_request!(email:, invite_code:, display_name:)
     deliver_magic_link(result)
     record_audit_event!(
       action: "auth.registration_link.create",
@@ -86,7 +88,8 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       message: "ログインに成功しました",
       user: {
         id: result.user.id,
-        email: result.user.email
+        email: result.user.email,
+        display_name: result.user.display_name
       }
     }, status: :ok
   rescue AuthFailure => error
@@ -96,7 +99,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   private
 
-  def build_registration_request!(email:, invite_code:)
+  def build_registration_request!(email:, invite_code:, display_name:)
     raw_token = SecureRandom.urlsafe_base64(32)
     hashed_token = Digest::SHA256.hexdigest(raw_token)
     now = Time.current
@@ -111,10 +114,12 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       existing_user = find_user_by_email(email)
       existing_user&.lock!
       validate_user_for_registration!(existing_user, invite)
+      validate_display_name_for_registration!(display_name, invite, existing_user)
       clear_stale_stand_by!(existing_user, now) if existing_user.present?
 
       stand_by_user = existing_user || User.new(email: email)
       stand_by_user.organization = invite.organization
+      stand_by_user.display_name = display_name if display_name.present?
       stand_by_user.password = SecureRandom.base64(32) unless stand_by_user.persisted?
       stand_by_user.save!
 
@@ -233,6 +238,16 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     reject_provisional_login_user!(user)
   end
 
+  def validate_display_name_for_registration!(display_name, invite, existing_user)
+    return if display_name.blank?
+
+    scope = invite.organization.users.where(display_name: display_name)
+    scope = scope.where.not(id: existing_user.id) if existing_user.present?
+    return unless scope.exists?
+
+    raise AuthFailure.new("この表示名は既に使用されています", :conflict)
+  end
+
   def validate_user_presence!(user)
     raise AuthFailure.new("ユーザーが存在しません", :unauthorized) if user.nil?
   end
@@ -305,6 +320,10 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   def normalize_email(email)
     email.to_s.strip.downcase
+  end
+
+  def normalize_display_name(display_name)
+    display_name.to_s.strip.presence
   end
 
   def find_user_by_email(email)

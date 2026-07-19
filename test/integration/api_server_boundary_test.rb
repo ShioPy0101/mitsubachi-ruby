@@ -50,6 +50,7 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
         "organization_name" => @user.organization.name,
         "email" => @user.email,
         "name" => @user.name,
+        "display_name" => @user.display_name,
         "role" => @user.role,
         "suspended" => false,
         "suspended_at" => nil,
