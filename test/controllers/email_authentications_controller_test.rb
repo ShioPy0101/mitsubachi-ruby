@@ -218,6 +218,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       email: "verified@example.com",
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
+      purpose: "registration",
       organization_invite: invite
     )
 
@@ -321,6 +322,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       email: user.email,
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
+      purpose: "registration",
       organization_invite: invite
     )
 
@@ -372,6 +374,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       email: correct_user.email,
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
+      purpose: "registration",
       organization_invite: invite
     )
 
@@ -380,5 +383,48 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unauthorized
     assert_nil invite.reload.used_at
     assert_nil authentication.reload.used_at
+  end
+
+  test "registration verify endpoint rejects login token" do
+    raw_token = "login-token-on-registration-endpoint"
+    EmailAuthentication.create!(
+      email: users(:one).email,
+      token: Digest::SHA256.hexdigest(raw_token),
+      expires_at: 15.minutes.from_now,
+      purpose: "login"
+    )
+
+    post api_v1_auth_registration_verify_url, params: { token: raw_token }
+
+    assert_response :unauthorized
+    assert_equal({ "error" => "リンクの用途が正しくありません" }, response.parsed_body)
+  end
+
+  test "login verify endpoint rejects registration token" do
+    user = User.create!(
+      organization: organizations(:one),
+      email: "registration-on-login-endpoint@example.com",
+      password: "password123"
+    )
+    invite = OrganizationInvite.create!(
+      organization: organizations(:one),
+      code: "registration-on-login-endpoint",
+      expires_at: 1.day.from_now,
+      stand_by_user: user,
+      stand_by_at: 1.minute.ago
+    )
+    raw_token = "registration-token-on-login-endpoint"
+    EmailAuthentication.create!(
+      email: user.email,
+      token: Digest::SHA256.hexdigest(raw_token),
+      expires_at: 15.minutes.from_now,
+      purpose: "registration",
+      organization_invite: invite
+    )
+
+    post api_v1_auth_login_verify_url, params: { token: raw_token }
+
+    assert_response :unauthorized
+    assert_equal({ "error" => "リンクの用途が正しくありません" }, response.parsed_body)
   end
 end

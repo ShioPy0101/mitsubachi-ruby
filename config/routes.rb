@@ -37,6 +37,8 @@ Rails.application.routes.draw do
       post "auth/create", to: "email_authentications#create"
       post "auth/login", to: "email_authentications#login"
       post "auth/verify", to: "email_authentications#verify"
+      post "auth/registration/verify", to: "email_authentications#verify_registration"
+      post "auth/login/verify", to: "email_authentications#verify_login"
       delete "logout", to: "sessions#destroy"
 
       resources :drive_items do

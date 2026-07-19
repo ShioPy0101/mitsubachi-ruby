@@ -1,0 +1,24 @@
+<h1>Mitsubachiへのアカウント登録のご案内</h1>
+
+<p>「<%= @organization.name %>」への招待が届いています。</p>
+<p>以下のリンクを開いて、アカウント登録を完了してください。</p>
+
+<p>
+  <a href="<%= @auth_url %>" style="display: inline-block; padding: 12px 20px; background: #1f6feb; color: #ffffff; text-decoration: none;">
+    アカウント登録を完了する
+  </a>
+</p>
+
+<p>ボタンが利用できない場合は、以下のURLをブラウザへ貼り付けてください。</p>
+<p><%= @auth_url %></p>
+
+<p>発行日時: <%= @issued_at %></p>
+<p>有効期限: <%= @expires_at %></p>
+
+<p>このリンクは一度使用すると無効になります。</p>
+
+<p>このメールに心当たりがない場合は、リンクを開かずにこのメールを破棄してください。</p>
+
+<p>※このメールは送信専用です。返信いただいても確認できません。</p>
+
+<p>Mitsubachi</p>

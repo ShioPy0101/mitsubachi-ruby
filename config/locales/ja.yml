@@ -1,0 +1,4 @@
+ja:
+  time:
+    formats:
+      mitsubachi_mail: "%Y年%-m月%-d日 %H:%M JST"

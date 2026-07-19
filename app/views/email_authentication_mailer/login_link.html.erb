@@ -1,0 +1,26 @@
+<h1>Mitsubachiへのログインリンクのご案内</h1>
+
+<p>Mitsubachiへのログインリクエストを受け付けました。</p>
+<p>以下のリンクを開いてログインしてください。</p>
+
+<p>
+  <a href="<%= @auth_url %>" style="display: inline-block; padding: 12px 20px; background: #1f6feb; color: #ffffff; text-decoration: none;">
+    Mitsubachiにログインする
+  </a>
+</p>
+
+<p>ボタンが利用できない場合は、以下のURLをブラウザへ貼り付けてください。</p>
+<p><%= @auth_url %></p>
+
+<p>対象組織: <%= @organization.name %></p>
+<p>発行日時: <%= @issued_at %></p>
+<p>有効期限: <%= @expires_at %></p>
+
+<p>このリンクは一度使用すると無効になります。</p>
+
+<p>ログイン操作に心当たりがない場合は、リンクを開かずにこのメールを破棄してください。<br>
+パスワード変更などの操作は不要です。</p>
+
+<p>※このメールは送信専用です。返信いただいても確認できません。</p>
+
+<p>Mitsubachi</p>
