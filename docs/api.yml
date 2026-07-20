@@ -755,6 +755,20 @@ paths:
                 $ref: "#/components/schemas/DriveItem"
         "422":
           $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/{id}/purge:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: deleteApiV1DriveItemPurge
+      tags: [DriveItems]
+      summary: Permanently purge one deleted drive item.
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/drive_items/{id}/move:
     parameters:
       - $ref: "#/components/parameters/Id"

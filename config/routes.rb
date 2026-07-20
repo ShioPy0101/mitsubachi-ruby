@@ -77,6 +77,7 @@ Rails.application.routes.draw do
           get :stream
           patch :move
           post :restore
+          delete :purge
         end
       end
     end

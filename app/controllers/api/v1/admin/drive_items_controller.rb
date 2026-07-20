@@ -56,7 +56,7 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
     drive_item = find_scoped_drive_item
     return render_not_found if drive_item.nil?
 
-    result = Admin::DriveItems::PurgeService.new(drive_item: drive_item).call
+    result = DriveItems::PurgeService.new(drive_item: drive_item).call
     unless result.success?
       render json: { error: result.message }, status: result.status
       return

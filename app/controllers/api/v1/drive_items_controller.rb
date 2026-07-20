@@ -6,7 +6,7 @@ require "set"
 class Api::V1::DriveItemsController < ApplicationController
   before_action :authenticate_user!
   before_action :set_active_drive_item, only: %i[show update move destroy]
-  before_action :set_deleted_drive_item, only: %i[restore]
+  before_action :set_deleted_drive_item, only: %i[restore purge]
   before_action :set_deliverable_drive_item, only: %i[preview download stream]
 
   def index
@@ -305,6 +305,17 @@ class Api::V1::DriveItemsController < ApplicationController
     else
       render_validation_failed(@drive_item)
     end
+  end
+
+  def purge
+    result = DriveItems::PurgeService.new(drive_item: @drive_item).call
+    unless result.success?
+      render_api_error(error_code_for_status(result.status), result.message, status: result.status)
+      return
+    end
+
+    record_drive_item_event!("drive_item.purge", @drive_item, changes: { purged_at: [ nil, Time.current ] })
+    render json: { message: result.message }
   end
 
   private
