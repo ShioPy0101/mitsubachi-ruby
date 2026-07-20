@@ -478,21 +478,46 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal false, duplicate_files.first.fetch("deleted")
   end
 
-  test "同一内容がごみ箱だけにある場合も重複内容として返す" do
+  test "同一内容がごみ箱だけにある場合は新規作成できる" do
     sign_in @user
     create_named_file(name: "削除済み", extension: "txt", body: "trash-content", parent: @root, deleted_at: Time.current)
 
-    post api_v1_drive_items_url, params: {
-      name: "新規",
-      item_type: "file",
-      parent_id: @root.id,
-      file: uploaded_file("新規.txt", "trash-content")
-    }
+    assert_difference "DriveItem.count", 1 do
+      post api_v1_drive_items_url, params: {
+        name: "新規",
+        item_type: "file",
+        parent_id: @root.id,
+        file: uploaded_file("新規.txt", "trash-content")
+      }
+    end
 
-    assert_response :conflict
-    assert_equal "duplicate_content", response.parsed_body.dig("error", "code")
-    assert_equal "同じ内容のファイルが、この組織のごみ箱に存在します。", response.parsed_body.dig("error", "message")
-    assert_equal true, response.parsed_body.dig("error", "details", "duplicate_files").first.fetch("deleted")
+    assert_response :created
+    created = DriveItem.order(:id).last
+    assert_nil created.deleted_at
+    assert_equal "新規", created.name
+  ensure
+    cleanup_created_file(created) if defined?(created) && created&.persisted?
+  end
+
+  test "同名同一内容がごみ箱だけにある場合は新規作成できる" do
+    sign_in @user
+    create_named_file(name: "ファイルA", extension: "txt", body: "trash-content", parent: @root, deleted_at: Time.current)
+
+    assert_difference "DriveItem.count", 1 do
+      post api_v1_drive_items_url, params: {
+        name: "ファイルA",
+        item_type: "file",
+        parent_id: @root.id,
+        file: uploaded_file("ファイルA.txt", "trash-content")
+      }
+    end
+
+    assert_response :created
+    created = DriveItem.order(:id).last
+    assert_nil created.deleted_at
+    assert_equal "ファイルA", created.name
+  ensure
+    cleanup_created_file(created) if defined?(created) && created&.persisted?
   end
 
   test "他組織の同一内容ファイルは重複内容として通知しない" do

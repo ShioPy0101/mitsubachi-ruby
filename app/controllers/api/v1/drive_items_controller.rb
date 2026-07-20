@@ -583,7 +583,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def duplicate_content_items(upload_hash)
-    current_user.organization.drive_items.file.where(file_hash: upload_hash)
+    current_user.organization.drive_items.active.file.where(file_hash: upload_hash)
   end
 
   def duplicate_content_file_json(drive_item)
