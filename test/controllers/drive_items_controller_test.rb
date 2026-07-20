@@ -95,6 +95,53 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "削除済みファイルを purge できる" do
+    sign_in @user
+    deleted_file = create_named_file(name: "purge-target", extension: "txt", body: "purge", parent: @root, deleted_at: Time.current)
+    storage_path = deleted_file.absolute_storage_path
+
+    assert_difference "DriveItem.count", -1 do
+      assert_difference "AuditEvent.where(action: 'drive_item.purge').count", 1 do
+        delete purge_api_v1_drive_item_url(deleted_file)
+      end
+    end
+
+    assert_response :ok
+    assert_equal "ファイルを完全削除しました", response.parsed_body.fetch("message")
+    assert_not DriveItem.exists?(deleted_file.id)
+    assert_not File.exist?(storage_path)
+  end
+
+  test "active なアイテムは purge できない" do
+    sign_in @user
+
+    assert_no_difference "DriveItem.count" do
+      delete purge_api_v1_drive_item_url(@file)
+    end
+
+    assert_response :not_found
+    assert DriveItem.exists?(@file.id)
+  end
+
+  test "他組織の削除済みアイテムは purge できない" do
+    sign_in @user
+    other_deleted_file = create_named_file(
+      name: "other-purge-target",
+      extension: "txt",
+      body: "other-purge",
+      organization: organizations(:two),
+      owner_user: users(:two),
+      deleted_at: Time.current
+    )
+
+    assert_no_difference "DriveItem.count" do
+      delete purge_api_v1_drive_item_url(other_deleted_file)
+    end
+
+    assert_response :not_found
+    assert DriveItem.exists?(other_deleted_file.id)
+  end
+
   test "update でルート直下へ移動できる" do
     sign_in @user
 
