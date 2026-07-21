@@ -16,17 +16,18 @@ module DriveItems
       end
     end
 
-    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil, client_type: "web")
+    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil, client_type: "web", record_audit: true)
       @drive_item = drive_item
       @current_user = current_user
       @request = request
       @action = action.to_sym
       @audit_organization = audit_organization || drive_item.organization
       @client_type = client_type
+      @record_audit = record_audit
     end
 
     def call
-      return Result.failure(:unprocessable_entity, "この操作はファイルに対してのみ可能です") unless @drive_item.file?
+      return Result.failure(:unprocessable_content, "この操作はファイルに対してのみ可能です") unless @drive_item.file?
 
       storage_key = @drive_item.effective_storage_key
       return invalid_delivery("invalid_storage_key") unless DriveItem.valid_storage_key?(storage_key)
@@ -34,15 +35,17 @@ module DriveItems
       absolute_path = @drive_item.absolute_storage_path
       return invalid_delivery("missing_file") unless File.exist?(absolute_path)
 
-      audit_result = AuditLogs::Recorder.new(
-        organization: @audit_organization,
-        user: @current_user,
-        drive_item: @drive_item,
-        action: @action,
-        request: @request,
-        metadata: { client_type: @client_type }
-      ).call
-      return Result.failure(:service_unavailable, audit_result.error_message) unless audit_result.success?
+      if @record_audit
+        audit_result = AuditLogs::Recorder.new(
+          organization: @audit_organization,
+          user: @current_user,
+          drive_item: @drive_item,
+          action: @action,
+          request: @request,
+          metadata: { client_type: @client_type }
+        ).call
+        return Result.failure(:service_unavailable, audit_result.error_message) unless audit_result.success?
+      end
 
       Result.success(
         "X-Accel-Redirect" => x_accel_redirect(storage_key),
@@ -67,7 +70,7 @@ module DriveItems
     def invalid_delivery(reason)
       Rails.logger.warn(
         "[drive_items.delivery_service] denied reason=#{reason} drive_item_id=#{@drive_item.id} " \
-        "organization_id=#{@audit_organization.id} user_id=#{@current_user.id} request_id=#{@request.request_id}"
+        "organization_id=#{@audit_organization.id} user_id=#{@current_user&.id} request_id=#{@request.request_id}"
       )
       Result.failure(:not_found, "指定されたファイルが見つかりません")
     end

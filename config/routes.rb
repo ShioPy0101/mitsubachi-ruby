@@ -14,6 +14,17 @@ Rails.application.routes.draw do
       resource :csrf_token, only: :show
       resource :me, only: :show, controller: :me
       resource :group, only: %i[show update], controller: :groups
+      resources :external_shares, only: %i[index show create update destroy]
+
+      namespace :public do
+        get "shares/:token", to: "shares#show"
+        post "shares/:token/unlock", to: "shares#unlock"
+        get "shares/:token/items", to: "shares#items"
+        get "shares/:token/items/:drive_item_id", to: "shares#item"
+        get "shares/:token/items/:drive_item_id/preview", to: "shares#preview"
+        get "shares/:token/items/:drive_item_id/download", to: "shares#download"
+        post "shares/:token/bulk_download", to: "shares#bulk_download"
+      end
 
       namespace :flower do
         resources :device_authorizations, only: %i[create show], param: :device_code do

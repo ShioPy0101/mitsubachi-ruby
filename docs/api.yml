@@ -1310,6 +1310,249 @@ paths:
             application/json:
               schema:
                 type: object
+  /api/v1/external_shares:
+    get:
+      operationId: getApiV1ExternalShares
+      tags: [DriveItems]
+      summary: List manageable external shares.
+      security:
+        - cookieSession: []
+      responses:
+        "200":
+          description: External shares.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: postApiV1ExternalShares
+      tags: [DriveItems]
+      summary: Create one external share for selected DriveItems.
+      security:
+        - cookieSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created external share. Includes share_url once.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/external_shares/{id}:
+    get:
+      operationId: getApiV1ExternalShare
+      tags: [DriveItems]
+      summary: Read one manageable external share without raw token.
+      security:
+        - cookieSession: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: External share.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: patchApiV1ExternalShare
+      tags: [DriveItems]
+      summary: Update external share settings.
+      security:
+        - cookieSession: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Updated external share.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1ExternalShare
+      tags: [DriveItems]
+      summary: Update external share settings.
+      security:
+        - cookieSession: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Updated external share.
+    delete:
+      operationId: deleteApiV1ExternalShare
+      tags: [DriveItems]
+      summary: Revoke an external share.
+      security:
+        - cookieSession: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Revoked external share.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/public/shares/{token}:
+    get:
+      operationId: getApiV1PublicShare
+      tags: [DriveItems]
+      summary: Read a public external share by raw token.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public share or password_required response.
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/public/shares/{token}/unlock:
+    post:
+      operationId: postApiV1PublicShareUnlock
+      tags: [DriveItems]
+      summary: Unlock a password-protected public share.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Unlock status.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/public/shares/{token}/items:
+    get:
+      operationId: getApiV1PublicShareItems
+      tags: [DriveItems]
+      summary: List public share items.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: parent_id
+          in: query
+          schema:
+            type: integer
+            nullable: true
+      responses:
+        "200":
+          description: Public share items.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/public/shares/{token}/items/{drive_item_id}:
+    get:
+      operationId: getApiV1PublicShareItem
+      tags: [DriveItems]
+      summary: Read one public share item.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: drive_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Public share item.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/public/shares/{token}/items/{drive_item_id}/preview:
+    get:
+      operationId: getApiV1PublicShareItemPreview
+      tags: [DriveItems]
+      summary: Preview a safe public share file through X-Accel-Redirect.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: drive_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/public/shares/{token}/items/{drive_item_id}/download:
+    get:
+      operationId: getApiV1PublicShareItemDownload
+      tags: [DriveItems]
+      summary: Download an allowed public share file through X-Accel-Redirect.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: drive_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/public/shares/{token}/bulk_download:
+    post:
+      operationId: postApiV1PublicShareBulkDownload
+      tags: [DriveItems]
+      summary: Download an allowed public share ZIP.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ZIP file.
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     cookieSession:

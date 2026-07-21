@@ -12,7 +12,7 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
     invite.expires_at ||= DEFAULT_TTL.from_now
 
     if invite.expires_at > MAX_TTL.from_now
-      return render_error(:validation_error, "expires_at は30日以内を指定してください", :unprocessable_entity)
+      return render_error(:validation_error, "expires_at は30日以内を指定してください", :unprocessable_content)
     end
 
     if invite.save
@@ -27,7 +27,7 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
       )
       render json: { data: invite_json(invite) }, status: :created
     else
-      render json: { errors: invite.errors.full_messages }, status: :unprocessable_entity
+      render json: { errors: invite.errors.full_messages }, status: :unprocessable_content
     end
   end
 

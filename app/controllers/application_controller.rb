@@ -69,11 +69,10 @@ class ApplicationController < ActionController::API
 
   def render_invalid_authenticity_token
     reset_session
-    render_api_error(:validation_failed, "認証情報の確認に失敗しました。再読み込みしてからやり直してください", status: :unprocessable_entity)
+    render_api_error(:validation_failed, "認証情報の確認に失敗しました。再読み込みしてからやり直してください", status: :unprocessable_content)
   end
 
   def render_api_error(code, message, status:, details: {})
-    status = :unprocessable_content if status == :unprocessable_entity
     Rails.logger.info("api_error request_id=#{request.request_id} code=#{code} status=#{Rack::Utils.status_code(status)}")
     render json: {
       error: {
@@ -95,7 +94,7 @@ class ApplicationController < ActionController::API
     render_api_error(
       :validation_failed,
       messages.first || "入力内容を確認してください",
-      status: :unprocessable_entity,
+      status: :unprocessable_content,
       details: { messages: messages }
     )
   end
