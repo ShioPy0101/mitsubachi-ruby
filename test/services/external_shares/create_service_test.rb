@@ -95,4 +95,71 @@ class ExternalShares::CreateServiceTest < ActiveSupport::TestCase
     assert_not_equal result.raw_token, result.external_share.token_digest
     assert_equal Digest::SHA256.hexdigest(result.raw_token), result.external_share.token_digest
   end
+
+  test "パスワード保護ありではランダムパスワードを生成してハッシュだけ保存する" do
+    result = ExternalShares::CreateService.new(
+      user: @user,
+      params: {
+        name: "protected",
+        drive_item_ids: [ @file.id ],
+        folder_share_mode: "snapshot",
+        password_protected: true
+      }
+    ).call
+
+    assert result.success?
+    assert_match(/\A[ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789]{16}\z/, result.generated_password)
+    assert result.external_share.password_required?
+    assert_not_equal result.generated_password, result.external_share.password_digest
+    assert result.external_share.authenticate(result.generated_password)
+  end
+
+  test "パスワード保護なしではパスワードを生成しない" do
+    result = ExternalShares::CreateService.new(
+      user: @user,
+      params: {
+        name: "public",
+        drive_item_ids: [ @file.id ],
+        folder_share_mode: "snapshot",
+        password_protected: false
+      }
+    ).call
+
+    assert result.success?
+    assert_nil result.generated_password
+    assert_not result.external_share.password_required?
+  end
+
+  test "任意パスワード指定では保護パスワードを保存しない" do
+    result = ExternalShares::CreateService.new(
+      user: @user,
+      params: {
+        name: "legacy password ignored",
+        drive_item_ids: [ @file.id ],
+        folder_share_mode: "snapshot",
+        password: "creator-password"
+      }
+    ).call
+
+    assert result.success?
+    assert_nil result.generated_password
+    assert_not result.external_share.password_required?
+  end
+
+  test "複数共有の生成パスワードは異なる" do
+    results = 2.times.map do |index|
+      ExternalShares::CreateService.new(
+        user: @user,
+        params: {
+          name: "protected #{index}",
+          drive_item_ids: [ @file.id ],
+          folder_share_mode: "snapshot",
+          password_protected: true
+        }
+      ).call
+    end
+
+    assert results.all?(&:success?)
+    assert_equal results.map(&:generated_password).uniq, results.map(&:generated_password)
+  end
 end

@@ -20,7 +20,6 @@ module ExternalShares
     def call
       before = @external_share.slice(*UPDATABLE_ATTRIBUTES.map(&:to_s))
       @external_share.assign_attributes(@params.slice(*UPDATABLE_ATTRIBUTES))
-      @external_share.password = @params[:password] if @params.key?(:password)
       return Result.success(external_share: @external_share, changes: {}) unless @external_share.changed?
 
       @external_share.save!

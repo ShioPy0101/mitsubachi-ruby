@@ -14,7 +14,11 @@ Rails.application.routes.draw do
       resource :csrf_token, only: :show
       resource :me, only: :show, controller: :me
       resource :group, only: %i[show update], controller: :groups
-      resources :external_shares, only: %i[index show create update destroy]
+      resources :external_shares, only: %i[index show create update destroy] do
+        member do
+          post :regenerate_password
+        end
+      end
 
       namespace :public do
         get "shares/:token", to: "shares#show"

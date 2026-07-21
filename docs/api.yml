@@ -1336,7 +1336,7 @@ paths:
               type: object
       responses:
         "201":
-          description: Created external share. Includes share_url once.
+          description: Created external share. Includes share_url once and generated_password once when password_protected is true.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1408,6 +1408,24 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/external_shares/{id}/regenerate_password:
+    post:
+      operationId: postApiV1ExternalShareRegeneratePassword
+      tags: [DriveItems]
+      summary: Regenerate the password for an external share. Returns generated_password once.
+      security:
+        - cookieSession: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: External share with generated_password.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/public/shares/{token}:
     get:
       operationId: getApiV1PublicShare
@@ -1440,8 +1458,12 @@ paths:
       responses:
         "200":
           description: Unlock status.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
         "429":
           $ref: "#/components/responses/ValidationError"
   /api/v1/public/shares/{token}/items:
