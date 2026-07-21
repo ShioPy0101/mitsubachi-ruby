@@ -21,6 +21,8 @@ class DriveItem < ApplicationRecord
 
   # DriveItemはアクセスログを持つことができる
   has_many :drive_item_access_logs, dependent: :destroy
+  has_many :external_share_items, dependent: :destroy
+  has_many :external_shares, through: :external_share_items
 
   # DriveItemはitem_typeによってファイルかディレクトリかを区別する
   enum :item_type, {

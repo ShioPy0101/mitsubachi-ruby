@@ -65,15 +65,16 @@ module DriveItems
       end
     end
 
-    def initialize(organization:, drive_item_ids:)
+    def initialize(organization:, drive_item_ids: nil, drive_items: nil)
       @organization = organization
       @drive_item_ids = Array(drive_item_ids).reject(&:blank?)
+      @drive_items = drive_items
     end
 
     def call
-      return Result.failure(:unprocessable_entity, "対象が指定されていません") if @drive_item_ids.empty?
+      return Result.failure(:unprocessable_entity, "対象が指定されていません") if @drive_item_ids.empty? && @drive_items.blank?
 
-      roots = @organization.drive_items.active.where(id: @drive_item_ids).order(:id).to_a
+      roots = @drive_items.presence || @organization.drive_items.active.where(id: @drive_item_ids).order(:id).to_a
       return Result.failure(:not_found, "有効な対象が見つかりません") if roots.empty?
 
       entries = build_entries(roots)
