@@ -73,7 +73,6 @@ class ApplicationController < ActionController::API
   end
 
   def render_api_error(code, message, status:, details: {})
-    status = :unprocessable_content if status == :unprocessable_entity
     Rails.logger.info("api_error request_id=#{request.request_id} code=#{code} status=#{Rack::Utils.status_code(status)}")
     render json: {
       error: {

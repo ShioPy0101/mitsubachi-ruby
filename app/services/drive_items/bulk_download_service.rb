@@ -72,7 +72,7 @@ module DriveItems
     end
 
     def call
-      return Result.failure(:unprocessable_entity, "対象が指定されていません") if @drive_item_ids.empty? && @drive_items.blank?
+      return Result.failure(:unprocessable_content, "対象が指定されていません") if @drive_item_ids.empty? && @drive_items.blank?
 
       roots = @drive_items.presence || @organization.drive_items.active.where(id: @drive_item_ids).order(:id).to_a
       return Result.failure(:not_found, "有効な対象が見つかりません") if roots.empty?
@@ -90,7 +90,7 @@ module DriveItems
     rescue StandardError => error
       cleanup_zip(zip_path)
       Rails.logger.error("[drive_items.bulk_download] failed error=#{error.class}: #{error.message}")
-      Result.failure(:unprocessable_entity, "ZIPファイルを作成できませんでした")
+      Result.failure(:unprocessable_content, "ZIPファイルを作成できませんでした")
     end
 
     private
@@ -99,7 +99,7 @@ module DriveItems
     InvalidEntryError = Class.new(StandardError) do
       attr_reader :status
 
-      def initialize(message, status: :unprocessable_entity)
+      def initialize(message, status: :unprocessable_content)
         @status = status
         super(message)
       end

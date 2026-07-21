@@ -21,13 +21,13 @@ module ExternalShares
 
     def call
       drive_item_ids = Array(@params[:drive_item_ids]).reject(&:blank?).map(&:to_i).uniq
-      return Result.failure(:unprocessable_entity, "公開対象を選択してください") if drive_item_ids.empty?
+      return Result.failure(:unprocessable_content, "公開対象を選択してください") if drive_item_ids.empty?
 
       roots = @organization.drive_items.active.where(id: drive_item_ids).order(:id).to_a
       return Result.failure(:not_found, "公開対象が見つかりません") unless roots.size == drive_item_ids.size
 
       mode = @params[:folder_share_mode].presence || "snapshot"
-      return Result.failure(:unprocessable_entity, "フォルダ共有方式が不正です") unless ExternalShare.folder_share_modes.key?(mode)
+      return Result.failure(:unprocessable_content, "フォルダ共有方式が不正です") unless ExternalShare.folder_share_modes.key?(mode)
 
       raw_token, token_digest = generate_unique_token
       share = nil
@@ -52,7 +52,7 @@ module ExternalShares
 
       Result.success(external_share: share, raw_token: raw_token)
     rescue ActiveRecord::RecordInvalid => error
-      Result.failure(:unprocessable_entity, error.record.errors.full_messages.first || "外部公開を作成できませんでした")
+      Result.failure(:unprocessable_content, error.record.errors.full_messages.first || "外部公開を作成できませんでした")
     end
 
     private

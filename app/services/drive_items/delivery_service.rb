@@ -27,7 +27,7 @@ module DriveItems
     end
 
     def call
-      return Result.failure(:unprocessable_entity, "この操作はファイルに対してのみ可能です") unless @drive_item.file?
+      return Result.failure(:unprocessable_content, "この操作はファイルに対してのみ可能です") unless @drive_item.file?
 
       storage_key = @drive_item.effective_storage_key
       return invalid_delivery("invalid_storage_key") unless DriveItem.valid_storage_key?(storage_key)

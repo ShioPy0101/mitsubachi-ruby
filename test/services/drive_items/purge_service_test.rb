@@ -39,7 +39,7 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     result = DriveItems::PurgeService.new(drive_item: drive_item).call
 
     assert_not result.success?
-    assert_equal :unprocessable_entity, result.status
+    assert_equal :unprocessable_content, result.status
     assert DriveItem.exists?(drive_item.id)
     assert_equal "destroy failure", File.binread(storage_path)
     assert_empty temporary_files_for(storage_path)
@@ -169,7 +169,7 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     result = DriveItems::PurgeService.new(drive_item: drive_item.reload).call
 
     assert_not result.success?
-    assert_equal :unprocessable_entity, result.status
+    assert_equal :unprocessable_content, result.status
     assert_equal "保存先キーが不正です", result.message
     assert DriveItem.exists?(drive_item.id)
     assert File.exist?(storage_path)
@@ -183,7 +183,7 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     result = with_singleton_method(service, :verified_storage_path, ->(_storage_key) { nil }) { service.call }
 
     assert_not result.success?
-    assert_equal :unprocessable_entity, result.status
+    assert_equal :unprocessable_content, result.status
     assert_equal "保存先パスが不正です", result.message
     assert DriveItem.exists?(drive_item.id)
     assert File.exist?(storage_path)
@@ -240,7 +240,7 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     result = DriveItems::PurgeService.new(drive_item: directory).call
 
     assert_not result.success?
-    assert_equal :unprocessable_entity, result.status
+    assert_equal :unprocessable_content, result.status
     assert_equal "空でないフォルダは完全削除できません", result.message
     assert DriveItem.exists?(directory.id)
   end

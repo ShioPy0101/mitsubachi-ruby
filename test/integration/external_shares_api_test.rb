@@ -6,7 +6,6 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
   setup do
     @user = users(:one)
     @drive_item = drive_items(:child_file)
-    sign_in @user
     @storage_key = "external-share-#{SecureRandom.uuid}.pdf"
     FileUtils.mkdir_p(DriveItem.storage_root.join("drive_items"))
     @drive_item.update_columns(
@@ -24,6 +23,12 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
   end
 
   test "作成レスポンスだけが共有URLを返す" do
+    sign_in_with_magic_link @user
+
+    get api_v1_me_url
+    assert_response :ok
+    assert_equal @user.id, response.parsed_body.dig("data", "id")
+
     post api_v1_external_shares_url, params: {
       external_share: {
         name: "公開",
@@ -38,6 +43,10 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
     body = JSON.parse(response.body)
     assert_match(%r{/share/}, body.fetch("share_url"))
 
+    get api_v1_me_url
+    assert_response :ok
+    assert_equal @user.id, response.parsed_body.dig("data", "id")
+
     get api_v1_external_shares_url
     assert_response :ok
     assert_nil JSON.parse(response.body).first["share_url"]
@@ -50,8 +59,6 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
   end
 
   test "作成リクエストはログイン必須" do
-    sign_out @user
-
     post api_v1_external_shares_url, params: {
       external_share: {
         name: "公開",
@@ -65,7 +72,6 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
 
   test "パスワード解除前に共有内容を返さない" do
     raw_token = create_share!(password: "secret")
-    sign_out @user
 
     get "/api/v1/public/shares/#{raw_token}"
 
@@ -76,7 +82,6 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
 
   test "ログインなしで有効な共有を閲覧できる" do
     raw_token = create_share!
-    sign_out @user
 
     get "/api/v1/public/shares/#{raw_token}"
 
@@ -89,7 +94,6 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
 
   test "allow_download=falseでは個別ダウンロードできない" do
     raw_token = create_share!(allow_download: false)
-    sign_out @user
 
     get "/api/v1/public/shares/#{raw_token}/items/#{@drive_item.id}/download"
 
@@ -100,7 +104,6 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
   test "停止済み共有は外部から利用できない" do
     raw_token = create_share!
     ExternalShare.last.update!(revoked_at: Time.current)
-    sign_out @user
 
     get "/api/v1/public/shares/#{raw_token}"
 
@@ -110,7 +113,6 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
   test "HTMLは外部公開プレビューとしてインライン表示しない" do
     @drive_item.update_columns(extension: "html", content_type: "text/html")
     raw_token = create_share!
-    sign_out @user
 
     get "/api/v1/public/shares/#{raw_token}/items/#{@drive_item.id}/preview"
 

@@ -26,7 +26,7 @@ module ExternalShares
       @external_share.save!
       Result.success(external_share: @external_share, changes: changed_values(before))
     rescue ActiveRecord::RecordInvalid => error
-      Result.failure(:unprocessable_entity, error.record.errors.full_messages.first || "外部公開を更新できませんでした")
+      Result.failure(:unprocessable_content, error.record.errors.full_messages.first || "外部公開を更新できませんでした")
     end
 
     private

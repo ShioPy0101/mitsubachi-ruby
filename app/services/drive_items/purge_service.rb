@@ -28,7 +28,7 @@ module DriveItems
         @drive_item.lock!
         result =
           if @drive_item.deleted_at.blank?
-            Result.failure(:unprocessable_entity, "先にゴミ箱へ移動してください")
+            Result.failure(:unprocessable_content, "先にゴミ箱へ移動してください")
           elsif @drive_item.directory?
             purge_directory
           else
@@ -49,13 +49,13 @@ module DriveItems
     rescue StandardError => error
       restore_storage_file(temporary_path, storage_path)
       Rails.logger.error("[drive_items.purge] failed drive_item_id=#{@drive_item.id} error=#{error.class}: #{error.message}")
-      Result.failure(:unprocessable_entity, "完全削除できませんでした")
+      Result.failure(:unprocessable_content, "完全削除できませんでした")
     end
 
     private
 
     def purge_directory
-      return Result.failure(:unprocessable_entity, "空でないフォルダは完全削除できません") if @drive_item.children.exists?
+      return Result.failure(:unprocessable_content, "空でないフォルダは完全削除できません") if @drive_item.children.exists?
 
       detach_access_logs!
       @drive_item.destroy!
@@ -64,10 +64,10 @@ module DriveItems
 
     def purge_file
       storage_key = @drive_item.effective_storage_key
-      return PurgedFile.new(Result.failure(:unprocessable_entity, "保存先キーが不正です"), nil, nil) unless ::DriveItem.valid_storage_key?(storage_key)
+      return PurgedFile.new(Result.failure(:unprocessable_content, "保存先キーが不正です"), nil, nil) unless ::DriveItem.valid_storage_key?(storage_key)
 
       storage_path = verified_storage_path(storage_key)
-      return PurgedFile.new(Result.failure(:unprocessable_entity, "保存先パスが不正です"), nil, nil) if storage_path.nil?
+      return PurgedFile.new(Result.failure(:unprocessable_content, "保存先パスが不正です"), nil, nil) if storage_path.nil?
       return PurgedFile.new(Result.failure(:not_found, "実ファイルが見つかりません"), nil, nil) unless purgeable_regular_file?(storage_path)
 
       temporary_path = temporary_storage_path(storage_path)
