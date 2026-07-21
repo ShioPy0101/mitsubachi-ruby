@@ -14,7 +14,7 @@ module ExternalShares
       return Result.new(false, :unprocessable_content, :password_required, "パスワードを入力してください") if @password.blank?
       return Result.new(true, :ok, nil, nil) if @external_share.authenticate(@password)
 
-      Result.new(false, :unauthorized, :invalid_password, "パスワードが正しくありません")
+      Result.new(false, :unauthorized, :invalid_share_password, "パスワードが正しくありません")
     end
   end
 end

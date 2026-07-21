@@ -114,6 +114,29 @@ class ExternalShares::CreateServiceTest < ActiveSupport::TestCase
     assert result.external_share.authenticate(result.generated_password)
   end
 
+  test "生成した同じ平文パスワードをレスポンスとハッシュ保存に使う" do
+    plain_password = "AbCdEfGh23456789"
+    password_generator = FixedPasswordGenerator.new(plain_password)
+
+    result = ExternalShares::CreateService.new(
+      user: @user,
+      params: {
+        name: "protected fixed",
+        drive_item_ids: [ @file.id ],
+        folder_share_mode: "snapshot",
+        password_protected: true
+      },
+      password_generator: password_generator
+    ).call
+
+    assert result.success?
+    assert_equal 1, password_generator.call_count
+    assert_equal plain_password, result.generated_password
+    assert_not_equal plain_password, result.external_share.password_digest
+    assert result.external_share.authenticate(plain_password)
+    assert_not result.external_share.authenticate("#{plain_password}x")
+  end
+
   test "パスワード保護なしではパスワードを生成しない" do
     result = ExternalShares::CreateService.new(
       user: @user,
@@ -161,5 +184,19 @@ class ExternalShares::CreateServiceTest < ActiveSupport::TestCase
 
     assert results.all?(&:success?)
     assert_equal results.map(&:generated_password).uniq, results.map(&:generated_password)
+  end
+
+  class FixedPasswordGenerator
+    attr_reader :call_count
+
+    def initialize(password)
+      @password = password
+      @call_count = 0
+    end
+
+    def generate
+      @call_count += 1
+      @password
+    end
   end
 end

@@ -13,10 +13,11 @@ module ExternalShares
       end
     end
 
-    def initialize(user:, params:)
+    def initialize(user:, params:, password_generator: PasswordGenerator)
       @user = user
       @organization = user.organization
       @params = params
+      @password_generator = password_generator
     end
 
     def call
@@ -30,7 +31,7 @@ module ExternalShares
       return Result.failure(:unprocessable_content, "フォルダ共有方式が不正です") unless ExternalShare.folder_share_modes.key?(mode)
 
       raw_token, token_digest = generate_unique_token
-      generated_password = password_protected? ? PasswordGenerator.generate : nil
+      generated_password = password_protected? ? @password_generator.generate : nil
       share = nil
 
       ActiveRecord::Base.transaction do

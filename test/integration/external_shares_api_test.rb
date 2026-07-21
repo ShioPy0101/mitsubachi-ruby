@@ -117,7 +117,7 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
 
     post "/api/v1/public/shares/#{raw_token}/unlock", params: { password: "wrong-password" }
     assert_response :unauthorized
-    assert_equal "invalid_password", response.parsed_body.dig("error", "code")
+    assert_equal "invalid_share_password", response.parsed_body.dig("error", "code")
     assert_equal "パスワードが正しくありません", response.parsed_body.dig("error", "message")
 
     post "/api/v1/public/shares/#{raw_token}/unlock", params: { password: generated_password }
@@ -125,6 +125,26 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
     assert_equal true, response.parsed_body.fetch("unlocked")
 
     get "/api/v1/public/shares/#{raw_token}"
+    assert_response :ok
+    assert_equal @drive_item.filename, response.parsed_body.fetch("items").first.fetch("name")
+  end
+
+  test "作成レスポンスで返したパスワードをJSONで送ると解除Cookieを発行して閲覧できる" do
+    https!
+    raw_token, generated_password = create_share!(password_protected: true)
+
+    post "/api/v1/public/shares/#{raw_token}/unlock",
+      params: { password: generated_password }.to_json,
+      headers: { "Content-Type" => "application/json", "Accept" => "application/json" }
+
+    assert_response :ok
+    assert_equal true, response.parsed_body.fetch("unlocked")
+    set_cookie = response.headers.fetch("Set-Cookie")
+    assert_match(/(?:^|;\s*)httponly(?:;|$)/i, set_cookie)
+    assert_match(/(?:^|;\s*)secure(?:;|$)/i, set_cookie)
+    assert_match(/(?:^|;\s*)samesite=lax(?:;|$)/i, set_cookie)
+
+    get "/api/v1/public/shares/#{raw_token}", headers: { "Accept" => "application/json" }
     assert_response :ok
     assert_equal @drive_item.filename, response.parsed_body.fetch("items").first.fetch("name")
   end
