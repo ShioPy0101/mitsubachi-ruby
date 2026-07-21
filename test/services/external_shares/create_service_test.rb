@@ -114,6 +114,28 @@ class ExternalShares::CreateServiceTest < ActiveSupport::TestCase
     assert result.external_share.authenticate(result.generated_password)
   end
 
+  test "生成した同じ平文パスワードをレスポンスとハッシュ保存に使う" do
+    plain_password = "AbCdEfGh23456789"
+
+    ExternalShares::PasswordGenerator.stub(:generate, plain_password) do
+      result = ExternalShares::CreateService.new(
+        user: @user,
+        params: {
+          name: "protected fixed",
+          drive_item_ids: [ @file.id ],
+          folder_share_mode: "snapshot",
+          password_protected: true
+        }
+      ).call
+
+      assert result.success?
+      assert_equal plain_password, result.generated_password
+      assert_not_equal plain_password, result.external_share.password_digest
+      assert result.external_share.authenticate(plain_password)
+      assert_not result.external_share.authenticate("#{plain_password}x")
+    end
+  end
+
   test "パスワード保護なしではパスワードを生成しない" do
     result = ExternalShares::CreateService.new(
       user: @user,

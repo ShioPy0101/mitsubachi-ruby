@@ -137,7 +137,7 @@ class Api::V1::Public::SharesController < ApplicationController
       value: @external_share.id,
       expires: expires_at,
       httponly: true,
-      secure: Rails.env.production?,
+      secure: Rails.env.production? || request.ssl?,
       same_site: :lax
     }
   end
