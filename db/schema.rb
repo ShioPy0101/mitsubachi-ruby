@@ -1,3 +1,4 @@
+# rubocop:disable Layout/SpaceInsideArrayLiteralBrackets
 # This file is auto-generated from the current state of the database. Instead
 # of editing this file, please use the migrations feature of Active Record to
 # incrementally modify your database, and then regenerate this schema definition.
@@ -10,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_20_010100) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_22_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -107,6 +108,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_010100) do
     t.bigint "user_id", null: false
     t.index ["drive_item_id"], name: "index_drive_permissions_on_drive_item_id"
     t.index ["user_id"], name: "index_drive_permissions_on_user_id"
+  end
+
+  create_table "external_share_items", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "drive_item_id", null: false
+    t.bigint "external_share_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["drive_item_id"], name: "index_external_share_items_on_drive_item_id"
+    t.index ["external_share_id", "drive_item_id"], name: "idx_on_external_share_id_drive_item_id_99a4d1b3b2", unique: true
+    t.index ["external_share_id"], name: "index_external_share_items_on_external_share_id"
+  end
+
+  create_table "external_shares", force: :cascade do |t|
+    t.boolean "allow_bulk_download", default: false, null: false
+    t.boolean "allow_download", default: true, null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_user_id", null: false
+    t.datetime "expires_at"
+    t.string "folder_share_mode", default: "snapshot", null: false
+    t.string "name", null: false
+    t.bigint "organization_id", null: false
+    t.string "password_digest"
+    t.datetime "revoked_at"
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_user_id"], name: "index_external_shares_on_created_by_user_id"
+    t.index ["organization_id", "created_by_user_id"], name: "index_external_shares_on_organization_id_and_created_by_user_id"
+    t.index ["organization_id"], name: "index_external_shares_on_organization_id"
+    t.index ["token_digest"], name: "index_external_shares_on_token_digest", unique: true
+    t.check_constraint "folder_share_mode::text = ANY (ARRAY['snapshot'::character varying, 'dynamic'::character varying]::text[])", name: "external_shares_folder_share_mode_check"
   end
 
   create_table "email_authentications", force: :cascade do |t|
@@ -228,6 +259,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_010100) do
   add_foreign_key "drive_permissions", "drive_items"
   add_foreign_key "drive_permissions", "users"
   add_foreign_key "email_authentications", "organization_invites"
+  add_foreign_key "external_share_items", "drive_items"
+  add_foreign_key "external_share_items", "external_shares"
+  add_foreign_key "external_shares", "organizations"
+  add_foreign_key "external_shares", "users", column: "created_by_user_id"
   add_foreign_key "flower_access_tokens", "flower_device_authorizations"
   add_foreign_key "flower_access_tokens", "organizations"
   add_foreign_key "flower_access_tokens", "users"
@@ -238,3 +273,4 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_010100) do
   add_foreign_key "organization_invites", "users", column: "used_by_user_id"
   add_foreign_key "users", "organizations"
 end
+# rubocop:enable Layout/SpaceInsideArrayLiteralBrackets
