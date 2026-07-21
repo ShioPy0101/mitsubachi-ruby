@@ -140,9 +140,9 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_equal true, response.parsed_body.fetch("unlocked")
     set_cookie = response.headers.fetch("Set-Cookie")
-    assert_includes set_cookie, "HttpOnly"
-    assert_includes set_cookie, "Secure"
-    assert_includes set_cookie, "SameSite=Lax"
+    assert_match(/(?:^|;\s*)httponly(?:;|$)/i, set_cookie)
+    assert_match(/(?:^|;\s*)secure(?:;|$)/i, set_cookie)
+    assert_match(/(?:^|;\s*)samesite=lax(?:;|$)/i, set_cookie)
 
     get "/api/v1/public/shares/#{raw_token}", headers: { "Accept" => "application/json" }
     assert_response :ok
