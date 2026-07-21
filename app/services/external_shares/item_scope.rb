@@ -17,6 +17,10 @@ module ExternalShares
       end
     end
 
+    def all_visible_items
+      visible_file_or_directory_scope.order(:item_type, :name, :id)
+    end
+
     def find_item(id)
       visible_file_or_directory_scope.find_by(id: id)
     end

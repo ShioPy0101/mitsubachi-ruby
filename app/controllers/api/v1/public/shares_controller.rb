@@ -14,7 +14,7 @@ class Api::V1::Public::SharesController < ApplicationController
     end
 
     record_external_access!("external_share.opened", outcome: "success")
-    render json: share_json(items: item_scope.visible_items)
+    render json: share_json(items: item_scope.all_visible_items)
   end
 
   def unlock
