@@ -3,13 +3,13 @@ require "securerandom"
 
 module ExternalShares
   class CreateService
-    Result = Data.define(:success?, :status, :external_share, :raw_token, :error_message) do
-      def self.success(external_share:, raw_token:)
-        new(true, :created, external_share, raw_token, nil)
+    Result = Data.define(:success?, :status, :external_share, :raw_token, :generated_password, :error_message) do
+      def self.success(external_share:, raw_token:, generated_password:)
+        new(true, :created, external_share, raw_token, generated_password, nil)
       end
 
       def self.failure(status, error_message)
-        new(false, status, nil, nil, error_message)
+        new(false, status, nil, nil, nil, error_message)
       end
     end
 
@@ -30,6 +30,7 @@ module ExternalShares
       return Result.failure(:unprocessable_content, "フォルダ共有方式が不正です") unless ExternalShare.folder_share_modes.key?(mode)
 
       raw_token, token_digest = generate_unique_token
+      generated_password = password_protected? ? PasswordGenerator.generate : nil
       share = nil
 
       ActiveRecord::Base.transaction do
@@ -42,7 +43,7 @@ module ExternalShares
           expires_at: @params[:expires_at],
           allow_download: boolean_param(:allow_download, true),
           allow_bulk_download: boolean_param(:allow_bulk_download, false),
-          password: @params[:password].presence
+          password: generated_password
         )
 
         item_ids_for(share, roots).each do |drive_item_id|
@@ -50,7 +51,7 @@ module ExternalShares
         end
       end
 
-      Result.success(external_share: share, raw_token: raw_token)
+      Result.success(external_share: share, raw_token: raw_token, generated_password: generated_password)
     rescue ActiveRecord::RecordInvalid => error
       Result.failure(:unprocessable_content, error.record.errors.full_messages.first || "外部公開を作成できませんでした")
     end
@@ -69,6 +70,10 @@ module ExternalShares
       return default unless @params.key?(key)
 
       ActiveModel::Type::Boolean.new.cast(@params[key])
+    end
+
+    def password_protected?
+      boolean_param(:password_protected, false)
     end
 
     def generate_unique_token

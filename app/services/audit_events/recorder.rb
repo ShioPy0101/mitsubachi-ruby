@@ -2,6 +2,7 @@ module AuditEvents
   class Recorder
     SENSITIVE_METADATA_KEYS = %w[
       password
+      generated_password
       token
       raw_token
       encrypted_password

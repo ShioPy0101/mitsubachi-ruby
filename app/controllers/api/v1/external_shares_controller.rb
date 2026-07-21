@@ -1,6 +1,6 @@
 class Api::V1::ExternalSharesController < ApplicationController
   before_action :authenticate_user!
-  before_action :set_external_share, only: %i[show update destroy]
+  before_action :set_external_share, only: %i[show update destroy regenerate_password]
 
   def index
     shares = manageable_external_shares.includes(:created_by_user).order(created_at: :desc)
@@ -19,7 +19,9 @@ class Api::V1::ExternalSharesController < ApplicationController
     end
 
     record_external_share_event!("external_share.created", result.external_share, metadata: creation_metadata(result.external_share))
-    render json: external_share_json(result.external_share).merge(share_url: share_url(result.raw_token)), status: :created
+    response_body = external_share_json(result.external_share).merge(share_url: share_url(result.raw_token))
+    response_body[:generated_password] = result.generated_password if result.generated_password.present?
+    render json: response_body, status: :created
   end
 
   def update
@@ -37,6 +39,17 @@ class Api::V1::ExternalSharesController < ApplicationController
     ExternalShares::RevokeService.new(external_share: @external_share).call
     record_external_share_event!("external_share.revoked", @external_share, metadata: creation_metadata(@external_share))
     render json: external_share_json(@external_share)
+  end
+
+  def regenerate_password
+    result = ExternalShares::PasswordRegenerationService.new(external_share: @external_share).call
+    unless result.success?
+      render_api_error(:validation_failed, result.error_message, status: :unprocessable_content)
+      return
+    end
+
+    record_external_share_event!("external_share.password_regenerated", @external_share, metadata: creation_metadata(@external_share))
+    render json: external_share_json(@external_share).merge(generated_password: result.generated_password)
   end
 
   private
@@ -59,7 +72,7 @@ class Api::V1::ExternalSharesController < ApplicationController
       :expires_at,
       :allow_download,
       :allow_bulk_download,
-      :password,
+      :password_protected,
       :folder_share_mode,
       drive_item_ids: []
     )

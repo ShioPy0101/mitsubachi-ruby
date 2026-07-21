@@ -25,8 +25,8 @@ class Api::V1::Public::SharesController < ApplicationController
     ).call
 
     unless result.success?
-      record_external_access!("external_share.password_failed", outcome: "denied", metadata: { reason: "invalid_password" })
-      render_public_not_found
+      record_external_access!("external_share.password_failed", outcome: "denied", metadata: { reason: result.error_code })
+      render_unlock_error(result)
       return
     end
 
@@ -112,7 +112,7 @@ class Api::V1::Public::SharesController < ApplicationController
   private
 
   def set_external_share
-    @external_share = ExternalShares::TokenResolver.new(raw_token: params[:token]).call
+    @external_share = ExternalShares::TokenResolver.new(raw_token: params[:token], include_inactive: action_name == "unlock").call
     render_public_not_found if @external_share.blank?
   end
 
@@ -225,6 +225,15 @@ class Api::V1::Public::SharesController < ApplicationController
 
   def render_public_not_found(status: :not_found)
     render json: { error: { code: "not_found", message: "この共有リンクは利用できません" } }, status: status
+  end
+
+  def render_unlock_error(result)
+    render json: {
+      error: {
+        code: result.error_code.to_s,
+        message: result.error_message
+      }
+    }, status: result.status
   end
 
   def record_external_access!(action, drive_item: nil, outcome: "success", metadata: {})
