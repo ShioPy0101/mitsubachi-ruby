@@ -46,17 +46,17 @@ class Api::V1::DriveItemsController < ApplicationController
     item_type = params[:item_type]
 
     unless valid_item_type?(item_type)
-      render_api_error(:validation_failed, "ファイルタイプは file または directory のいずれかである必要があります", status: :unprocessable_entity)
+      render_api_error(:validation_failed, "ファイルタイプは file または directory のいずれかである必要があります", status: :unprocessable_content)
       return
     end
 
     if file_item_without_upload?(item_type)
-      render_api_error(:invalid_file, "ファイルが指定されていません", status: :unprocessable_entity)
+      render_api_error(:invalid_file, "ファイルが指定されていません", status: :unprocessable_content)
       return
     end
 
     if directory_item_with_upload?(item_type)
-      render_api_error(:invalid_file, "ディレクトリ作成時にファイルは指定できません", status: :unprocessable_entity)
+      render_api_error(:invalid_file, "ディレクトリ作成時にファイルは指定できません", status: :unprocessable_content)
       return
     end
 
@@ -113,7 +113,7 @@ class Api::V1::DriveItemsController < ApplicationController
         end
       rescue ActiveRecord::ActiveRecordError => error
         Rails.logger.error("[drive_items.create] failed to save drive_item error=#{error.class}: #{error.message}")
-        render_api_error(:validation_failed, "ファイルを保存できませんでした", status: :unprocessable_entity)
+        render_api_error(:validation_failed, "ファイルを保存できませんでした", status: :unprocessable_content)
       rescue DriveItems::StoredFileInspector::UploadTooLargeError
         render_api_error(:payload_too_large, "ファイルサイズが上限を超えています", status: :content_too_large)
       ensure
@@ -282,7 +282,7 @@ class Api::V1::DriveItemsController < ApplicationController
     Rails.logger.error("[drive_items.bulk_download] failed to send zip error=#{error.class}: #{error.message}")
     return if performed?
 
-    render_api_error(:validation_failed, "ZIPファイルを送信できませんでした", status: :unprocessable_entity)
+    render_api_error(:validation_failed, "ZIPファイルを送信できませんでした", status: :unprocessable_content)
   end
 
   def preview
@@ -372,7 +372,7 @@ class Api::V1::DriveItemsController < ApplicationController
     end
 
     unless parent.directory?
-      render_api_error(:invalid_parent, invalid_message, status: :unprocessable_entity)
+      render_api_error(:invalid_parent, invalid_message, status: :unprocessable_content)
       return false
     end
 
@@ -494,7 +494,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def render_invalid_move(message)
-    render_api_error(:validation_failed, message, status: :unprocessable_entity)
+    render_api_error(:validation_failed, message, status: :unprocessable_content)
     false
   end
 
@@ -554,7 +554,7 @@ class Api::V1::DriveItemsController < ApplicationController
     render_validation_failed(error.record)
   rescue ActiveRecord::ActiveRecordError => error
     Rails.logger.error("[drive_items.bulk] failed error=#{error.class}: #{error.message}")
-    render_api_error(:validation_failed, "一括操作に失敗しました", status: :unprocessable_entity)
+    render_api_error(:validation_failed, "一括操作に失敗しました", status: :unprocessable_content)
   end
 
   def save_uploaded_file(uploaded_file, storage_key)

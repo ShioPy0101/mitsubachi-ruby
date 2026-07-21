@@ -36,7 +36,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
       )
       render json: { data: organization_json(organization) }, status: :created
     else
-      render json: { errors: organization.errors.full_messages }, status: :unprocessable_entity
+      render json: { errors: organization.errors.full_messages }, status: :unprocessable_content
     end
   end
 

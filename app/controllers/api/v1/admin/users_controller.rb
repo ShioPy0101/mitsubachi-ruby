@@ -110,7 +110,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   end
 
   def validate_user_update!(user, attributes)
-    return fail_user_update!(:validation_error, "role が不正です", :unprocessable_entity) if attributes["role"].present? && !User.roles.key?(attributes["role"])
+    return fail_user_update!(:validation_error, "role が不正です", :unprocessable_content) if attributes["role"].present? && !User.roles.key?(attributes["role"])
     return fail_user_update!(:forbidden, "system_admin を変更する権限がありません", :forbidden) if !system_admin? && user.system_admin?
     return fail_user_update!(:forbidden, "system_admin へ変更する権限がありません", :forbidden) if !system_admin? && attributes["role"] == "system_admin"
     return fail_user_update!(:forbidden, "別organizationへ移動する権限がありません", :forbidden) if forbidden_organization_change?(user)

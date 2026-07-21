@@ -92,7 +92,7 @@ class Api::V1::Admin::BaseController < ApplicationController
   end
 
   def render_validation_error(record)
-    render_error(:validation_error, "入力内容を確認してください", :unprocessable_entity, details: record.errors.to_hash)
+    render_error(:validation_error, "入力内容を確認してください", :unprocessable_content, details: record.errors.to_hash)
   end
 
   def render_record_invalid(error)

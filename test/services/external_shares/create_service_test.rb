@@ -35,10 +35,21 @@ class ExternalShares::CreateServiceTest < ActiveSupport::TestCase
     ).call
 
     assert result.success?
+    share = result.external_share
     assert_predicate result.raw_token, :present?
-    assert_equal "snapshot", result.external_share.folder_share_mode
-    assert_equal [ @file.id, @folder.id, @nested_file.id ].sort,
-                 result.external_share.external_share_items.pluck(:drive_item_id).sort
+    assert_equal "snapshot", share.folder_share_mode
+
+    expected_ids = [
+      @file,
+      @folder,
+      drive_items(:grandchild_folder),
+      @nested_file
+    ].map(&:id).sort
+    actual_ids = share.external_share_items.pluck(:drive_item_id).sort
+
+    assert_equal expected_ids, actual_ids
+    assert_equal actual_ids.uniq, actual_ids
+    assert_not_includes actual_ids, drive_items(:one).id
   end
 
   test "dynamic共有では選択されたルートだけを保存する" do
