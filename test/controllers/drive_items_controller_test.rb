@@ -1282,6 +1282,42 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal false, duplicate_files.first.fetch("deleted")
   end
 
+  test "allow_duplicate_content が true の場合は同一内容でも新規作成できる" do
+    sign_in @user
+    create_named_file(name: "既存", extension: "txt", body: "same-content", parent: @root)
+
+    assert_difference "DriveItem.count", 1 do
+      post api_v1_drive_items_url, params: {
+        name: "新規",
+        item_type: "file",
+        parent_id: @root.id,
+        allow_duplicate_content: "true",
+        file: uploaded_file("新規.txt", "same-content")
+      }
+    end
+
+    assert_response :created
+    assert_equal "新規", response.parsed_body.fetch("name")
+  end
+
+  test "allow_duplicate_content が false の場合は同一内容を拒否する" do
+    sign_in @user
+    create_named_file(name: "既存", extension: "txt", body: "same-content", parent: @root)
+
+    assert_no_difference "DriveItem.count" do
+      post api_v1_drive_items_url, params: {
+        name: "新規",
+        item_type: "file",
+        parent_id: @root.id,
+        allow_duplicate_content: "false",
+        file: uploaded_file("新規.txt", "same-content")
+      }
+    end
+
+    assert_response :conflict
+    assert_equal "active_content_duplicate", response.parsed_body.dig("error", "code")
+  end
+
   test "同一内容がごみ箱だけにある場合は専用409を返す" do
     sign_in @user
     trashed = create_named_file(name: "削除済み", extension: "txt", body: "trash-content", parent: @root, deleted_at: Time.current)

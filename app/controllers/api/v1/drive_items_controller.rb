@@ -86,13 +86,13 @@ class Api::V1::DriveItemsController < ApplicationController
         return if performed?
       end
 
-      if (active_duplicate = active_content_duplicate_item(upload_hash))
+      if (active_duplicate = active_content_duplicate_item(upload_hash)) && !allow_duplicate_content?
         render_active_content_duplicate(active_duplicate)
         return
       end
 
       trash_duplicate = trash_content_duplicate_item(upload_hash)
-      if trash_duplicate.present? && replace_target.blank?
+      if trash_duplicate.present? && replace_target.blank? && !allow_duplicate_content?
         render_trash_content_duplicate(trash_duplicate)
         return
       end
@@ -947,6 +947,10 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def allow_trash_duplicate?
     ActiveModel::Type::Boolean.new.cast(params[:allow_trash_duplicate])
+  end
+
+  def allow_duplicate_content?
+    ActiveModel::Type::Boolean.new.cast(params[:allow_duplicate_content])
   end
 
   def restore_drive_item!(drive_item)
