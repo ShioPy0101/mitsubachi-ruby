@@ -293,7 +293,7 @@ module DriveItems
         item_type: item.item_type,
         name: item.filename,
         parent_path: parent_path(item.parent, item.parent_id),
-        purge_note: item.directory? ? "既存のフォルダーを完全削除すると、配下のファイルも削除されます" : "完全削除後は元に戻せません"
+        purge_note: item.directory? ? "既存のフォルダーをゴミ箱へ移動すると、配下の項目も移動されます" : "既存の項目はゴミ箱へ移動されます"
       }
     end
 
