@@ -14,11 +14,12 @@ module DriveItems
       end
     end
 
-    def initialize(organization:, actor_user:, items:)
+    def initialize(organization:, actor_user:, items:, confirmation_token: nil)
       @organization = organization
       @actor_user = actor_user
       @items = Array(items)
       @resolution_map = @items.index_by { |item| item.fetch(:item_id).to_i }
+      @confirmation_token = confirmation_token.presence
     end
 
     def call
@@ -31,6 +32,7 @@ module DriveItems
         resolutions: resolution_options
       )
       preview_items = preview.call
+      return Result.stale(preview: preview.as_json) unless confirmation_token_matches?(preview, preview_items)
       return Result.stale(preview: preview.as_json) unless current_preview_matches?(preview_items) && executable_preview?(preview_items)
 
       restored_items = []
@@ -50,6 +52,12 @@ module DriveItems
     end
 
     private
+
+    def confirmation_token_matches?(preview, preview_items)
+      return true if @confirmation_token.blank?
+
+      ActiveSupport::SecurityUtils.secure_compare(@confirmation_token, preview.confirmation_token_for(preview_items))
+    end
 
     def resolution_options
       @resolution_map.transform_values do |item|

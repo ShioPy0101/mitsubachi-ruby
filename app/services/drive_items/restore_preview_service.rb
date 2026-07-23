@@ -1,4 +1,6 @@
 require "set"
+require "digest"
+require "json"
 
 module DriveItems
   class RestorePreviewService
@@ -30,9 +32,14 @@ module DriveItems
     def as_json
       items = call
       {
+        confirmation_token: confirmation_token_for(items),
         items: items.map { |item| item_json(item) },
         summary: summary_json(items)
       }
+    end
+
+    def confirmation_token_for(items)
+      Digest::SHA256.hexdigest(JSON.generate(fingerprint_for(items)))
     end
 
     private
@@ -255,6 +262,37 @@ module DriveItems
         rename_count: items.count { |item| item.after[:resolution] == "rename" && item.before[:name] != item.after[:name] },
         purge_existing_count: 0,
         trash_existing_count: items.count { |item| item.after[:existing_item_will_be_trashed] }
+      }
+    end
+
+    def fingerprint_for(items)
+      items
+        .sort_by { |preview| preview.item.id }
+        .map { |preview| fingerprint_item(preview) }
+    end
+
+    def fingerprint_item(preview)
+      {
+        item_id: preview.item.id,
+        item_type: preview.item.item_type,
+        restore_target_id: preview.restore_target.id,
+        source: {
+          deleted: preview.item.deleted_at.present?,
+          purged: preview.item.purged_at.present?,
+          parent_id: preview.item.parent_id,
+          name: preview.item.name,
+          extension: preview.item.extension
+        },
+        conflict_type: preview.conflict_type,
+        parent_exists: preview.parent_exists,
+        existing_item_id: preview.existing_item&.id,
+        after: {
+          name: preview.after[:name],
+          parent_id: preview.after[:parent_id],
+          resolution: preview.after[:resolution],
+          restorable: preview.after[:restorable],
+          existing_item_will_be_trashed: preview.after[:existing_item_will_be_trashed]
+        }
       }
     end
 
