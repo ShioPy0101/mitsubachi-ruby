@@ -161,6 +161,7 @@ class DriveItem < ApplicationRecord
     end
 
     if file?
+      return if purged_at.present?
 
       # ファイルの場合、extension, blob_path, storage_key, file_hashは必須である
       errors.add(:extension, "is required") if extension.blank?
@@ -171,6 +172,7 @@ class DriveItem < ApplicationRecord
 
   def storage_key_format
     return unless file?
+    return if purged_at.present?
     return if self.class.valid_storage_key?(storage_key)
 
     errors.add(:storage_key, "is invalid")
