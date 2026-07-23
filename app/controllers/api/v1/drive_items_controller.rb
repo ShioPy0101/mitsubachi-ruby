@@ -79,14 +79,20 @@ class Api::V1::DriveItemsController < ApplicationController
         return
       end
 
-      upload_hash = digest_uploaded_file(uploaded_file)
-      if !allow_duplicate_content? && duplicate_content_items(upload_hash).exists?
-        render_duplicate_content(upload_hash)
+      if duplicate_active_item?(parent_id:, name:, extension:)
+        render_name_conflict(name, parent_id:, extension:)
         return
       end
 
-      if duplicate_active_item?(parent_id:, name:, extension:)
-        render_name_conflict(name, parent_id:, extension:)
+      upload_hash = digest_uploaded_file(uploaded_file)
+      if (active_duplicate = active_content_duplicate_item(upload_hash))
+        render_active_content_duplicate(active_duplicate)
+        return
+      end
+
+      trash_duplicate = trash_content_duplicate_item(upload_hash)
+      if trash_duplicate.present? && !allow_trash_duplicate?
+        render_trash_content_duplicate(trash_duplicate)
         return
       end
 
@@ -298,6 +304,13 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def restore
+    return unless validate_parent_id(@drive_item.parent_id, not_found_message: "復元先フォルダが見つかりません", invalid_message: "復元先にはディレクトリを指定してください")
+
+    if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension: @drive_item.extension, excluding_id: @drive_item.id)
+      render_duplicate_name(@drive_item.name, parent_id: @drive_item.parent_id, extension: @drive_item.extension)
+      return
+    end
+
     before = @drive_item.deleted_at
     if @drive_item.update(deleted_at: nil)
       record_drive_item_event!("drive_item.restore", @drive_item, changes: { deleted_at: [ before, nil ] })
@@ -508,22 +521,28 @@ class Api::V1::DriveItemsController < ApplicationController
     )
   end
 
-  def render_duplicate_content(upload_hash)
-    files = duplicate_content_items(upload_hash).includes(:owner_user, :parent).order(deleted_at: :asc, created_at: :desc)
-    message =
-      if files.all? { |drive_item| drive_item.deleted_at.present? }
-        "同じ内容のファイルが、この組織のごみ箱に存在します。"
-      else
-        "同じ内容のファイルが、この組織内にすでに存在します。"
-      end
-
+  def render_active_content_duplicate(drive_item)
     render_api_error(
-      :duplicate_content,
-      message,
+      :active_content_duplicate,
+      "同じ内容のファイルが、この組織内にすでに存在します。",
       status: :conflict,
       details: {
         duplicate_kind: "same_content",
-        duplicate_files: files.map { |drive_item| duplicate_content_file_json(drive_item) }
+        duplicate_files: [ duplicate_content_file_json(drive_item) ],
+        allowed_actions: [ "open_existing", "cancel" ]
+      }
+    )
+  end
+
+  def render_trash_content_duplicate(drive_item)
+    render_api_error(
+      :trash_content_duplicate,
+      "同じ内容のファイルがゴミ箱にあります",
+      status: :conflict,
+      details: {
+        duplicate_kind: "trash_content",
+        duplicate: trash_duplicate_json(drive_item),
+        allowed_actions: [ "restore", "upload_anyway", "cancel" ]
       }
     )
   end
@@ -593,8 +612,18 @@ class Api::V1::DriveItemsController < ApplicationController
     current_user.organization.drive_items.active.find_by(parent_id:, name:, extension:)
   end
 
-  def duplicate_content_items(upload_hash)
+  def active_content_duplicate_item(upload_hash)
     current_user.organization.drive_items.active.file.where(file_hash: upload_hash)
+                .includes(:owner_user, :parent)
+                .order(created_at: :desc)
+                .first
+  end
+
+  def trash_content_duplicate_item(upload_hash)
+    current_user.organization.drive_items.trashed.file.where(file_hash: upload_hash)
+                .includes(:owner_user, :parent)
+                .order(deleted_at: :desc, id: :desc)
+                .first
   end
 
   def duplicate_content_file_json(drive_item)
@@ -610,8 +639,52 @@ class Api::V1::DriveItemsController < ApplicationController
     }
   end
 
-  def allow_duplicate_content?
-    ActiveModel::Type::Boolean.new.cast(params[:allow_duplicate_content])
+  def trash_duplicate_json(drive_item)
+    {
+      id: drive_item.id,
+      name: drive_item.name,
+      extension: drive_item.extension,
+      display_name: drive_item.filename,
+      file_size: drive_item.file_size,
+      content_type: drive_item.content_type,
+      deleted_at: drive_item.deleted_at&.iso8601,
+      original_parent: original_parent_json(drive_item.parent),
+      uploaded_by: uploaded_by_json(drive_item.owner_user)
+    }
+  end
+
+  def original_parent_json(parent)
+    return nil if parent.nil?
+    return nil if parent.organization_id != current_user.organization_id
+
+    {
+      id: parent.id,
+      name: parent.name,
+      path: drive_item_path(parent)
+    }
+  end
+
+  def uploaded_by_json(user)
+    return nil if user.nil?
+
+    {
+      id: user.id,
+      display_name: user.safe_display_name
+    }
+  end
+
+  def drive_item_path(drive_item)
+    names = []
+    current = drive_item
+    while current.present? && current.organization_id == current_user.organization_id
+      names.unshift(current.name)
+      current = current.parent
+    end
+    "/#{names.join("/")}"
+  end
+
+  def allow_trash_duplicate?
+    ActiveModel::Type::Boolean.new.cast(params[:allow_trash_duplicate])
   end
 
   def next_available_name(parent_id:, name:, extension:)
