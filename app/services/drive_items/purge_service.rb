@@ -83,6 +83,8 @@ module DriveItems
           purged_at: purged_at,
           deleted_at: item.deleted_at || purged_at,
           purged_by_user: @actor_user,
+          trash_batch_id: nil,
+          trashed_by_ancestor_id: nil,
           storage_key: nil,
           blob_path: nil
         )

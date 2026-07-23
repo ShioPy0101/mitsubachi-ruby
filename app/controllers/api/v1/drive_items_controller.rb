@@ -85,8 +85,19 @@ class Api::V1::DriveItemsController < ApplicationController
       end
 
       upload_hash = digest_uploaded_file(uploaded_file)
+      replace_target = nil
+      if replace_trashed_drive_item_id.present?
+        replace_target = replace_target_for_upload(upload_hash)
+        return if performed?
+      end
+
       if (active_duplicate = active_content_duplicate_item(upload_hash))
         render_active_content_duplicate(active_duplicate)
+        return
+      end
+
+      if replace_target.present?
+        replace_trashed_upload!(uploaded_file:, upload_hash:, extension:, replace_target:)
         return
       end
 
@@ -203,12 +214,15 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def destroy
     before = @drive_item.deleted_at
-    if @drive_item.update(deleted_at: Time.current)
-      record_drive_item_event!("drive_item.delete", @drive_item, changes: { deleted_at: [ before, @drive_item.deleted_at ] })
-      render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" }
-    else
-      render_validation_failed(@drive_item)
+    result = DriveItems::TrashService.new(drive_items: [ @drive_item ]).call
+    unless result.success?
+      render_api_error(error_code_for_status(result.status), result.message, status: result.status)
+      return
     end
+
+    @drive_item.reload
+    record_drive_item_event!("drive_item.delete", @drive_item, changes: { deleted_at: [ before, @drive_item.deleted_at ] })
+    render json: { message: result.message }
   end
 
   def trash
@@ -251,19 +265,20 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def bulk_delete
-    deleted_at = Time.current
-
-    update_drive_items!(active_drive_items_for_bulk) do |drive_item|
-      drive_item.update!(deleted_at: deleted_at)
+    result = DriveItems::TrashService.new(drive_items: active_drive_items_for_bulk.to_a).call
+    unless result.success?
+      render_api_error(error_code_for_status(result.status), result.message, status: result.status)
+      return
     end
+
     record_bulk_drive_item_event!("drive_item.bulk_delete") unless performed?
 
-    render json: { message: "ファイルまたはフォルダをゴミ箱に移動しました" } unless performed?
+    render json: { message: result.message } unless performed?
   end
 
   def bulk_restore
-    update_drive_items!(deleted_drive_items_for_bulk) do |drive_item|
-      drive_item.update!(deleted_at: nil)
+    deleted_drive_items_for_bulk.each do |drive_item|
+      return unless restore_drive_item!(drive_item)
     end
     record_bulk_drive_item_event!("drive_item.bulk_restore") unless performed?
 
@@ -304,20 +319,8 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def restore
-    return unless validate_parent_id(@drive_item.parent_id, not_found_message: "復元先フォルダが見つかりません", invalid_message: "復元先にはディレクトリを指定してください")
-
-    if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension: @drive_item.extension, excluding_id: @drive_item.id)
-      render_duplicate_name(@drive_item.name, parent_id: @drive_item.parent_id, extension: @drive_item.extension)
-      return
-    end
-
-    before = @drive_item.deleted_at
-    if @drive_item.update(deleted_at: nil)
-      record_drive_item_event!("drive_item.restore", @drive_item, changes: { deleted_at: [ before, nil ] })
-      render json: drive_item_json(@drive_item)
-    else
-      render_validation_failed(@drive_item)
-    end
+    restored_item = restore_drive_item!(@drive_item)
+    render json: drive_item_json(restored_item) if restored_item && !performed?
   end
 
   def purge
@@ -361,6 +364,10 @@ class Api::V1::DriveItemsController < ApplicationController
   def normalized_parent_id
     parent_id = params[:parent_id]
     parent_id.present? ? parent_id.to_i : nil
+  end
+
+  def replace_trashed_drive_item_id
+    params[:replace_trashed_drive_item_id].presence
   end
 
   def valid_item_type?(item_type)
@@ -585,6 +592,109 @@ class Api::V1::DriveItemsController < ApplicationController
     )
   end
 
+  def replace_target_for_upload(upload_hash)
+    replace_target = current_user.organization.drive_items.find_by(id: replace_trashed_drive_item_id)
+    unless replace_target
+      render_not_found
+      return nil
+    end
+    if replace_target.purged_at.present?
+      render_api_error(:replace_target_already_purged, "置換対象はすでに完全削除済みです", status: :conflict)
+      return nil
+    end
+    if replace_target.deleted_at.blank?
+      render_api_error(:replace_target_not_trashed, "置換対象はゴミ箱内にありません", status: :conflict)
+      return nil
+    end
+    unless replace_target.file?
+      render_api_error(:replace_target_mismatch, "置換対象がファイルではありません", status: :conflict)
+      return nil
+    end
+    if replace_target.file_hash != upload_hash
+      render_api_error(:replace_target_mismatch, "置換対象とアップロードファイルの内容が一致しません", status: :conflict)
+      return nil
+    end
+
+    replace_target
+  end
+
+  def replace_trashed_upload!(uploaded_file:, upload_hash:, extension:, replace_target:)
+    generated_storage_key = build_storage_key(extension)
+    old_storage_key = replace_target.effective_storage_key
+    file_saved = false
+    committed = false
+
+    begin
+      stored_file = save_uploaded_file(uploaded_file, generated_storage_key)
+      file_saved = true
+
+      ActiveRecord::Base.transaction do
+        replace_target.lock!
+        validate_replace_target_state!(replace_target, upload_hash)
+
+        @drive_item.storage_key = stored_file.storage_key
+        @drive_item.extension = extension
+        @drive_item.file_hash = stored_file.sha256
+        @drive_item.file_size = stored_file.byte_size
+        @drive_item.content_type = stored_file.content_type
+        @drive_item.save!
+
+        replace_target.update!(
+          purged_at: Time.current,
+          purged_by_user: current_user,
+          trash_batch_id: nil,
+          trashed_by_ancestor_id: nil,
+          storage_key: nil,
+          blob_path: nil
+        )
+      end
+      committed = true
+
+      record_drive_item_event!("drive_item.replace_trashed", @drive_item, metadata: {
+        source: "trash_duplicate_invalid_parent_resolution",
+        old_drive_item_id: replace_target.id,
+        new_drive_item_id: @drive_item.id,
+        original_name: replace_target.filename
+      })
+      cleanup_replaced_storage!(old_storage_key, replace_target.id)
+      render json: drive_item_json(@drive_item), status: :created
+    rescue ActiveRecord::RecordInvalid => error
+      render_validation_failed(error.record)
+    rescue ActiveRecord::ActiveRecordError => error
+      Rails.logger.error("[drive_items.replace_trashed] failed error=#{error.class}: #{error.message}")
+      render_api_error(:validation_failed, "ファイルを保存できませんでした", status: :unprocessable_content)
+    rescue DriveItems::StoredFileInspector::UploadTooLargeError
+      render_api_error(:payload_too_large, "ファイルサイズが上限を超えています", status: :content_too_large)
+    ensure
+      cleanup_uploaded_file!(generated_storage_key) if file_saved && !committed
+    end
+  end
+
+  def validate_replace_target_state!(replace_target, upload_hash)
+    raise ActiveRecord::RecordNotFound unless replace_target.organization_id == current_user.organization_id
+
+    if replace_target.purged_at.present?
+      raise ActiveRecord::RecordInvalid.new(replace_target.tap { |item| item.errors.add(:base, "置換対象はすでに完全削除済みです") })
+    end
+    if replace_target.deleted_at.blank?
+      raise ActiveRecord::RecordInvalid.new(replace_target.tap { |item| item.errors.add(:base, "置換対象はゴミ箱内にありません") })
+    end
+    if !replace_target.file? || replace_target.file_hash != upload_hash
+      raise ActiveRecord::RecordInvalid.new(replace_target.tap { |item| item.errors.add(:base, "置換対象とアップロードファイルの内容が一致しません") })
+    end
+  end
+
+  def cleanup_replaced_storage!(storage_key, purged_drive_item_id)
+    return if storage_key.blank?
+    return unless DriveItem.valid_storage_key?(storage_key)
+    return if DriveItem.not_purged.where(storage_key: storage_key).where.not(id: purged_drive_item_id).exists?
+    return if DriveItem.not_purged.where(blob_path: DriveItem.storage_relative_path_for(storage_key)).where.not(id: purged_drive_item_id).exists?
+
+    cleanup_uploaded_file!(storage_key)
+  rescue StandardError => error
+    Rails.logger.error("[drive_items.replace_trashed] cleanup failed drive_item_id=#{purged_drive_item_id} error=#{error.class}: #{error.message}")
+  end
+
   def digest_uploaded_file(uploaded_file)
     io = uploaded_file.tempfile
     io.rewind
@@ -613,17 +723,38 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def active_content_duplicate_item(upload_hash)
-    current_user.organization.drive_items.active.file.where(file_hash: upload_hash)
-                .includes(:owner_user, :parent)
-                .order(created_at: :desc)
-                .first
+    current_user
+      .organization
+      .drive_items
+      .active
+      .file
+      .where(file_hash: upload_hash)
+      .includes(:owner_user, :parent)
+      .order(created_at: :desc, id: :desc)
+      .detect { |drive_item| deleted_ancestor(drive_item).nil? }
   end
 
   def trash_content_duplicate_item(upload_hash)
-    current_user.organization.drive_items.trashed.file.where(file_hash: upload_hash)
-                .includes(:owner_user, :parent)
-                .order(deleted_at: :desc, id: :desc)
-                .first
+    own_trash_duplicate = current_user
+      .organization
+      .drive_items
+      .trashed
+      .file
+      .where(file_hash: upload_hash)
+      .includes(:owner_user, :parent)
+      .order(deleted_at: :desc, id: :desc)
+      .first
+    return own_trash_duplicate if own_trash_duplicate.present?
+
+    current_user
+      .organization
+      .drive_items
+      .active
+      .file
+      .where(file_hash: upload_hash)
+      .includes(:owner_user, :parent)
+      .order(created_at: :desc, id: :desc)
+      .detect { |drive_item| deleted_ancestor(drive_item).present? }
   end
 
   def duplicate_content_file_json(drive_item)
@@ -640,6 +771,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def trash_duplicate_json(drive_item)
+    restore_target = restore_target_for(drive_item)
     {
       id: drive_item.id,
       name: drive_item.name,
@@ -647,9 +779,20 @@ class Api::V1::DriveItemsController < ApplicationController
       display_name: drive_item.filename,
       file_size: drive_item.file_size,
       content_type: drive_item.content_type,
-      deleted_at: drive_item.deleted_at&.iso8601,
+      deleted_at: effective_deleted_at(drive_item)&.iso8601,
       original_parent: original_parent_json(drive_item.parent),
-      uploaded_by: uploaded_by_json(drive_item.owner_user)
+      uploaded_by: uploaded_by_json(drive_item.owner_user),
+      restore_target: restore_target_json(restore_target)
+    }
+  end
+
+  def restore_target_json(drive_item)
+    return nil if drive_item.nil?
+
+    {
+      id: drive_item.id,
+      type: drive_item.item_type,
+      display_name: drive_item.filename
     }
   end
 
@@ -683,8 +826,49 @@ class Api::V1::DriveItemsController < ApplicationController
     "/#{names.join("/")}"
   end
 
+  def restore_target_for(drive_item)
+    DriveItems::RestoreService.new(drive_item: drive_item).restore_target
+  end
+
+  def effective_deleted_at(drive_item)
+    drive_item.deleted_at || deleted_ancestor(drive_item)&.deleted_at
+  end
+
+  def deleted_ancestor(drive_item)
+    current = drive_item.parent
+    visited_ids = Set.new
+    while current.present? && current.organization_id == current_user.organization_id
+      return current if current.deleted_at.present? || current.purged_at.present?
+      return if visited_ids.include?(current.id)
+
+      visited_ids << current.id
+      current = current.parent
+    end
+  end
+
   def allow_trash_duplicate?
     ActiveModel::Type::Boolean.new.cast(params[:allow_trash_duplicate])
+  end
+
+  def restore_drive_item!(drive_item)
+    service = DriveItems::RestoreService.new(drive_item:)
+    restore_target = service.restore_target
+    return unless validate_parent_id(restore_target.parent_id, not_found_message: "復元先フォルダが見つかりません", invalid_message: "復元先にはディレクトリを指定してください")
+
+    if duplicate_active_item?(parent_id: restore_target.parent_id, name: restore_target.name, extension: restore_target.extension, excluding_id: restore_target.id)
+      render_duplicate_name(restore_target.name, parent_id: restore_target.parent_id, extension: restore_target.extension)
+      return
+    end
+
+    before = restore_target.deleted_at
+    result = service.call
+    unless result.success?
+      render_api_error(error_code_for_status(result.status), result.message, status: result.status)
+      return
+    end
+
+    record_drive_item_event!("drive_item.restore", result.restore_target, changes: { deleted_at: [ before, nil ] })
+    result.restore_target.reload
   end
 
   def next_available_name(parent_id:, name:, extension:)
