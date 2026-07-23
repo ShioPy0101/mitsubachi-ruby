@@ -600,27 +600,21 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, first.dig("summary", "conflict_count")
     assert_equal 1, first.dig("summary", "restorable_count")
     assert_equal "restore", first.dig("items", 0, "after", "resolution")
+    assert first.fetch("confirmation_token").present?
   end
 
-  test "restore は競合なしpreview payloadで単一ファイルを復元する" do
+  test "restore は競合なしpreview tokenで単一ファイルを復元する" do
     sign_in @user
     trashed_file = create_named_file(name: "simple-restore", extension: "txt", body: "simple-restore", parent: @root, deleted_at: 1.hour.ago)
 
     post restore_preview_api_v1_drive_item_url(trashed_file)
     assert_response :ok
-    item = response.parsed_body.fetch("items").first
+    confirmation_token = response.parsed_body.fetch("confirmation_token")
+    assert confirmation_token.present?
 
     sign_in @user
     post restore_api_v1_drive_item_url(trashed_file), params: {
-      items: [
-        {
-          item_id: item.fetch("item_id"),
-          resolution: item.dig("after", "resolution"),
-          destination_parent_id: item.dig("after", "parent_id"),
-          expected_name: item.dig("after", "name"),
-          expected_existing_item_id: item.fetch("existing_item_id")
-        }
-      ]
+      confirmation_token: confirmation_token
     }
 
     assert_response :ok
@@ -753,23 +747,21 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "restore はプレビュー後に状態が変わった場合 restore_state_changed を返す" do
     sign_in @user
     trashed_file = create_named_file(name: "restore-stale", extension: "txt", body: "trash", parent: @root, deleted_at: 1.hour.ago)
+
+    post restore_preview_api_v1_drive_item_url(trashed_file)
+    assert_response :ok
+    confirmation_token = response.parsed_body.fetch("confirmation_token")
     create_named_file(name: "restore-stale", extension: "txt", body: "new-active", parent: @root)
 
+    sign_in @user
     post restore_api_v1_drive_item_url(trashed_file), params: {
-      items: [
-        {
-          item_id: trashed_file.id,
-          resolution: "rename",
-          expected_name: "restore-stale.txt",
-          expected_existing_item_id: nil
-        }
-      ]
+      confirmation_token: confirmation_token
     }
 
     assert_response :conflict
     assert_equal "restore_state_changed", response.parsed_body.dig("error", "code")
     assert trashed_file.reload.deleted_at.present?
-    assert_equal "restore-stale (1).txt", response.parsed_body.dig("error", "details", "items", 0, "after", "name")
+    assert_equal "restore-stale.txt", response.parsed_body.dig("error", "details", "items", 0, "after", "name")
   end
 
   test "restore with select_destination requires an explicit active destination" do

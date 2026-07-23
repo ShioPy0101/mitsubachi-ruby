@@ -327,8 +327,9 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def restore
-    if restore_resolution_items.present?
-      restore_with_resolutions!(restore_resolution_items)
+    resolution_items = restore_resolution_items
+    if resolution_items.present? || params[:confirmation_token].present?
+      restore_with_resolutions!(resolution_items.presence || [ { item_id: @drive_item.id, resolution: "restore" } ])
       return
     end
 
@@ -486,7 +487,8 @@ class Api::V1::DriveItemsController < ApplicationController
     result = DriveItems::RestoreResolutionService.new(
       organization: current_user.organization,
       actor_user: current_user,
-      items: items
+      items: items,
+      confirmation_token: params[:confirmation_token]
     ).call
     unless result.success?
       if result.preview.present?
