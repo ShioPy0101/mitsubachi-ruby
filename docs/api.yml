@@ -602,6 +602,20 @@ paths:
           $ref: "#/components/responses/Error"
         "422":
           $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/bulk_purge:
+    delete:
+      operationId: deleteApiV1DriveItemsBulkPurge
+      tags: [DriveItems]
+      summary: Permanently purge multiple deleted drive items.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkIds"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/drive_items/bulk_restore:
     post:
       operationId: postApiV1DriveItemsBulkRestore
