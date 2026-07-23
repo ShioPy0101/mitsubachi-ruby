@@ -128,6 +128,46 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_nil child_file.trashed_by_ancestor_id
   end
 
+  test "ゴミ箱トップは直接削除されたルートだけを返す" do
+    sign_in @user
+    root = create_directory(name: "trash-list-root")
+    child_file = create_named_file(name: "child", extension: "txt", body: "trash-list-child", parent: root)
+    child_dir = create_directory(name: "child-dir", parent: root)
+    grandchild_file = create_named_file(name: "grandchild", extension: "txt", body: "trash-list-grandchild", parent: child_dir)
+
+    delete api_v1_drive_item_url(root)
+    assert_response :ok
+
+    sign_in @user
+    get trash_api_v1_drive_items_url
+
+    assert_response :ok
+    ids = response.parsed_body.pluck("id")
+    assert_includes ids, root.id
+    assert_not_includes ids, child_file.id
+    assert_not_includes ids, child_dir.id
+    assert_not_includes ids, grandchild_file.id
+  end
+
+  test "ゴミ箱内ディレクトリは同じ削除単位の子だけを返す" do
+    sign_in @user
+    root = create_directory(name: "trash-children-root")
+    old_deleted_at = 2.days.ago
+    old_child = create_named_file(name: "old-child", extension: "txt", body: "old-trash-child", parent: root, deleted_at: old_deleted_at)
+    child_file = create_named_file(name: "child", extension: "txt", body: "trash-child", parent: root)
+
+    delete api_v1_drive_item_url(root)
+    assert_response :ok
+
+    sign_in @user
+    get trash_api_v1_drive_items_url, params: { parent_id: root.id }
+
+    assert_response :ok
+    ids = response.parsed_body.pluck("id")
+    assert_includes ids, child_file.id
+    assert_not_includes ids, old_child.id
+  end
+
   test "ゴミ箱へ移動したディレクトリ配下のファイルはゴミ箱内同一内容として返す" do
     sign_in @user
     root = create_directory(name: "trash-duplicate-root")
@@ -153,7 +193,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "directory", duplicate.dig("restore_target", "type")
   end
 
-  test "allow_trash_duplicate ならゴミ箱配下ファイルと同一内容を新規アップロードできる" do
+  test "allow_trash_duplicate でもゴミ箱配下ファイルと同一内容は新規作成しない" do
     sign_in @user
     root = create_directory(name: "trash-upload-anyway-root")
     child_file = create_named_file(name: "child", extension: "txt", body: "upload-anyway-content", parent: root)
@@ -162,7 +202,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     deleted_at = child_file.reload.deleted_at
 
     sign_in @user
-    assert_difference "DriveItem.count", 1 do
+    assert_no_difference "DriveItem.count" do
       post api_v1_drive_items_url, params: {
         name: "new-file",
         item_type: "file",
@@ -172,8 +212,8 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_response :created
-    assert_nil DriveItem.order(:id).last.deleted_at
+    assert_response :conflict
+    assert_equal "trash_content_duplicate", response.parsed_body.dig("error", "code")
     assert_equal deleted_at.to_i, root.reload.deleted_at.to_i
     assert_equal deleted_at.to_i, child_file.reload.deleted_at.to_i
   ensure
@@ -194,12 +234,12 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_nil trashed_file.purged_at
   end
 
-  test "復元先フォルダが存在しないゴミ箱重複はallow_trash_duplicateで新規アップロードできる" do
+  test "復元先フォルダが存在しないゴミ箱重複もallow_trash_duplicateでは新規作成しない" do
     sign_in @user
     missing_parent = create_directory(name: "missing-parent-upload", deleted_at: 2.hours.ago, purged_at: 1.hour.ago)
     trashed_file = create_named_file(name: "orphan-trash", extension: "txt", body: "orphan-upload", parent: missing_parent, deleted_at: 30.minutes.ago)
 
-    assert_difference "DriveItem.count", 1 do
+    assert_no_difference "DriveItem.count" do
       post api_v1_drive_items_url, params: {
         name: "new-orphan",
         item_type: "file",
@@ -209,11 +249,10 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_response :created
+    assert_response :conflict
+    assert_equal "trash_content_duplicate", response.parsed_body.dig("error", "code")
     assert trashed_file.reload.deleted_at.present?
     assert_nil trashed_file.purged_at
-    created = DriveItem.order(:id).last
-    assert_nil created.deleted_at
   ensure
     cleanup_created_file(created) if defined?(created) && created&.persisted?
   end
@@ -518,9 +557,10 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     item = response.parsed_body.fetch("items").first
     assert_equal "name_conflict", item.fetch("conflict_type")
     assert_equal "test1.txt", item.dig("before", "name")
-    assert_equal "test1 (2).txt", item.dig("after", "name")
-    assert_equal "rename", item.dig("after", "resolution")
+    assert_equal "test1.txt", item.dig("after", "name")
+    assert_equal "restore", item.dig("after", "resolution")
     assert_equal 1, response.parsed_body.dig("summary", "conflict_count")
+    assert_equal 0, response.parsed_body.dig("summary", "rename_count")
   end
 
   test "restore_preview は親フォルダ欠損を検出しルート復元を推奨する" do
@@ -610,7 +650,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "restore-rename (1)", trashed_file.name
   end
 
-  test "restore with purge_existing purges only the previewed existing item" do
+  test "restore with trash_existing moves only the previewed existing item to trash" do
     sign_in @user
     trashed_file = create_named_file(name: "restore-purge-existing", extension: "txt", body: "trash", parent: @root, deleted_at: 1.hour.ago)
     existing = create_named_file(name: "restore-purge-existing", extension: "txt", body: "active", parent: @root)
@@ -620,7 +660,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       items: [
         {
           item_id: trashed_file.id,
-          resolution: "purge_existing",
+          resolution: "trash_existing",
           expected_name: "restore-purge-existing.txt",
           expected_existing_item_id: existing.id
         }
@@ -629,7 +669,8 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     assert_nil trashed_file.reload.deleted_at
-    assert existing.reload.purged_at.present?
+    assert existing.reload.deleted_at.present?
+    assert_nil existing.reload.purged_at
     assert_nil other.reload.purged_at
   end
 
@@ -1160,11 +1201,11 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal trashed.id, response.parsed_body.dig("error", "details", "duplicate", "id")
   end
 
-  test "同一内容がごみ箱だけにあり allow_trash_duplicate が true なら新規作成できる" do
+  test "同一内容がごみ箱だけにあり allow_trash_duplicate が true でも新規作成しない" do
     sign_in @user
     create_named_file(name: "ファイルA", extension: "txt", body: "trash-content", parent: @root, deleted_at: Time.current)
 
-    assert_difference "DriveItem.count", 1 do
+    assert_no_difference "DriveItem.count" do
       post api_v1_drive_items_url, params: {
         name: "ファイルB",
         item_type: "file",
@@ -1174,10 +1215,8 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_response :created
-    created = DriveItem.order(:id).last
-    assert_nil created.deleted_at
-    assert_equal "ファイルB", created.name
+    assert_response :conflict
+    assert_equal "trash_content_duplicate", response.parsed_body.dig("error", "code")
   ensure
     cleanup_created_file(created) if defined?(created) && created&.persisted?
   end
@@ -1222,7 +1261,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "新規", response.parsed_body.fetch("name")
   end
 
-  test "同名重複は同一内容重複より先に返す" do
+  test "同一hashは同名重複より先に返す" do
     sign_in @user
     create_named_file(name: "別名", extension: "txt", body: "same-content", parent: create_directory(name: "別フォルダ"))
     create_named_file(name: "ファイル", extension: "txt", body: "other-content", parent: @root)
@@ -1235,8 +1274,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :conflict
-    assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
-    assert_equal "ファイル（1）", response.parsed_body.dig("error", "details", "suggested_name")
+    assert_equal "active_content_duplicate", response.parsed_body.dig("error", "code")
   end
 
   test "複数ファイルをZIPで取得できる" do

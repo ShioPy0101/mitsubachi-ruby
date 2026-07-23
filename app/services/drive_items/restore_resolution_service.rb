@@ -53,8 +53,10 @@ module DriveItems
 
     def resolution_options
       @resolution_map.transform_values do |item|
+        resolution = item[:resolution].to_s
+        resolution = "trash_existing" if resolution == "purge_existing"
         {
-          resolution: item[:resolution].to_s,
+          resolution: resolution,
           destination_parent_id: item[:destination_parent_id]
         }
       end
@@ -65,10 +67,15 @@ module DriveItems
         expected = @resolution_map[preview_item.item.id]
         next true if expected.nil?
 
-        expected[:resolution].to_s == preview_item.after[:resolution].to_s &&
+        expected_resolution(expected) == preview_item.after[:resolution].to_s &&
           expected_name_matches?(expected, preview_item) &&
           expected_existing_matches?(expected, preview_item)
       end
+    end
+
+    def expected_resolution(expected)
+      resolution = expected[:resolution].to_s
+      resolution == "purge_existing" ? "trash_existing" : resolution
     end
 
     def executable_preview?(preview_items)
@@ -91,7 +98,7 @@ module DriveItems
 
     def restore_item!(preview_item)
       preview_item.item.lock!
-      purge_existing_item!(preview_item.existing_item) if preview_item.after[:existing_item_will_be_purged]
+      trash_existing_item!(preview_item.existing_item) if preview_item.after[:existing_item_will_be_trashed]
 
       preview_item.item.update!(
         name: restored_name_without_extension(preview_item),
@@ -102,27 +109,14 @@ module DriveItems
       )
     end
 
-    def purge_existing_item!(existing_item)
+    def trash_existing_item!(existing_item)
       return if existing_item.nil?
 
-      existing_item.lock!
-      items = existing_items_for_purge(existing_item)
-      purged_at = Time.current
-      items.each do |item|
-        item.update!(
-          deleted_at: item.deleted_at || purged_at,
-          purged_at: purged_at,
-          purged_by_user: @actor_user,
-          trash_batch_id: nil,
-          trashed_by_ancestor_id: nil
-        )
-      end
-    end
+      result = DriveItems::TrashService.new(drive_items: [ existing_item ]).call
+      return if result.success?
 
-    def existing_items_for_purge(existing_item)
-      return [ existing_item ] unless existing_item.directory?
-
-      DriveItems::TreeCollector.new(root: existing_item).call
+      existing_item.errors.add(:base, result.message)
+      raise ActiveRecord::RecordInvalid, existing_item
     end
 
     def restored_name_without_extension(preview_item)

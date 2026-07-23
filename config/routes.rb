@@ -82,6 +82,7 @@ Rails.application.routes.draw do
           get :trash
           post :bulk_move
           post :bulk_delete
+          delete :bulk_purge
           post :bulk_restore_preview
           post :bulk_restore
           post :bulk_download

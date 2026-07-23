@@ -1,63 +1,84 @@
 require "fileutils"
 
 module DriveItems
-  class PurgeService
+  class BulkPurgeService
     StorageTarget = Data.define(:drive_item_id, :storage_key, :blob_path)
 
-    Result = Data.define(:success?, :status, :message) do
-      def self.success(message)
-        new(true, :ok, message)
+    Result = Data.define(:success?, :status, :message, :purged_count) do
+      def self.success(count)
+        new(true, :ok, "#{count}件を完全削除しました", count)
       end
 
       def self.failure(status, message)
-        new(false, status, message)
+        new(false, status, message, 0)
       end
     end
 
-    class OrganizationBoundaryError < StandardError; end
-
-    def initialize(drive_item:, actor_user: nil)
-      @drive_item = drive_item
+    def initialize(organization:, drive_item_ids:, actor_user:)
+      @organization = organization
+      @drive_item_ids = Array(drive_item_ids).map(&:to_i).uniq
       @actor_user = actor_user
     end
 
     def call
-      storage_targets = []
-      result = ActiveRecord::Base.transaction do
-        @drive_item.lock!
-        next Result.failure(:unprocessable_content, "先にゴミ箱へ移動してください") if @drive_item.deleted_at.blank?
+      return Result.failure(:unprocessable_content, "対象が指定されていません") if @drive_item_ids.empty?
+      return Result.failure(:not_found, "完全削除対象が見つかりません") if selected_trashed_items.size != @drive_item_ids.size
 
-        items = collect_items
+      roots = normalized_roots
+      return Result.failure(:not_found, "完全削除対象が見つかりません") if roots.empty?
+      storage_targets = []
+      result = nil
+
+      ActiveRecord::Base.transaction do
+        roots.each(&:lock!)
+        items = roots.flat_map { |root| collect_items(root) }.uniq(&:id).sort_by(&:id)
         items.each(&:lock!)
         storage_targets = collect_storage_targets(items)
         mark_as_purged!(items)
-
-        Result.success(@drive_item.directory? ? "フォルダを完全削除しました" : "ファイルを完全削除しました")
+        result = Result.success(roots.size)
       end
 
-      delete_storage_targets(storage_targets) if result.success?
+      delete_storage_targets(storage_targets)
       result
-    rescue StandardError => error
-      log_database_failure(error)
+    rescue DriveItems::PurgeService::OrganizationBoundaryError => error
+      Rails.logger.error("[drive_items.bulk_purge] invalid tree error=#{error.class} root_ids=#{roots&.map(&:id)&.join(",")}")
+      Result.failure(:unprocessable_content, "完全削除できませんでした")
+    rescue ActiveRecord::ActiveRecordError => error
+      Rails.logger.error("[drive_items.bulk_purge] failed error=#{error.class}: #{error.message}")
       Result.failure(:unprocessable_content, "完全削除できませんでした")
     end
 
     private
 
-    def collect_items
-      return [ @drive_item ] unless @drive_item.directory?
+    def selected_trashed_items
+      @selected_trashed_items ||= @organization.drive_items.trashed.where(id: @drive_item_ids).order(:id).to_a
+    end
 
-      items = [ @drive_item ]
-      parent_ids = [ @drive_item.id ]
-      visited_ids = { @drive_item.id => true }
+    def normalized_roots
+      root_ids = selected_trashed_items.map { |item| item.trashed_by_ancestor_id.presence || item.id }.uniq
+      @organization
+        .drive_items
+        .trashed
+        .where(id: root_ids)
+        .where("trashed_by_ancestor_id IS NULL OR trashed_by_ancestor_id = drive_items.id")
+        .order(:id)
+        .to_a
+    end
+
+    def collect_items(root)
+      return [ root ] unless root.directory?
+
+      items = [ root ]
+      parent_ids = [ root.id ]
+      visited_ids = { root.id => true }
 
       while parent_ids.any?
-        children = children_scope(parent_ids).to_a
-        if children.any? { |child| child.organization_id != @drive_item.organization_id }
-          raise OrganizationBoundaryError, "別組織の子要素を検出しました"
+        children = children_scope(root, parent_ids).to_a
+        if children.any? { |child| child.organization_id != @organization.id }
+          raise DriveItems::PurgeService::OrganizationBoundaryError, "別組織の子要素を検出しました"
         end
         if children.any? { |child| visited_ids.key?(child.id) }
-          raise OrganizationBoundaryError, "循環した親子関係を検出しました"
+          raise DriveItems::PurgeService::OrganizationBoundaryError, "循環した親子関係を検出しました"
         end
 
         items.concat(children)
@@ -68,19 +89,19 @@ module DriveItems
       items
     end
 
-    def children_scope(parent_ids)
-      scope = ::DriveItem.where(parent_id: parent_ids)
-      return scope unless trash_unit_scoped?
+    def children_scope(root, parent_ids)
+      scope = @organization.drive_items.where(parent_id: parent_ids)
+      return scope unless trash_unit_scoped?(root)
 
-      scope.where(trashed_by_ancestor_id: trash_root_id, purged_at: nil)
+      scope.where(trashed_by_ancestor_id: trash_root_id(root), purged_at: nil)
     end
 
-    def trash_unit_scoped?
-      @drive_item.trash_batch_id.present? || @drive_item.trashed_by_ancestor_id.present?
+    def trash_unit_scoped?(root)
+      root.trash_batch_id.present? || root.trashed_by_ancestor_id.present?
     end
 
-    def trash_root_id
-      @drive_item.trashed_by_ancestor_id.presence || @drive_item.id
+    def trash_root_id(root)
+      root.trashed_by_ancestor_id.presence || root.id
     end
 
     def collect_storage_targets(items)
@@ -117,7 +138,6 @@ module DriveItems
     end
 
     def referenced_by_not_purged_item?(target)
-      # ストレージ実体は組織をまたいで共有される可能性もあるため、参照確認では組織を限定しない。
       scope = ::DriveItem.not_purged
       conditions = []
       conditions << scope.where(storage_key: target.storage_key) if target.storage_key.present?
@@ -152,21 +172,12 @@ module DriveItems
       storage_path
     end
 
-    def log_database_failure(error)
-      Rails.logger.error(
-        "[drive_items.purge] failed root_drive_item_id=#{@drive_item.id} " \
-        "error_class=#{error.class} error_message=#{error.message} " \
-        "backtrace=#{Array(error.backtrace).join(" | ")}"
-      )
-    end
-
     def log_storage_failure(target, error)
       Rails.logger.error(
-        "[drive_items.purge] storage deletion failed " \
-        "root_drive_item_id=#{@drive_item.id} drive_item_id=#{target.drive_item_id} " \
-        "storage_key=#{target.storage_key} blob_path=#{target.blob_path} " \
-        "error_class=#{error.class} error_message=#{error.message} " \
-        "backtrace=#{Array(error.backtrace).join(" | ")}"
+        "[drive_items.bulk_purge] storage deletion failed " \
+        "drive_item_id=#{target.drive_item_id} storage_key=#{target.storage_key} " \
+        "blob_path=#{target.blob_path} error_class=#{error.class} " \
+        "error_message=#{error.message} backtrace=#{Array(error.backtrace).join(" | ")}"
       )
     end
   end

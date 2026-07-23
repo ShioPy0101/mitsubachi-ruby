@@ -2,7 +2,7 @@ require "set"
 
 module DriveItems
   class RestorePreviewService
-    RESOLUTIONS = %w[rename purge_existing select_destination restore_to_root skip].freeze
+    RESOLUTIONS = %w[restore rename trash_existing purge_existing select_destination restore_to_root skip].freeze
 
     ResultItem = Data.define(
       :item,
@@ -61,7 +61,7 @@ module DriveItems
       existing_item = name_conflict_item || content_conflict_item
       conflict_type = conflict_type(parent_exists:, name_conflict_item:, content_conflict_item:)
       after_name = after_name_for(item, destination_parent, resolution, name_conflict_item)
-      restorable = restorable_after?(resolution, parent_exists, destination_parent, content_conflict_item)
+      restorable = restorable_after?(resolution, parent_exists, destination_parent, name_conflict_item, content_conflict_item)
 
       ResultItem.new(
         item,
@@ -137,10 +137,11 @@ module DriveItems
 
     def resolution_for(item, parent_exists)
       requested = @resolutions[item.id]&.fetch(:resolution, nil).to_s
+      requested = "trash_existing" if requested == "purge_existing"
       return requested if RESOLUTIONS.include?(requested)
       return "restore_to_root" unless parent_exists
 
-      "rename"
+      "restore"
     end
 
     def conflict_type(parent_exists:, name_conflict_item:, content_conflict_item:)
@@ -169,9 +170,10 @@ module DriveItems
       next_available_name(parent_id: destination_parent&.id, name: item.name, extension: item.extension)
     end
 
-    def restorable_after?(resolution, parent_exists, destination_parent, content_conflict_item)
+    def restorable_after?(resolution, parent_exists, destination_parent, name_conflict_item, content_conflict_item)
       return false if resolution == "skip"
       return false if content_conflict_item.present?
+      return false if name_conflict_item.present? && resolution == "restore"
       return destination_parent.present? if resolution == "select_destination"
       return true if resolution == "restore_to_root"
       destination_parent.nil? ? parent_exists : true
@@ -195,7 +197,8 @@ module DriveItems
         parent_path: parent_path(destination_parent, destination_parent&.id),
         restorable: restorable,
         resolution: resolution,
-        existing_item_will_be_purged: resolution == "purge_existing" && existing_item.present?,
+        existing_item_will_be_trashed: resolution == "trash_existing" && existing_item.present?,
+        existing_item_will_be_purged: false,
         existing_item: existing_item_json(existing_item),
         state: restorable ? "active" : "skipped",
         impact: impact_for(resolution, existing_item, restorable)
@@ -213,13 +216,13 @@ module DriveItems
     def impact_for(resolution, existing_item, restorable)
       return "この項目は復元されません" if resolution == "skip"
       return "同じ内容の有効なファイルがあるため復元できません" if existing_item.present? && !restorable
-      if resolution == "purge_existing" && existing_item.present?
-        return existing_item.directory? ? "既存のフォルダーと配下を完全削除します" : "既存の項目を完全削除します"
+      if resolution == "trash_existing" && existing_item.present?
+        return existing_item.directory? ? "既存のフォルダーと配下をゴミ箱へ移動します" : "既存の項目をゴミ箱へ移動します"
       end
       return "自動リネームして復元します" if resolution == "rename" && existing_item.present?
       return "共有ドライブのルートに復元します" if resolution == "restore_to_root"
 
-      "既存項目への影響はありません"
+      "そのまま復元します"
     end
 
     def item_json(preview)
@@ -250,7 +253,8 @@ module DriveItems
         restorable_count: restorable,
         skipped_count: skipped,
         rename_count: items.count { |item| item.after[:resolution] == "rename" && item.before[:name] != item.after[:name] },
-        purge_existing_count: items.count { |item| item.after[:existing_item_will_be_purged] }
+        purge_existing_count: 0,
+        trash_existing_count: items.count { |item| item.after[:existing_item_will_be_trashed] }
       }
     end
 
@@ -259,7 +263,7 @@ module DriveItems
       return "skip" if preview.conflict_type.include?("active_content_duplicate")
       return "rename" if preview.existing_item.present?
 
-      "rename"
+      "restore"
     end
 
     def parent_path(parent, original_parent_id)
@@ -289,7 +293,7 @@ module DriveItems
         item_type: item.item_type,
         name: item.filename,
         parent_path: parent_path(item.parent, item.parent_id),
-        purge_note: item.directory? ? "既存のフォルダーを完全削除すると、配下のファイルも削除されます" : "完全削除後は元に戻せません"
+        purge_note: item.directory? ? "既存のフォルダーをゴミ箱へ移動すると、配下の項目も移動されます" : "既存の項目はゴミ箱へ移動されます"
       }
     end
 
