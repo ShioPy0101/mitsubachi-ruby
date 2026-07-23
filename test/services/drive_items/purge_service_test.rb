@@ -45,6 +45,26 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     assert storage_paths.none? { |path| File.exist?(path) }
   end
 
+  test "削除単位があるディレクトリ完全削除では先行削除済み子孫を巻き込まない" do
+    root = create_directory
+    independent = create_file(parent: root, body: "independent", deleted_at: 2.hours.ago)
+    child = create_file(parent: root, body: "child")
+    result = DriveItems::TrashService.new(drive_items: [ root ]).call
+    assert result.success?
+    root.reload
+    child.reload
+    independent.reload
+
+    result = purge(root)
+
+    assert result.success?
+    assert root.reload.purged_at.present?
+    assert child.reload.purged_at.present?
+    assert_nil independent.reload.purged_at
+    assert independent.deleted_at.present?
+    assert File.exist?(storage_path_for(independent))
+  end
+
   test "ファイル単体の完全削除仕様を維持する" do
     file = create_file(body: "single", deleted_at: Time.current)
     path = storage_path_for(file)
@@ -168,6 +188,24 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     assert_not result.success?
     assert_nil root.reload.purged_at
     assert_nil other.reload.purged_at
+  end
+
+  test "一括完全削除は複数rootを一度に完全削除する" do
+    first = create_file(body: "first bulk", deleted_at: Time.current)
+    second = create_file(body: "second bulk", deleted_at: Time.current)
+    paths = [ first, second ].map { |item| storage_path_for(item) }
+
+    result = DriveItems::BulkPurgeService.new(
+      organization: @organization,
+      drive_item_ids: [ first.id, second.id ],
+      actor_user: @user
+    ).call
+
+    assert result.success?
+    assert_equal 2, result.purged_count
+    assert first.reload.purged_at.present?
+    assert second.reload.purged_at.present?
+    assert paths.none? { |path| File.exist?(path) }
   end
 
   test "ゴミ箱外のフォルダは完全削除できない" do

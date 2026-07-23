@@ -52,7 +52,7 @@ module DriveItems
       visited_ids = { @drive_item.id => true }
 
       while parent_ids.any?
-        children = ::DriveItem.where(parent_id: parent_ids).to_a
+        children = children_scope(parent_ids).to_a
         if children.any? { |child| child.organization_id != @drive_item.organization_id }
           raise OrganizationBoundaryError, "別組織の子要素を検出しました"
         end
@@ -66,6 +66,21 @@ module DriveItems
       end
 
       items
+    end
+
+    def children_scope(parent_ids)
+      scope = ::DriveItem.where(parent_id: parent_ids)
+      return scope unless trash_unit_scoped?
+
+      scope.where(trashed_by_ancestor_id: trash_root_id, purged_at: nil)
+    end
+
+    def trash_unit_scoped?
+      @drive_item.trash_batch_id.present? || @drive_item.trashed_by_ancestor_id.present?
+    end
+
+    def trash_root_id
+      @drive_item.trashed_by_ancestor_id.presence || @drive_item.id
     end
 
     def collect_storage_targets(items)
