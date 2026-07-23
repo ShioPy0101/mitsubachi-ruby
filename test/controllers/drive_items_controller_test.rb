@@ -509,6 +509,29 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "restore-stale (1).txt", response.parsed_body.dig("error", "details", "items", 0, "after", "name")
   end
 
+  test "restore with select_destination requires an explicit active destination" do
+    sign_in @user
+    missing_parent = create_directory(name: "restore-missing-parent", parent: @root)
+    trashed_file = create_named_file(name: "restore-select-destination", extension: "txt", body: "trash", parent: missing_parent, deleted_at: 1.hour.ago)
+    missing_parent.update!(deleted_at: 1.hour.ago, purged_at: Time.current)
+
+    post restore_api_v1_drive_item_url(trashed_file), params: {
+      items: [
+        {
+          item_id: trashed_file.id,
+          resolution: "select_destination",
+          expected_name: "restore-select-destination.txt",
+          expected_existing_item_id: nil
+        }
+      ]
+    }
+
+    assert_response :conflict
+    assert_equal "restore_preview_stale", response.parsed_body.dig("error", "code")
+    assert trashed_file.reload.deleted_at.present?
+    assert_equal missing_parent.id, trashed_file.parent_id
+  end
+
   test "active なアイテムは restore できない" do
     sign_in @user
 

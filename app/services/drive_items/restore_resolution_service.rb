@@ -31,7 +31,7 @@ module DriveItems
         resolutions: resolution_options
       )
       preview_items = preview.call
-      return Result.stale(preview: preview.as_json) unless current_preview_matches?(preview_items)
+      return Result.stale(preview: preview.as_json) unless current_preview_matches?(preview_items) && executable_preview?(preview_items)
 
       restored_items = []
       ActiveRecord::Base.transaction do
@@ -68,6 +68,12 @@ module DriveItems
         expected[:resolution].to_s == preview_item.after[:resolution].to_s &&
           expected_name_matches?(expected, preview_item) &&
           expected_existing_matches?(expected, preview_item)
+      end
+    end
+
+    def executable_preview?(preview_items)
+      preview_items.all? do |preview_item|
+        preview_item.after[:resolution] == "skip" || preview_item.after[:restorable]
       end
     end
 
