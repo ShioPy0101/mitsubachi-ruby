@@ -162,7 +162,7 @@ module DriveItems
       return false if resolution == "skip"
       return destination_parent.present? if resolution == "select_destination"
       return true if resolution == "restore_to_root"
-      return destination_parent.nil? ? parent_exists : true
+      destination_parent.nil? ? parent_exists : true
     end
 
     def before_json(item, parent, parent_exists, existing_item)
