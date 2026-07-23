@@ -379,6 +379,159 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert already_deleted.reload.deleted_at.present?
   end
 
+  test "restore_preview は同名競合と自動リネーム後の名前を返す" do
+    sign_in @user
+    trashed_file = create_named_file(name: "test1", extension: "txt", body: "trash", parent: @root, deleted_at: 1.hour.ago)
+    create_named_file(name: "test1", extension: "txt", body: "active1", parent: @root)
+    create_named_file(name: "test1 (1)", extension: "txt", body: "active2", parent: @root)
+
+    post restore_preview_api_v1_drive_item_url(trashed_file)
+
+    assert_response :ok
+    item = response.parsed_body.fetch("items").first
+    assert_equal "name_conflict", item.fetch("conflict_type")
+    assert_equal "test1.txt", item.dig("before", "name")
+    assert_equal "test1 (2).txt", item.dig("after", "name")
+    assert_equal "rename", item.dig("after", "resolution")
+    assert_equal 1, response.parsed_body.dig("summary", "conflict_count")
+  end
+
+  test "restore_preview は親フォルダ欠損を検出しルート復元を推奨する" do
+    sign_in @user
+    missing_parent = create_directory(name: "missing-preview-parent", deleted_at: 2.hours.ago, purged_at: 1.hour.ago)
+    trashed_file = create_named_file(name: "orphan-preview", extension: "txt", body: "orphan-preview", parent: missing_parent, deleted_at: 1.hour.ago)
+
+    post restore_preview_api_v1_drive_item_url(trashed_file)
+
+    assert_response :ok
+    item = response.parsed_body.fetch("items").first
+    assert_equal "missing_parent", item.fetch("conflict_type")
+    assert_equal false, item.fetch("parent_exists")
+    assert_equal "restore_to_root", item.fetch("recommended_resolution")
+    assert_equal "/共有ドライブ", item.dig("after", "parent_path")
+    assert_match "元の復元先フォルダ", item.dig("before", "reason")
+  end
+
+  test "bulk_restore_preview は複数競合を1つのレスポンスに保持する" do
+    sign_in @user
+    trashed_a = create_named_file(name: "conflict-a", extension: "txt", body: "a", parent: @root, deleted_at: 1.hour.ago)
+    trashed_b = create_named_file(name: "conflict-b", extension: "txt", body: "b", parent: @root, deleted_at: 1.hour.ago)
+    create_named_file(name: "conflict-a", extension: "txt", body: "active-a", parent: @root)
+    create_named_file(name: "conflict-b", extension: "txt", body: "active-b", parent: @root)
+
+    post bulk_restore_preview_api_v1_drive_items_url, params: { drive_item_ids: [ trashed_a.id, trashed_b.id ] }
+
+    assert_response :ok
+    assert_equal [ trashed_a.id, trashed_b.id ].sort, response.parsed_body.fetch("items").pluck("item_id").sort
+    assert_equal 2, response.parsed_body.dig("summary", "conflict_count")
+  end
+
+  test "restore_preview はフォルダ配下の同名競合も再帰的に返す" do
+    sign_in @user
+    root = create_directory(name: "preview-tree-root")
+    child = create_named_file(name: "nested", extension: "txt", body: "nested-trash", parent: root)
+    delete api_v1_drive_item_url(root)
+    assert_response :ok
+    active_shadow = create_named_file(name: "nested", extension: "txt", body: "nested-active", parent: root)
+
+    sign_in @user
+    post restore_preview_api_v1_drive_item_url(root)
+
+    assert_response :ok
+    item = response.parsed_body.fetch("items").find { |entry| entry.fetch("item_id") == child.id }
+    assert_equal "name_conflict", item.fetch("conflict_type")
+    assert_equal active_shadow.id, item.fetch("existing_item_id")
+  end
+
+  test "restore with rename resolution restores using previewed name" do
+    sign_in @user
+    trashed_file = create_named_file(name: "restore-rename", extension: "txt", body: "trash", parent: @root, deleted_at: 1.hour.ago)
+    create_named_file(name: "restore-rename", extension: "txt", body: "active", parent: @root)
+
+    post restore_api_v1_drive_item_url(trashed_file), params: {
+      items: [
+        {
+          item_id: trashed_file.id,
+          resolution: "rename",
+          expected_name: "restore-rename (1).txt",
+          expected_existing_item_id: DriveItem.active.find_by(name: "restore-rename", extension: "txt").id
+        }
+      ]
+    }
+
+    assert_response :ok
+    assert_nil trashed_file.reload.deleted_at
+    assert_equal "restore-rename (1)", trashed_file.name
+  end
+
+  test "restore with purge_existing purges only the previewed existing item" do
+    sign_in @user
+    trashed_file = create_named_file(name: "restore-purge-existing", extension: "txt", body: "trash", parent: @root, deleted_at: 1.hour.ago)
+    existing = create_named_file(name: "restore-purge-existing", extension: "txt", body: "active", parent: @root)
+    other = create_named_file(name: "restore-purge-other", extension: "txt", body: "other", parent: @root)
+
+    post restore_api_v1_drive_item_url(trashed_file), params: {
+      items: [
+        {
+          item_id: trashed_file.id,
+          resolution: "purge_existing",
+          expected_name: "restore-purge-existing.txt",
+          expected_existing_item_id: existing.id
+        }
+      ]
+    }
+
+    assert_response :ok
+    assert_nil trashed_file.reload.deleted_at
+    assert existing.reload.purged_at.present?
+    assert_nil other.reload.purged_at
+  end
+
+  test "restore はプレビュー後に状態が変わった場合 restore_preview_stale を返す" do
+    sign_in @user
+    trashed_file = create_named_file(name: "restore-stale", extension: "txt", body: "trash", parent: @root, deleted_at: 1.hour.ago)
+    create_named_file(name: "restore-stale", extension: "txt", body: "new-active", parent: @root)
+
+    post restore_api_v1_drive_item_url(trashed_file), params: {
+      items: [
+        {
+          item_id: trashed_file.id,
+          resolution: "rename",
+          expected_name: "restore-stale.txt",
+          expected_existing_item_id: nil
+        }
+      ]
+    }
+
+    assert_response :conflict
+    assert_equal "restore_preview_stale", response.parsed_body.dig("error", "code")
+    assert trashed_file.reload.deleted_at.present?
+    assert_equal "restore-stale (1).txt", response.parsed_body.dig("error", "details", "items", 0, "after", "name")
+  end
+
+  test "restore with select_destination requires an explicit active destination" do
+    sign_in @user
+    missing_parent = create_directory(name: "restore-missing-parent", parent: @root)
+    trashed_file = create_named_file(name: "restore-select-destination", extension: "txt", body: "trash", parent: missing_parent, deleted_at: 1.hour.ago)
+    missing_parent.update!(deleted_at: 1.hour.ago, purged_at: Time.current)
+
+    post restore_api_v1_drive_item_url(trashed_file), params: {
+      items: [
+        {
+          item_id: trashed_file.id,
+          resolution: "select_destination",
+          expected_name: "restore-select-destination.txt",
+          expected_existing_item_id: nil
+        }
+      ]
+    }
+
+    assert_response :conflict
+    assert_equal "restore_preview_stale", response.parsed_body.dig("error", "code")
+    assert trashed_file.reload.deleted_at.present?
+    assert_equal missing_parent.id, trashed_file.parent_id
+  end
+
   test "active なアイテムは restore できない" do
     sign_in @user
 
