@@ -924,8 +924,18 @@ class Api::V1::DriveItemsController < ApplicationController
     restore_target = service.restore_target
     return unless validate_parent_id(restore_target.parent_id, not_found_message: "復元先フォルダが見つかりません", invalid_message: "復元先にはディレクトリを指定してください")
 
-    if duplicate_active_item?(parent_id: restore_target.parent_id, name: restore_target.name, extension: restore_target.extension, excluding_id: restore_target.id)
-      render_duplicate_name(restore_target.name, parent_id: restore_target.parent_id, extension: restore_target.extension)
+    conflicts = DriveItems::RestoreConflictService.new(
+      organization: current_user.organization,
+      restore_target:,
+      restore_items: service.restore_items
+    ).as_json
+    if conflicts.any?
+      render_api_error(
+        :restore_conflict,
+        "復元先に競合する項目があります",
+        status: :conflict,
+        details: { conflicts: }
+      )
       return
     end
 

@@ -56,17 +56,19 @@ module DriveItems
       parent_exists = parent_available?(item, parent, restore_item_ids)
       resolution = resolution_for(item, parent_exists)
       destination_parent = destination_parent_for(item, parent, restore_item_ids, resolution)
-      existing_item = existing_item_for(item, destination_parent)
-      conflict_type = conflict_type(parent_exists:, existing_item:)
-      after_name = after_name_for(item, destination_parent, resolution, existing_item)
-      restorable = restorable_after?(resolution, parent_exists, destination_parent)
+      name_conflict_item = name_conflict_item_for(item, destination_parent, restore_item_ids)
+      content_conflict_item = content_conflict_item_for(item, restore_item_ids)
+      existing_item = name_conflict_item || content_conflict_item
+      conflict_type = conflict_type(parent_exists:, name_conflict_item:, content_conflict_item:)
+      after_name = after_name_for(item, destination_parent, resolution, name_conflict_item)
+      restorable = restorable_after?(resolution, parent_exists, destination_parent, content_conflict_item)
 
       ResultItem.new(
         item,
         restore_target,
         restore_items,
         conflict_type,
-        before_json(item, parent, parent_exists, existing_item),
+        before_json(item, parent, parent_exists, name_conflict_item, content_conflict_item),
         after_json(item, destination_parent, resolution, after_name, restorable, existing_item),
         existing_item,
         parent_exists,
@@ -76,19 +78,7 @@ module DriveItems
     end
 
     def restore_items_for(restore_target)
-      if restore_target.trash_batch_id.present?
-        return ::DriveItem
-          .where(
-            organization_id: @organization.id,
-            trash_batch_id: restore_target.trash_batch_id,
-            trashed_by_ancestor_id: restore_target.id,
-            purged_at: nil
-          )
-          .order(:id)
-          .to_a
-      end
-
-      [ restore_target ]
+      DriveItems::RestoreService.new(drive_item: restore_target).restore_items
     end
 
     def restored_parent_for(item, restore_item_ids)
@@ -118,7 +108,7 @@ module DriveItems
       nil
     end
 
-    def existing_item_for(item, destination_parent)
+    def name_conflict_item_for(item, destination_parent, restore_item_ids)
       ::DriveItem
         .active
         .where(
@@ -127,8 +117,22 @@ module DriveItems
           name: item.name,
           extension: item.extension
         )
-        .where.not(id: item.id)
+        .where.not(id: restore_item_ids.to_a)
         .first
+    end
+
+    def content_conflict_item_for(item, restore_item_ids)
+      return unless item.file?
+      return if item.file_hash.blank?
+
+      ::DriveItem
+        .active
+        .file
+        .where(organization_id: @organization.id, file_hash: item.file_hash)
+        .where.not(id: restore_item_ids.to_a)
+        .includes(:parent, :owner_user)
+        .order(created_at: :desc, id: :desc)
+        .detect { |candidate| deleted_ancestor(candidate).nil? }
     end
 
     def resolution_for(item, parent_exists)
@@ -139,40 +143,48 @@ module DriveItems
       "rename"
     end
 
-    def conflict_type(parent_exists:, existing_item:)
-      if !parent_exists && existing_item.present?
+    def conflict_type(parent_exists:, name_conflict_item:, content_conflict_item:)
+      has_name_conflict = name_conflict_item.present?
+      has_content_conflict = content_conflict_item.present?
+
+      if !parent_exists && has_name_conflict
         "name_conflict_and_missing_parent"
+      elsif !parent_exists && has_content_conflict
+        "active_content_duplicate_and_missing_parent"
       elsif !parent_exists
         "missing_parent"
-      elsif existing_item.present?
+      elsif has_name_conflict
         "name_conflict"
+      elsif has_content_conflict
+        "active_content_duplicate"
       else
         "none"
       end
     end
 
-    def after_name_for(item, destination_parent, resolution, existing_item)
+    def after_name_for(item, destination_parent, resolution, name_conflict_item)
       return nil if resolution == "skip"
-      return item.name unless existing_item.present? && resolution == "rename"
+      return item.name unless name_conflict_item.present? && resolution == "rename"
 
       next_available_name(parent_id: destination_parent&.id, name: item.name, extension: item.extension)
     end
 
-    def restorable_after?(resolution, parent_exists, destination_parent)
+    def restorable_after?(resolution, parent_exists, destination_parent, content_conflict_item)
       return false if resolution == "skip"
+      return false if content_conflict_item.present?
       return destination_parent.present? if resolution == "select_destination"
       return true if resolution == "restore_to_root"
       destination_parent.nil? ? parent_exists : true
     end
 
-    def before_json(item, parent, parent_exists, existing_item)
+    def before_json(item, parent, parent_exists, name_conflict_item, content_conflict_item)
       {
         name: item.filename,
         parent_id: item.parent_id,
         parent_path: parent_path(parent, item.parent_id),
         state: "trashed",
-        restorable: parent_exists && existing_item.blank?,
-        reason: reason_for(parent_exists, existing_item)
+        restorable: parent_exists && name_conflict_item.blank? && content_conflict_item.blank?,
+        reason: reason_for(parent_exists, name_conflict_item, content_conflict_item)
       }
     end
 
@@ -186,19 +198,21 @@ module DriveItems
         existing_item_will_be_purged: resolution == "purge_existing" && existing_item.present?,
         existing_item: existing_item_json(existing_item),
         state: restorable ? "active" : "skipped",
-        impact: impact_for(resolution, existing_item)
+        impact: impact_for(resolution, existing_item, restorable)
       }
     end
 
-    def reason_for(parent_exists, existing_item)
+    def reason_for(parent_exists, name_conflict_item, content_conflict_item)
       reasons = []
       reasons << "元の復元先フォルダは削除されています" unless parent_exists
-      reasons << "復元先に同名のファイルまたはフォルダーがあります" if existing_item.present?
+      reasons << "復元先に同名のファイルまたはフォルダーがあります" if name_conflict_item.present?
+      reasons << "組織内に同じ内容のファイルがあります" if content_conflict_item.present?
       reasons.presence&.join(" / ")
     end
 
-    def impact_for(resolution, existing_item)
+    def impact_for(resolution, existing_item, restorable)
       return "この項目は復元されません" if resolution == "skip"
+      return "同じ内容の有効なファイルがあるため復元できません" if existing_item.present? && !restorable
       if resolution == "purge_existing" && existing_item.present?
         return existing_item.directory? ? "既存のフォルダーと配下を完全削除します" : "既存の項目を完全削除します"
       end
@@ -242,6 +256,7 @@ module DriveItems
 
     def recommended_resolution(preview)
       return "restore_to_root" unless preview.parent_exists
+      return "skip" if preview.conflict_type.include?("active_content_duplicate")
       return "rename" if preview.existing_item.present?
 
       "rename"
@@ -276,6 +291,18 @@ module DriveItems
         parent_path: parent_path(item.parent, item.parent_id),
         purge_note: item.directory? ? "既存のフォルダーを完全削除すると、配下のファイルも削除されます" : "完全削除後は元に戻せません"
       }
+    end
+
+    def deleted_ancestor(item)
+      current = item.parent
+      visited_ids = Set.new
+      while current.present? && current.organization_id == @organization.id
+        return current if current.deleted_at.present? || current.purged_at.present?
+        return if visited_ids.include?(current.id)
+
+        visited_ids << current.id
+        current = current.parent
+      end
     end
 
     def next_available_name(parent_id:, name:, extension:)
