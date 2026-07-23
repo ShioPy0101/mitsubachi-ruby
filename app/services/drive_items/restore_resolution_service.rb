@@ -26,10 +26,14 @@ module DriveItems
       drive_items = @organization.drive_items.deleted.where(id: @resolution_map.keys).to_a
       return Result.failure(:not_found, "復元対象が見つかりません") if drive_items.size != @resolution_map.size
 
+      token_resolutions = confirmation_resolutions
+      return Result.stale(preview: default_preview(drive_items).as_json) if @confirmation_token.present? && token_resolutions.nil?
+      @resolution_map = @resolution_map.merge(token_resolutions || {})
+
       preview = DriveItems::RestorePreviewService.new(
         organization: @organization,
         drive_items: drive_items,
-        resolutions: resolution_options
+        resolutions: token_resolutions || resolution_options
       )
       preview_items = preview.call
       return Result.stale(preview: preview.as_json) unless confirmation_token_matches?(preview, preview_items)
@@ -56,7 +60,27 @@ module DriveItems
     def confirmation_token_matches?(preview, preview_items)
       return true if @confirmation_token.blank?
 
-      ActiveSupport::SecurityUtils.secure_compare(@confirmation_token, preview.confirmation_token_for(preview_items))
+      expected = preview.confirmation_token_for(preview_items)
+      @confirmation_token.bytesize == expected.bytesize &&
+        ActiveSupport::SecurityUtils.secure_compare(@confirmation_token, expected)
+    end
+
+    def confirmation_resolutions
+      return if @confirmation_token.blank?
+
+      DriveItems::RestorePreviewService.new(
+        organization: @organization,
+        drive_items: [],
+        resolutions: {}
+      ).confirmation_resolutions_for(@confirmation_token)
+    end
+
+    def default_preview(drive_items)
+      DriveItems::RestorePreviewService.new(
+        organization: @organization,
+        drive_items: drive_items,
+        resolutions: resolution_options
+      )
     end
 
     def resolution_options
