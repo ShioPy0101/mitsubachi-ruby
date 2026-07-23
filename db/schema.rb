@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_23_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_23_152000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -93,6 +93,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_23_090000) do
     t.datetime "purged_at"
     t.bigint "purged_by_user_id"
     t.string "storage_key"
+    t.string "trash_batch_id"
+    t.bigint "trashed_by_ancestor_id"
     t.datetime "updated_at", null: false
     t.string "upload_ip_address"
     t.index ["deleted_at"], name: "index_drive_items_on_deleted_at"
@@ -103,6 +105,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_23_090000) do
     t.index ["parent_id"], name: "index_drive_items_on_parent_id"
     t.index ["purged_at"], name: "index_drive_items_on_purged_at"
     t.index ["purged_by_user_id"], name: "index_drive_items_on_purged_by_user_id"
+    t.index ["trash_batch_id"], name: "index_drive_items_on_trash_batch_id"
+    t.index ["trashed_by_ancestor_id"], name: "index_drive_items_on_trashed_by_ancestor_id"
   end
 
   create_table "drive_permissions", force: :cascade do |t|
