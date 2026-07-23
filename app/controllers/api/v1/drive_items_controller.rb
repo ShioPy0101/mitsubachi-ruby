@@ -79,11 +79,6 @@ class Api::V1::DriveItemsController < ApplicationController
         return
       end
 
-      if duplicate_active_item?(parent_id:, name:, extension:)
-        render_name_conflict(name, parent_id:, extension:)
-        return
-      end
-
       upload_hash = digest_uploaded_file(uploaded_file)
       replace_target = nil
       if replace_trashed_drive_item_id.present?
@@ -96,14 +91,19 @@ class Api::V1::DriveItemsController < ApplicationController
         return
       end
 
-      if replace_target.present?
-        replace_trashed_upload!(uploaded_file:, upload_hash:, extension:, replace_target:)
+      trash_duplicate = trash_content_duplicate_item(upload_hash)
+      if trash_duplicate.present? && replace_target.blank?
+        render_trash_content_duplicate(trash_duplicate)
         return
       end
 
-      trash_duplicate = trash_content_duplicate_item(upload_hash)
-      if trash_duplicate.present? && !allow_trash_duplicate?
-        render_trash_content_duplicate(trash_duplicate)
+      if duplicate_active_item?(parent_id:, name:, extension:)
+        render_name_conflict(name, parent_id:, extension:)
+        return
+      end
+
+      if replace_target.present?
+        replace_trashed_upload!(uploaded_file:, upload_hash:, extension:, replace_target:)
         return
       end
 
@@ -227,11 +227,14 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def trash
     @drive_items =
-      current_user.organization
-                  .drive_items
-                  .includes(:owner_user, :parent)
-                  .deleted
-                  .order(deleted_at: :desc)
+      if params[:parent_id].present?
+        DriveItems::TrashChildrenQuery.new(
+          organization: current_user.organization,
+          parent_id: params[:parent_id]
+        ).call
+      else
+        DriveItems::TrashRootsQuery.new(organization: current_user.organization).call
+      end
     render json: @drive_items.map { |drive_item| drive_item_json(drive_item) }
   end
 
@@ -350,6 +353,21 @@ class Api::V1::DriveItemsController < ApplicationController
     end
 
     record_drive_item_event!("drive_item.purge", @drive_item, changes: { purged_at: [ nil, @drive_item.purged_at ] })
+    render json: { message: result.message }
+  end
+
+  def bulk_purge
+    result = DriveItems::BulkPurgeService.new(
+      organization: current_user.organization,
+      drive_item_ids: bulk_drive_item_ids,
+      actor_user: current_user
+    ).call
+    unless result.success?
+      render_api_error(error_code_for_status(result.status), result.message, status: result.status)
+      return
+    end
+
+    record_bulk_drive_item_event!("drive_item.bulk_purge", count: result.purged_count)
     render json: { message: result.message }
   end
 
