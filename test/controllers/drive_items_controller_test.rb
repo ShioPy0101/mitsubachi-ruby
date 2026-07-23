@@ -579,6 +579,82 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_match "元の復元先フォルダ", item.dig("before", "reason")
   end
 
+  test "restore_preview は競合なしの単一ファイルで安定した結果を返し状態を変更しない" do
+    sign_in @user
+    trashed_file = create_named_file(name: "simple-preview", extension: "txt", body: "simple-preview", parent: @root, deleted_at: 1.hour.ago)
+    before_attributes = trashed_file.reload.attributes.slice("deleted_at", "parent_id", "updated_at")
+
+    post restore_preview_api_v1_drive_item_url(trashed_file)
+    assert_response :ok
+    first = response.parsed_body
+
+    trashed_file.reload
+    assert_equal before_attributes, trashed_file.attributes.slice("deleted_at", "parent_id", "updated_at")
+
+    sign_in @user
+    post restore_preview_api_v1_drive_item_url(trashed_file)
+    assert_response :ok
+    second = response.parsed_body
+
+    assert_equal first, second
+    assert_equal 0, first.dig("summary", "conflict_count")
+    assert_equal 1, first.dig("summary", "restorable_count")
+    assert_equal "restore", first.dig("items", 0, "after", "resolution")
+  end
+
+  test "restore は競合なしpreview payloadで単一ファイルを復元する" do
+    sign_in @user
+    trashed_file = create_named_file(name: "simple-restore", extension: "txt", body: "simple-restore", parent: @root, deleted_at: 1.hour.ago)
+
+    post restore_preview_api_v1_drive_item_url(trashed_file)
+    assert_response :ok
+    item = response.parsed_body.fetch("items").first
+
+    sign_in @user
+    post restore_api_v1_drive_item_url(trashed_file), params: {
+      items: [
+        {
+          item_id: item.fetch("item_id"),
+          resolution: item.dig("after", "resolution"),
+          destination_parent_id: item.dig("after", "parent_id"),
+          expected_name: item.dig("after", "name"),
+          expected_existing_item_id: item.fetch("existing_item_id")
+        }
+      ]
+    }
+
+    assert_response :ok
+    assert_nil trashed_file.reload.deleted_at
+    assert_equal @root.id, trashed_file.parent_id
+  end
+
+  test "restore はpreview後に無関係なDriveItemを更新しても成功する" do
+    sign_in @user
+    trashed_file = create_named_file(name: "unrelated-restore", extension: "txt", body: "unrelated-restore", parent: @root, deleted_at: 1.hour.ago)
+    unrelated = create_named_file(name: "unrelated-active", extension: "txt", body: "unrelated-active", parent: @root)
+
+    post restore_preview_api_v1_drive_item_url(trashed_file)
+    assert_response :ok
+    item = response.parsed_body.fetch("items").first
+    unrelated.touch
+
+    sign_in @user
+    post restore_api_v1_drive_item_url(trashed_file), params: {
+      items: [
+        {
+          item_id: item.fetch("item_id"),
+          resolution: item.dig("after", "resolution"),
+          destination_parent_id: item.dig("after", "parent_id"),
+          expected_name: item.dig("after", "name"),
+          expected_existing_item_id: item.fetch("existing_item_id")
+        }
+      ]
+    }
+
+    assert_response :ok
+    assert_nil trashed_file.reload.deleted_at
+  end
+
   test "bulk_restore_preview は複数競合を1つのレスポンスに保持する" do
     sign_in @user
     trashed_a = create_named_file(name: "conflict-a", extension: "txt", body: "a", parent: @root, deleted_at: 1.hour.ago)
@@ -674,7 +750,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_nil other.reload.purged_at
   end
 
-  test "restore はプレビュー後に状態が変わった場合 restore_preview_stale を返す" do
+  test "restore はプレビュー後に状態が変わった場合 restore_state_changed を返す" do
     sign_in @user
     trashed_file = create_named_file(name: "restore-stale", extension: "txt", body: "trash", parent: @root, deleted_at: 1.hour.ago)
     create_named_file(name: "restore-stale", extension: "txt", body: "new-active", parent: @root)
@@ -691,7 +767,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :conflict
-    assert_equal "restore_preview_stale", response.parsed_body.dig("error", "code")
+    assert_equal "restore_state_changed", response.parsed_body.dig("error", "code")
     assert trashed_file.reload.deleted_at.present?
     assert_equal "restore-stale (1).txt", response.parsed_body.dig("error", "details", "items", 0, "after", "name")
   end
@@ -714,7 +790,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :conflict
-    assert_equal "restore_preview_stale", response.parsed_body.dig("error", "code")
+    assert_equal "restore_state_changed", response.parsed_body.dig("error", "code")
     assert trashed_file.reload.deleted_at.present?
     assert_equal missing_parent.id, trashed_file.parent_id
   end
