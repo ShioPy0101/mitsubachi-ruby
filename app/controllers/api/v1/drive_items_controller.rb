@@ -491,7 +491,7 @@ class Api::V1::DriveItemsController < ApplicationController
     unless result.success?
       if result.preview.present?
         render_api_error(
-          :restore_preview_stale,
+          :restore_state_changed,
           result.message,
           status: result.status,
           details: result.preview
