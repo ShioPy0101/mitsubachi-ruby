@@ -18,12 +18,16 @@ module DriveItems
       @restore_target ||= restore_target_for(@drive_item)
     end
 
+    def restore_items
+      @restore_items ||= restore_items_for(restore_target)
+    end
+
     def call
       restore_target = self.restore_target
 
       ActiveRecord::Base.transaction do
         restore_target.lock!
-        items = restore_items_for(restore_target)
+        items = restore_items
         items.each(&:lock!)
         items.each do |item|
           next if item.purged_at.present?
@@ -75,14 +79,19 @@ module DriveItems
           .where(
             organization_id: restore_target.organization_id,
             trash_batch_id: restore_target.trash_batch_id,
-            trashed_by_ancestor_id: restore_target.id,
             purged_at: nil
           )
+          .where("id = :id OR trashed_by_ancestor_id = :id", id: restore_target.id)
           .order(:id)
           .to_a
       end
 
-      [ restore_target ]
+      return [ restore_target ] unless restore_target.directory?
+
+      DriveItems::TreeCollector
+        .new(root: restore_target)
+        .call
+        .select { |item| item.deleted_at.present? && item.purged_at.nil? }
     end
   end
 end
