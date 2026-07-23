@@ -25,6 +25,10 @@ class Api::V1::Admin::BaseController < ApplicationController
     Organization.where(id: current_user.organization_id)
   end
 
+  def all_drive_error_sample
+    DriveItem.find(params[:id])
+  end
+
   def scoped_users
     return User.all if system_admin?
 
