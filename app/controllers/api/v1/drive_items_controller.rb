@@ -6,7 +6,7 @@ require "set"
 class Api::V1::DriveItemsController < ApplicationController
   before_action :authenticate_user!
   before_action :set_active_drive_item, only: %i[show update move destroy]
-  before_action :set_deleted_drive_item, only: %i[restore purge]
+  before_action :set_deleted_drive_item, only: %i[restore restore_preview purge]
   before_action :set_deliverable_drive_item, only: %i[preview download stream]
 
   def index
@@ -277,6 +277,11 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def bulk_restore
+    if restore_resolution_items.present?
+      restore_with_resolutions!(restore_resolution_items)
+      return
+    end
+
     deleted_drive_items_for_bulk.each do |drive_item|
       return unless restore_drive_item!(drive_item)
     end
@@ -319,8 +324,22 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def restore
+    if restore_resolution_items.present?
+      restore_with_resolutions!(restore_resolution_items)
+      return
+    end
+
     restored_item = restore_drive_item!(@drive_item)
     render json: drive_item_json(restored_item) if restored_item && !performed?
+  end
+
+  def restore_preview
+    render json: restore_preview_json([ @drive_item ], restore_resolution_items)
+  end
+
+  def bulk_restore_preview
+    drive_items = deleted_drive_items_for_bulk.to_a
+    render json: restore_preview_json(drive_items, restore_resolution_items)
   end
 
   def purge
@@ -419,6 +438,56 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def bulk_drive_item_ids
     Array(params[:drive_item_ids].presence || params[:ids]).map(&:to_i)
+  end
+
+  def restore_resolution_items
+    Array(params[:items]).filter_map do |item|
+      next unless item.respond_to?(:permit)
+
+      permitted = item.permit(
+        :item_id,
+        :resolution,
+        :destination_parent_id,
+        :expected_name,
+        :expected_existing_item_id
+      )
+      permitted.to_h.symbolize_keys
+    end
+  end
+
+  def restore_preview_json(drive_items, items)
+    resolutions = items.index_by { |item| item.fetch(:item_id).to_i }
+    DriveItems::RestorePreviewService.new(
+      organization: current_user.organization,
+      drive_items: drive_items,
+      resolutions: resolutions
+    ).as_json
+  end
+
+  def restore_with_resolutions!(items)
+    result = DriveItems::RestoreResolutionService.new(
+      organization: current_user.organization,
+      actor_user: current_user,
+      items: items
+    ).call
+    unless result.success?
+      if result.preview.present?
+        render_api_error(
+          :restore_preview_stale,
+          result.message,
+          status: result.status,
+          details: result.preview
+        )
+      else
+        render_api_error(error_code_for_status(result.status), result.message, status: result.status)
+      end
+      return
+    end
+
+    result.items.each do |drive_item|
+      record_drive_item_event!("drive_item.restore", drive_item, changes: { deleted_at: [ drive_item.deleted_at, nil ] })
+    end
+    render json: { message: result.message, restored_item_ids: result.items.map(&:id) }
   end
 
   def apply_drive_item_search(items, query)
