@@ -1,9 +1,8 @@
 require "fileutils"
-require "securerandom"
 
 module DriveItems
   class PurgeService
-    PurgedFile = Data.define(:result, :storage_path, :temporary_path)
+    StorageTarget = Data.define(:drive_item_id, :storage_key, :blob_path)
 
     Result = Data.define(:success?, :status, :message) do
       def self.success(message)
@@ -15,112 +14,143 @@ module DriveItems
       end
     end
 
-    def initialize(drive_item:)
+    class OrganizationBoundaryError < StandardError; end
+
+    def initialize(drive_item:, actor_user: nil)
       @drive_item = drive_item
+      @actor_user = actor_user
     end
 
     def call
-      result = nil
-      storage_path = nil
-      temporary_path = nil
-
-      ActiveRecord::Base.transaction do
+      storage_targets = []
+      result = ActiveRecord::Base.transaction do
         @drive_item.lock!
-        result =
-          if @drive_item.deleted_at.blank?
-            Result.failure(:unprocessable_content, "先にゴミ箱へ移動してください")
-          elsif @drive_item.directory?
-            purge_directory
-          else
-            purged_file = purge_file
-            storage_path = purged_file.storage_path
-            temporary_path = purged_file.temporary_path
-            result = purged_file.result
-            if result.success?
-              detach_access_logs!
-              @drive_item.destroy!
-            end
-            result
-          end
+        next Result.failure(:unprocessable_content, "先にゴミ箱へ移動してください") if @drive_item.deleted_at.blank?
+
+        items = collect_items
+        items.each(&:lock!)
+        storage_targets = collect_storage_targets(items)
+        mark_as_purged!(items)
+
+        Result.success(@drive_item.directory? ? "フォルダを完全削除しました" : "ファイルを完全削除しました")
       end
 
-      cleanup_temporary_file(temporary_path) if result&.success?
+      delete_storage_targets(storage_targets) if result.success?
       result
     rescue StandardError => error
-      restore_storage_file(temporary_path, storage_path)
-      Rails.logger.error("[drive_items.purge] failed drive_item_id=#{@drive_item.id} error=#{error.class}: #{error.message}")
+      log_database_failure(error)
       Result.failure(:unprocessable_content, "完全削除できませんでした")
     end
 
     private
 
-    def purge_directory
-      return Result.failure(:unprocessable_content, "空でないフォルダは完全削除できません") if @drive_item.children.exists?
+    def collect_items
+      return [ @drive_item ] unless @drive_item.directory?
 
-      detach_access_logs!
-      @drive_item.destroy!
-      Result.success("フォルダを完全削除しました")
+      items = [ @drive_item ]
+      parent_ids = [ @drive_item.id ]
+      visited_ids = { @drive_item.id => true }
+
+      while parent_ids.any?
+        children = ::DriveItem.where(parent_id: parent_ids).to_a
+        if children.any? { |child| child.organization_id != @drive_item.organization_id }
+          raise OrganizationBoundaryError, "別組織の子要素を検出しました"
+        end
+        if children.any? { |child| visited_ids.key?(child.id) }
+          raise OrganizationBoundaryError, "循環した親子関係を検出しました"
+        end
+
+        items.concat(children)
+        children.each { |child| visited_ids[child.id] = true }
+        parent_ids = children.map(&:id)
+      end
+
+      items
     end
 
-    def purge_file
-      storage_key = @drive_item.effective_storage_key
-      return PurgedFile.new(Result.failure(:unprocessable_content, "保存先キーが不正です"), nil, nil) unless ::DriveItem.valid_storage_key?(storage_key)
+    def collect_storage_targets(items)
+      items.filter_map do |item|
+        next unless item.file?
+
+        StorageTarget.new(item.id, item.effective_storage_key, item.blob_path)
+      end.uniq { |target| target.storage_key.presence || target.blob_path }
+    end
+
+    def mark_as_purged!(items)
+      purged_at = Time.current
+      items.each do |item|
+        item.update!(
+          purged_at: purged_at,
+          deleted_at: item.deleted_at || purged_at,
+          purged_by_user: @actor_user,
+          storage_key: nil,
+          blob_path: nil
+        )
+      end
+    end
+
+    def delete_storage_targets(targets)
+      targets.each do |target|
+        next if referenced_by_not_purged_item?(target)
+
+        delete_storage_target(target)
+      rescue StandardError => error
+        log_storage_failure(target, error)
+      end
+    end
+
+    def referenced_by_not_purged_item?(target)
+      # ストレージ実体は組織をまたいで共有される可能性もあるため、参照確認では組織を限定しない。
+      scope = ::DriveItem.not_purged
+      conditions = []
+      conditions << scope.where(storage_key: target.storage_key) if target.storage_key.present?
+      conditions << scope.where(blob_path: target.blob_path) if target.blob_path.present?
+      conditions.any?(&:exists?)
+    end
+
+    def delete_storage_target(target)
+      storage_key = target.storage_key.presence || storage_key_from_blob_path(target.blob_path)
+      raise ArgumentError, "保存先キーが不正です" unless ::DriveItem.valid_storage_key?(storage_key)
 
       storage_path = verified_storage_path(storage_key)
-      return PurgedFile.new(Result.failure(:unprocessable_content, "保存先パスが不正です"), nil, nil) if storage_path.nil?
-      return PurgedFile.new(Result.failure(:not_found, "実ファイルが見つかりません"), nil, nil) unless purgeable_regular_file?(storage_path)
+      raise ArgumentError, "保存先パスが不正です" if storage_path.nil?
+      return unless File.exist?(storage_path)
+      raise ArgumentError, "シンボリックリンクは削除できません" if File.symlink?(storage_path)
+      raise ArgumentError, "通常ファイルではありません" unless File.lstat(storage_path).file?
 
-      temporary_path = temporary_storage_path(storage_path)
-      FileUtils.mv(storage_path, temporary_path)
-      PurgedFile.new(Result.success("ファイルを完全削除しました"), storage_path, temporary_path)
+      FileUtils.rm_f(storage_path)
+    end
+
+    def storage_key_from_blob_path(blob_path)
+      return if blob_path.blank?
+
+      blob_path.to_s.delete_prefix("drive_items/")
     end
 
     def verified_storage_path(storage_key)
       storage_root = ::DriveItem.storage_root.join("drive_items").expand_path
-      storage_path = ::DriveItem.storage_root.join(::DriveItem.storage_relative_path_for(storage_key)).expand_path
-      expected_path = storage_root.join(storage_key).expand_path
-
-      return unless storage_path == expected_path
-      return unless storage_path.to_s.start_with?("#{storage_root}#{File::SEPARATOR}")
+      storage_path = storage_root.join(storage_key).expand_path
+      return unless storage_path.parent == storage_root
 
       storage_path
     end
 
-    def purgeable_regular_file?(storage_path)
-      return false unless File.exist?(storage_path)
-      return false if File.symlink?(storage_path)
-
-      File.lstat(storage_path).file?
-    end
-
-    def temporary_storage_path(storage_path)
-      storage_path.dirname.join("#{storage_path.basename}.purging-#{SecureRandom.uuid}")
-    end
-
-    def restore_storage_file(temporary_path, storage_path)
-      return if temporary_path.blank? || storage_path.blank?
-      return unless File.exist?(temporary_path)
-      return if File.exist?(storage_path)
-
-      FileUtils.mv(temporary_path, storage_path)
-    end
-
-    def cleanup_temporary_file(temporary_path)
-      return if temporary_path.blank?
-
-      File.delete(temporary_path.to_s)
-    rescue Errno::ENOENT
-      nil
-    rescue StandardError => error
+    def log_database_failure(error)
       Rails.logger.error(
-        "[drive_items.purge] temporary cleanup failed " \
-        "drive_item_id=#{@drive_item.id} temporary_path=#{temporary_path} " \
-        "error=#{error.class}: #{error.message}"
+        "[drive_items.purge] failed root_drive_item_id=#{@drive_item.id} " \
+        "error_class=#{error.class} error_message=#{error.message} " \
+        "backtrace=#{Array(error.backtrace).join(" | ")}"
       )
     end
 
-    def detach_access_logs!
-      @drive_item.drive_item_access_logs.update_all(drive_item_id: nil, updated_at: Time.current)
+    def log_storage_failure(target, error)
+      Rails.logger.error(
+        "[drive_items.purge] storage deletion failed " \
+        "root_drive_item_id=#{@drive_item.id} drive_item_id=#{target.drive_item_id} " \
+        "storage_key=#{target.storage_key} blob_path=#{target.blob_path} " \
+        "error_class=#{error.class} error_message=#{error.message} " \
+        "backtrace=#{Array(error.backtrace).join(" | ")}"
+      )
     end
   end
 end

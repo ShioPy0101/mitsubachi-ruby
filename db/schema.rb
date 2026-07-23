@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_22_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_23_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -90,14 +90,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_090000) do
     t.bigint "organization_id", null: false
     t.bigint "owner_user_id", null: false
     t.bigint "parent_id"
+    t.datetime "purged_at"
+    t.bigint "purged_by_user_id"
     t.string "storage_key"
     t.datetime "updated_at", null: false
     t.string "upload_ip_address"
     t.index ["deleted_at"], name: "index_drive_items_on_deleted_at"
-    t.index ["organization_id", "parent_id", "name", "extension"], name: "index_active_drive_items_on_org_parent_name_extension", unique: true, where: "(deleted_at IS NULL)"
+    t.index ["organization_id", "file_hash"], name: "index_non_purged_drive_items_on_org_and_hash", where: "(purged_at IS NULL)"
+    t.index ["organization_id", "parent_id", "name", "extension"], name: "index_active_drive_items_on_org_parent_name_extension", unique: true, where: "((deleted_at IS NULL) AND (purged_at IS NULL))"
     t.index ["organization_id"], name: "index_drive_items_on_organization_id"
     t.index ["owner_user_id"], name: "index_drive_items_on_owner_user_id"
     t.index ["parent_id"], name: "index_drive_items_on_parent_id"
+    t.index ["purged_at"], name: "index_drive_items_on_purged_at"
+    t.index ["purged_by_user_id"], name: "index_drive_items_on_purged_by_user_id"
   end
 
   create_table "drive_permissions", force: :cascade do |t|
@@ -256,6 +261,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_090000) do
   add_foreign_key "drive_items", "drive_items", column: "parent_id"
   add_foreign_key "drive_items", "organizations"
   add_foreign_key "drive_items", "users", column: "owner_user_id"
+  add_foreign_key "drive_items", "users", column: "purged_by_user_id"
   add_foreign_key "drive_permissions", "drive_items"
   add_foreign_key "drive_permissions", "users"
   add_foreign_key "email_authentications", "organization_invites"

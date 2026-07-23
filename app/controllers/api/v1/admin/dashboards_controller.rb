@@ -11,7 +11,7 @@ class Api::V1::Admin::DashboardsController < Api::V1::Admin::BaseController
         drive_items_count: drive_items.count,
         files_count: drive_items.file.count,
         directories_count: drive_items.directory.count,
-        total_storage_bytes: drive_items.file.sum(:file_size),
+        total_storage_bytes: drive_items.not_purged.file.sum(:file_size),
         recent_users: users.includes(:organization).order(created_at: :desc).limit(5).map { |user| user_json(user) },
         recent_drive_items: drive_items.includes(:organization, :owner_user).order(created_at: :desc).limit(5).map { |item| drive_item_json(item) }
       }

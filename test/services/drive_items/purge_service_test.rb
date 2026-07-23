@@ -10,239 +10,177 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
   end
 
   teardown do
-    @storage_paths.each do |path|
-      FileUtils.rm_f(path)
-      Dir.glob("#{path}.purging-*").each { |temporary_path| FileUtils.rm_f(temporary_path) }
-    end
+    @storage_paths.each { |path| FileUtils.rm_f(path) }
   end
 
-  test "正常時はDBレコードと一時ファイルを削除する" do
-    drive_item = create_deleted_file(body: "purge")
-    storage_path = drive_item.absolute_storage_path
+  test "空フォルダを完全削除済みにする" do
+    directory = create_directory(deleted_at: Time.current)
 
-    result = DriveItems::PurgeService.new(drive_item: drive_item).call
-
-    assert result.success?
-    assert_equal "ファイルを完全削除しました", result.message
-    assert_not DriveItem.exists?(drive_item.id)
-    assert_not File.exist?(storage_path)
-    assert_empty temporary_files_for(storage_path)
-  end
-
-  test "destroy! が失敗した場合は一時ファイルを元パスへ復元する" do
-    drive_item = create_deleted_file(body: "destroy failure")
-    storage_path = drive_item.absolute_storage_path
-    drive_item.define_singleton_method(:destroy!) do
-      raise ActiveRecord::RecordInvalid, self
-    end
-
-    result = DriveItems::PurgeService.new(drive_item: drive_item).call
-
-    assert_not result.success?
-    assert_equal :unprocessable_content, result.status
-    assert DriveItem.exists?(drive_item.id)
-    assert_equal "destroy failure", File.binread(storage_path)
-    assert_empty temporary_files_for(storage_path)
-  end
-
-  test "トランザクション中に例外が発生した場合は一時ファイルを元パスへ復元する" do
-    drive_item = create_deleted_file(body: "transaction failure")
-    storage_path = drive_item.absolute_storage_path
-    original_transaction = ActiveRecord::Base.method(:transaction)
-    failing_transaction = lambda do |*args, **kwargs, &block|
-      original_transaction.call(*args, **kwargs) do
-        block.call
-        raise ActiveRecord::StatementInvalid, "transaction failed"
-      end
-    end
-
-    result = nil
-    with_singleton_method(ActiveRecord::Base, :transaction, failing_transaction) do
-      result = DriveItems::PurgeService.new(drive_item: drive_item).call
-    end
-
-    assert_not result.success?
-    assert DriveItem.exists?(drive_item.id)
-    assert_equal "transaction failure", File.binread(storage_path)
-    assert_empty temporary_files_for(storage_path)
-  end
-
-  test "コミット失敗時は一時ファイルを元パスへ復元する" do
-    drive_item = create_deleted_file(body: "commit failure")
-    storage_path = drive_item.absolute_storage_path
-    original_transaction = ActiveRecord::Base.method(:transaction)
-    failing_commit = lambda do |*args, **kwargs, &block|
-      original_transaction.call(*args, **kwargs, &block)
-      raise ActiveRecord::StatementInvalid, "commit failed"
-    end
-
-    result = nil
-    with_singleton_method(ActiveRecord::Base, :transaction, failing_commit) do
-      result = DriveItems::PurgeService.new(drive_item: drive_item).call
-    end
-
-    assert_not result.success?
-    assert_equal "commit failure", File.binread(storage_path)
-    assert_empty temporary_files_for(storage_path)
-  end
-
-  test "一時ファイルはコミット成功後に削除する" do
-    drive_item = create_deleted_file(body: "delete after commit")
-    storage_path = drive_item.absolute_storage_path
-    inside_transaction = false
-    delete_inside_transaction = nil
-    transaction = lambda do |*args, **kwargs, &block|
-      inside_transaction = true
-      block.call
-    ensure
-      inside_transaction = false
-    end
-    delete = lambda do |path|
-      delete_inside_transaction = inside_transaction
-      File.unlink(path.to_s)
-    end
-
-    result = nil
-    with_singleton_method(ActiveRecord::Base, :transaction, transaction) do
-      with_singleton_method(File, :delete, delete) do
-        result = DriveItems::PurgeService.new(drive_item: drive_item).call
-      end
-    end
-
-    assert result.success?
-    assert_equal false, delete_inside_transaction, "コミット前に一時ファイルを削除してはいけない"
-    assert_not File.exist?(storage_path)
-    assert_empty temporary_files_for(storage_path)
-  end
-
-  test "コミット後の一時ファイル削除失敗は成功扱いでエラーログを記録する" do
-    drive_item = create_deleted_file(body: "cleanup failure")
-    storage_path = drive_item.absolute_storage_path
-    logger = CapturingLogger.new
-
-    result = nil
-    with_singleton_method(Rails, :logger, -> { logger }) do
-      with_singleton_method(File, :delete, ->(_path) { raise Errno::EACCES, "denied" }) do
-        result = DriveItems::PurgeService.new(drive_item: drive_item).call
-      end
-    end
-
-    assert result.success?
-    assert_not DriveItem.exists?(drive_item.id)
-    assert_not_empty temporary_files_for(storage_path)
-    assert_equal 1, logger.errors.size
-    assert_includes logger.errors.first, "[drive_items.purge] temporary cleanup failed"
-    assert_includes logger.errors.first, "drive_item_id=#{drive_item.id}"
-    assert_includes logger.errors.first, storage_path.dirname.to_s
-    assert_includes logger.errors.first, "error=Errno::EACCES:"
-  end
-
-  test "コミット後の一時ファイル削除で ENOENT は正常扱いにする" do
-    drive_item = create_deleted_file(body: "cleanup already gone")
-    storage_path = drive_item.absolute_storage_path
-    logger = Object.new
-    def logger.error(message)
-      raise "unexpected error log: #{message}"
-    end
-    delete = lambda do |path|
-      File.unlink(path.to_s)
-      raise Errno::ENOENT, path
-    end
-
-    result = nil
-    with_singleton_method(Rails, :logger, -> { logger }) do
-      with_singleton_method(File, :delete, delete) do
-        result = DriveItems::PurgeService.new(drive_item: drive_item).call
-      end
-    end
-
-    assert result.success?
-    assert_not DriveItem.exists?(drive_item.id)
-    assert_empty temporary_files_for(storage_path)
-  end
-
-  test "不正な storage_key は拒否する" do
-    drive_item = create_deleted_file(body: "invalid key")
-    storage_path = drive_item.absolute_storage_path
-    drive_item.update_columns(storage_key: "../secret.txt", blob_path: "drive_items/../secret.txt")
-
-    result = DriveItems::PurgeService.new(drive_item: drive_item.reload).call
-
-    assert_not result.success?
-    assert_equal :unprocessable_content, result.status
-    assert_equal "保存先キーが不正です", result.message
-    assert DriveItem.exists?(drive_item.id)
-    assert File.exist?(storage_path)
-  end
-
-  test "不正な保存先パスは拒否する" do
-    drive_item = create_deleted_file(body: "invalid path")
-    storage_path = drive_item.absolute_storage_path
-    service = DriveItems::PurgeService.new(drive_item: drive_item)
-
-    result = with_singleton_method(service, :verified_storage_path, ->(_storage_key) { nil }) { service.call }
-
-    assert_not result.success?
-    assert_equal :unprocessable_content, result.status
-    assert_equal "保存先パスが不正です", result.message
-    assert DriveItem.exists?(drive_item.id)
-    assert File.exist?(storage_path)
-  end
-
-  test "実ファイル不存在は拒否する" do
-    drive_item = create_deleted_file(body: "missing")
-    storage_path = drive_item.absolute_storage_path
-    FileUtils.rm_f(storage_path)
-
-    result = DriveItems::PurgeService.new(drive_item: drive_item).call
-
-    assert_not result.success?
-    assert_equal :not_found, result.status
-    assert_equal "実ファイルが見つかりません", result.message
-    assert DriveItem.exists?(drive_item.id)
-  end
-
-  test "元ファイルがシンボリックリンクの場合は拒否する" do
-    target_path = write_storage_file("#{SecureRandom.uuid}.txt", "target")
-    symlink_key = "#{SecureRandom.uuid}.txt"
-    symlink_path = DriveItem.storage_root.join(DriveItem.storage_relative_path_for(symlink_key))
-    FileUtils.mkdir_p(symlink_path.dirname)
-    FileUtils.ln_s(target_path, symlink_path)
-    @storage_paths << symlink_path
-    drive_item = build_deleted_file(storage_key: symlink_key, body: nil)
-
-    result = DriveItems::PurgeService.new(drive_item: drive_item).call
-
-    assert_not result.success?
-    assert_equal :not_found, result.status
-    assert DriveItem.exists?(drive_item.id)
-    assert File.symlink?(symlink_path)
-    assert_equal "target", File.binread(target_path)
-  end
-
-  test "ディレクトリ削除ではファイル移動処理を行わない" do
-    directory = create_deleted_directory
-    result = nil
-
-    with_singleton_method(FileUtils, :mv, ->(_from, _to) { raise "directory purge must not move files" }) do
-      result = DriveItems::PurgeService.new(drive_item: directory).call
-    end
+    result = purge(directory)
 
     assert result.success?
     assert_equal "フォルダを完全削除しました", result.message
-    assert_not DriveItem.exists?(directory.id)
+    assert directory.reload.purged_at.present?
+    assert_equal @user, directory.purged_by_user
+    assert_not_includes DriveItem.active, directory
+    assert_not_includes DriveItem.trashed, directory
   end
 
-  test "空でないディレクトリは削除できない" do
-    directory = create_deleted_directory
-    create_deleted_directory(parent: directory)
+  test "親だけがゴミ箱状態でも多階層の子孫を同じ時刻で完全削除済みにする" do
+    root = create_directory(deleted_at: Time.current)
+    file_a = create_file(parent: root, body: "a")
+    directory_a = create_directory(parent: root)
+    file_b = create_file(parent: directory_a, body: "b")
+    directory_b = create_directory(parent: directory_a)
+    file_c = create_file(parent: directory_b, body: "c")
+    items = [ root, file_a, directory_a, file_b, directory_b, file_c ]
+    storage_paths = [ file_a, file_b, file_c ].map { |item| storage_path_for(item) }
 
-    result = DriveItems::PurgeService.new(drive_item: directory).call
+    result = purge(root)
+
+    assert result.success?
+    assert_equal 1, items.map { |item| item.reload.purged_at }.uniq.size
+    assert items.all? { |item| item.deleted_at.present? }
+    assert items.all? { |item| DriveItem.exists?(item.id) }
+    assert storage_paths.none? { |path| File.exist?(path) }
+  end
+
+  test "ファイル単体の完全削除仕様を維持する" do
+    file = create_file(body: "single", deleted_at: Time.current)
+    path = storage_path_for(file)
+
+    result = purge(file)
+
+    assert result.success?
+    assert_equal "ファイルを完全削除しました", result.message
+    assert file.reload.purged_at.present?
+    assert_nil file.storage_key
+    assert_nil file.blob_path
+    assert_not File.exist?(path)
+  end
+
+  test "DB更新途中の例外は全件をロールバックして実ファイルを残す" do
+    root = create_directory(deleted_at: Time.current)
+    first = create_file(parent: root, body: "first")
+    second = create_file(parent: root, body: "second")
+    second.define_singleton_method(:update!) { |**| raise ActiveRecord::RecordInvalid, self }
+    service = DriveItems::PurgeService.new(drive_item: root, actor_user: @user)
+    service.define_singleton_method(:collect_items) { [ root, first, second ] }
+
+    result = service.call
 
     assert_not result.success?
-    assert_equal :unprocessable_content, result.status
-    assert_equal "空でないフォルダは完全削除できません", result.message
-    assert DriveItem.exists?(directory.id)
+    assert_nil root.reload.purged_at
+    assert_nil first.reload.purged_at
+    assert_nil second.reload.purged_at
+    assert File.exist?(storage_path_for(first))
+    assert File.exist?(storage_path_for(second))
+  end
+
+  test "実ファイル削除はDBコミット後に実行する" do
+    file = create_file(body: "after commit", deleted_at: Time.current)
+    purged_when_deleted = nil
+    remover = lambda do |path|
+      purged_when_deleted = file.reload.purged_at.present?
+      File.unlink(path)
+    end
+
+    result = with_singleton_method(FileUtils, :rm_f, remover) { purge(file) }
+
+    assert result.success?
+    assert_equal true, purged_when_deleted
+  end
+
+  test "実ファイル削除失敗は成功扱いにして必要情報をログへ記録する" do
+    file = create_file(body: "failure", deleted_at: Time.current)
+    original_key = file.storage_key
+    original_blob_path = file.blob_path
+    logger = CapturingLogger.new
+
+    result = with_singleton_method(Rails, :logger, -> { logger }) do
+      with_singleton_method(FileUtils, :rm_f, ->(*) { raise Errno::EACCES, "denied" }) { purge(file) }
+    end
+
+    assert result.success?
+    assert file.reload.purged_at.present?
+    log = logger.errors.first
+    assert_includes log, "root_drive_item_id=#{file.id}"
+    assert_includes log, "drive_item_id=#{file.id}"
+    assert_includes log, "storage_key=#{original_key}"
+    assert_includes log, "blob_path=#{original_blob_path}"
+    assert_includes log, "error_class=Errno::EACCES"
+    assert_includes log, "error_message=Permission denied - denied"
+    assert_includes log, "backtrace="
+  end
+
+  test "同一ストレージ実体の削除は重複実行しない" do
+    root = create_directory(deleted_at: Time.current)
+    first = create_file(parent: root, body: "shared")
+    second = create_file(parent: root, body: "other")
+    second.update_columns(storage_key: first.storage_key, blob_path: first.blob_path)
+    calls = 0
+    remover = lambda do |path|
+      calls += 1
+      File.unlink(path) if File.exist?(path)
+    end
+
+    result = with_singleton_method(FileUtils, :rm_f, remover) { purge(root) }
+
+    assert result.success?
+    assert_equal 1, calls
+  end
+
+  test "削除対象外のDriveItemが参照する同一実体は削除しない" do
+    root = create_directory(deleted_at: Time.current)
+    target = create_file(parent: root, body: "shared")
+    reference = create_file(body: "other")
+    reference.update_columns(storage_key: target.storage_key, blob_path: target.blob_path)
+    path = storage_path_for(target)
+
+    result = purge(root)
+
+    assert result.success?
+    assert File.exist?(path)
+    assert_nil reference.reload.purged_at
+  end
+
+  test "他組織のDriveItemが参照する同一実体は削除しない" do
+    root = create_directory(deleted_at: Time.current)
+    target = create_file(parent: root, body: "cross organization")
+    other = drive_items(:two)
+    other.update_columns(storage_key: target.storage_key, blob_path: target.blob_path)
+    path = storage_path_for(target)
+
+    result = purge(root)
+
+    assert result.success?
+    assert File.exist?(path)
+    assert_nil other.reload.purged_at
+  end
+
+  test "他組織の子要素を検出した場合は全体を中止する" do
+    root = create_directory(deleted_at: Time.current)
+    other = drive_items(:two)
+    other.update_columns(parent_id: root.id)
+
+    result = purge(root)
+
+    assert_not result.success?
+    assert_nil root.reload.purged_at
+    assert_nil other.reload.purged_at
+  end
+
+  test "ゴミ箱外のフォルダは完全削除できない" do
+    root = create_directory
+    child = create_file(parent: root, body: "active")
+
+    result = purge(root)
+
+    assert_not result.success?
+    assert_equal "先にゴミ箱へ移動してください", result.message
+    assert_nil root.reload.purged_at
+    assert_nil child.reload.purged_at
+    assert File.exist?(storage_path_for(child))
   end
 
   private
@@ -259,63 +197,52 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     end
   end
 
-  def create_deleted_file(body:)
-    storage_key = "#{SecureRandom.uuid}.txt"
-    write_storage_file(storage_key, body)
-    build_deleted_file(storage_key:, body:)
+  def purge(item)
+    DriveItems::PurgeService.new(drive_item: item, actor_user: @user).call
   end
 
-  def build_deleted_file(storage_key:, body:)
-    DriveItem.create!(
-      organization: @organization,
-      owner_user: @user,
-      name: "purge-#{SecureRandom.hex(4)}",
-      item_type: "file",
-      extension: "txt",
-      storage_key: storage_key,
-      blob_path: DriveItem.storage_relative_path_for(storage_key),
-      content_type: "text/plain",
-      file_hash: body.present? ? Digest::SHA256.hexdigest(body) : nil,
-      file_size: body&.bytesize || 0,
-      deleted_at: Time.current
-    )
-  end
-
-  def create_deleted_directory(parent: nil)
+  def create_directory(parent: nil, deleted_at: nil)
     DriveItem.create!(
       organization: @organization,
       owner_user: @user,
       parent: parent,
       name: "purge-dir-#{SecureRandom.hex(4)}",
       item_type: "directory",
-      deleted_at: Time.current
+      deleted_at: deleted_at
     )
   end
 
-  def write_storage_file(storage_key, body)
+  def create_file(parent: nil, body:, deleted_at: nil)
+    storage_key = "#{SecureRandom.uuid}.txt"
     path = DriveItem.storage_root.join(DriveItem.storage_relative_path_for(storage_key))
     FileUtils.mkdir_p(path.dirname)
     File.binwrite(path, body)
     @storage_paths << path
-    path
+
+    DriveItem.create!(
+      organization: @organization,
+      owner_user: @user,
+      parent: parent,
+      name: "purge-#{SecureRandom.hex(4)}",
+      item_type: "file",
+      extension: "txt",
+      storage_key: storage_key,
+      content_type: "text/plain",
+      file_hash: Digest::SHA256.hexdigest(body),
+      file_size: body.bytesize,
+      deleted_at: deleted_at
+    )
   end
 
-  def temporary_files_for(storage_path)
-    Dir.glob("#{storage_path}.purging-*")
+  def storage_path_for(item)
+    DriveItem.storage_root.join(item.blob_path)
   end
 
   def with_singleton_method(receiver, method_name, implementation)
-    singleton_class = class << receiver; self; end
-    had_method = singleton_class.method_defined?(method_name) || singleton_class.private_method_defined?(method_name)
-    original_method = receiver.method(method_name) if had_method
-
+    original_method = receiver.method(method_name)
     receiver.define_singleton_method(method_name, &implementation)
     yield
   ensure
-    if had_method
-      receiver.define_singleton_method(method_name, original_method)
-    else
-      singleton_class.remove_method(method_name)
-    end
+    receiver.define_singleton_method(method_name, original_method)
   end
 end

@@ -78,7 +78,7 @@ module ExternalShares
     end
 
     def valid_items(scope)
-      scope.where(organization_id: @organization.id, deleted_at: nil)
+      scope.where(organization_id: @organization.id, deleted_at: nil, purged_at: nil)
     end
 
     def under_dynamic_root?(drive_item)

@@ -75,7 +75,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
       name: organization.name,
       users_count: organization.users.count,
       drive_items_count: drive_items.count,
-      storage_bytes: drive_items.file.sum(:file_size),
+      storage_bytes: drive_items.not_purged.file.sum(:file_size),
       created_at: organization.created_at,
       updated_at: organization.updated_at
     }

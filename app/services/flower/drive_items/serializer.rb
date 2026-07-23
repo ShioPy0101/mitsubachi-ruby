@@ -22,7 +22,7 @@ module Flower
       def detail_json
         list_json.merge(
           download: {
-            available: @drive_item.file? && @drive_item.deleted_at.nil?
+            available: @drive_item.file? && @drive_item.deleted_at.nil? && @drive_item.purged_at.nil?
           }
         )
       end

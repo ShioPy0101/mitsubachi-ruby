@@ -16,7 +16,7 @@ module ExternalShares
     def collect(drive_item, ids)
       return if ids[drive_item.id]
       return unless drive_item.organization_id == @organization.id
-      return if drive_item.deleted_at.present?
+      return if drive_item.deleted_at.present? || drive_item.purged_at.present?
 
       ids[drive_item.id] = true
       return unless drive_item.directory?

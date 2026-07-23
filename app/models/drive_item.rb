@@ -7,6 +7,7 @@ class DriveItem < ApplicationRecord
 
   # DriveItemは一つのオーナーユーザーに属する
   belongs_to :owner_user, class_name: "User"
+  belongs_to :purged_by_user, class_name: "User", optional: true
 
   # DriveItemは親DriveItemに属することができる（ディレクトリ構造を形成するため）
   belongs_to :parent,
@@ -49,11 +50,11 @@ class DriveItem < ApplicationRecord
 
   # スコープの定義
 
-  # activeなDriveItemを取得するスコープ
-  scope :active, -> { where(deleted_at: nil) }
-
-  # deletedなDriveItemを取得するスコープ
-  scope :deleted, -> { where.not(deleted_at: nil) }
+  scope :active, -> { where(deleted_at: nil, purged_at: nil) }
+  scope :trashed, -> { where.not(deleted_at: nil).where(purged_at: nil) }
+  scope :purged, -> { where.not(purged_at: nil) }
+  scope :not_purged, -> { where(purged_at: nil) }
+  scope :deleted, -> { trashed }
 
   def effective_storage_key
     storage_key.presence || blob_path.presence
@@ -160,6 +161,7 @@ class DriveItem < ApplicationRecord
     end
 
     if file?
+      return if purged_at.present?
 
       # ファイルの場合、extension, blob_path, storage_key, file_hashは必須である
       errors.add(:extension, "is required") if extension.blank?
@@ -170,6 +172,7 @@ class DriveItem < ApplicationRecord
 
   def storage_key_format
     return unless file?
+    return if purged_at.present?
     return if self.class.valid_storage_key?(storage_key)
 
     errors.add(:storage_key, "is invalid")
