@@ -308,13 +308,13 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def purge
-    result = DriveItems::PurgeService.new(drive_item: @drive_item).call
+    result = DriveItems::PurgeService.new(drive_item: @drive_item, actor_user: current_user).call
     unless result.success?
       render_api_error(error_code_for_status(result.status), result.message, status: result.status)
       return
     end
 
-    record_drive_item_event!("drive_item.purge", @drive_item, changes: { purged_at: [ nil, Time.current ] })
+    record_drive_item_event!("drive_item.purge", @drive_item, changes: { purged_at: [ nil, @drive_item.purged_at ] })
     render json: { message: result.message }
   end
 

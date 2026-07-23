@@ -137,9 +137,9 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     assert_equal({ "message" => "ファイルを完全削除しました" }, response.parsed_body)
-    assert_not DriveItem.exists?(@deleted_file.id)
+    assert @deleted_file.reload.purged_at.present?
     assert_not File.exist?(storage_path)
-    assert_nil access_log.reload.drive_item_id
+    assert_equal @deleted_file.id, access_log.reload.drive_item_id
   end
 
   test "system_admin cannot purge an active file first" do
@@ -173,7 +173,7 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
-  test "purge rejects invalid storage_key without deleting arbitrary paths" do
+  test "purge logs invalid storage_key after marking the record as purged" do
     sign_in @system_admin
     safe_path = @deleted_file.absolute_storage_path
     @deleted_file.update_columns(storage_key: "../secret.txt", blob_path: "drive_items/../secret.txt")
@@ -182,11 +182,12 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
       delete purge_api_v1_admin_drive_item_url(@deleted_file)
     end
 
-    assert_response :unprocessable_entity
+    assert_response :ok
+    assert @deleted_file.reload.purged_at.present?
     assert File.exist?(safe_path)
   end
 
-  test "purge rejects symlink storage targets" do
+  test "purge leaves symlink storage targets after marking the record as purged" do
     sign_in @system_admin
     symlink_key = "#{SecureRandom.uuid}.txt"
     symlink_path = DriveItem.storage_root.join(DriveItem.storage_relative_path_for(symlink_key))
@@ -202,7 +203,8 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
       delete purge_api_v1_admin_drive_item_url(@deleted_file)
     end
 
-    assert_response :not_found
+    assert_response :ok
+    assert @deleted_file.reload.purged_at.present?
     assert File.symlink?(symlink_path)
   end
 

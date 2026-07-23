@@ -100,7 +100,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     deleted_file = create_named_file(name: "purge-target", extension: "txt", body: "purge", parent: @root, deleted_at: Time.current)
     storage_path = deleted_file.absolute_storage_path
 
-    assert_difference "DriveItem.count", -1 do
+    assert_no_difference "DriveItem.count" do
       assert_difference "AuditEvent.where(action: 'drive_item.purge').count", 1 do
         delete purge_api_v1_drive_item_url(deleted_file)
       end
@@ -108,8 +108,31 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     assert_equal "ファイルを完全削除しました", response.parsed_body.fetch("message")
-    assert_not DriveItem.exists?(deleted_file.id)
+    assert deleted_file.reload.purged_at.present?
+    assert_equal @user, deleted_file.purged_by_user
     assert_not File.exist?(storage_path)
+  end
+
+  test "ゴミ箱内の多階層フォルダを purge して通常APIから除外する" do
+    sign_in @user
+    root = DriveItem.create!(organization: @organization, owner_user: @user, name: "purge-root", item_type: "directory", deleted_at: Time.current)
+    child = DriveItem.create!(organization: @organization, owner_user: @user, parent: root, name: "purge-child", item_type: "directory")
+    file = create_named_file(name: "nested", extension: "txt", body: "nested", parent: child)
+    storage_path = file.absolute_storage_path
+
+    assert_no_difference "DriveItem.count" do
+      delete purge_api_v1_drive_item_url(root)
+    end
+
+    assert_response :ok
+    assert_equal 1, [ root, child, file ].map { |item| item.reload.purged_at }.uniq.size
+    assert_not File.exist?(storage_path)
+
+    get api_v1_drive_item_url(root)
+    assert_response :not_found
+    get trash_api_v1_drive_items_url
+    assert_response :ok
+    assert_not_includes response.parsed_body.pluck("id"), root.id
   end
 
   test "active なアイテムは purge できない" do

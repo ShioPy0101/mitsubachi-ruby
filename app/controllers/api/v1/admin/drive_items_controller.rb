@@ -21,7 +21,7 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
   end
 
   def destroy
-    drive_item = find_scoped_drive_item
+    drive_item = find_mutable_scoped_drive_item
     return render_not_found if drive_item.nil?
 
     before = drive_item.deleted_at
@@ -53,10 +53,10 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
   def purge
     return render_error(:forbidden, "この操作を実行する権限がありません", :forbidden) unless system_admin?
 
-    drive_item = find_scoped_drive_item
+    drive_item = find_mutable_scoped_drive_item
     return render_not_found if drive_item.nil?
 
-    result = DriveItems::PurgeService.new(drive_item: drive_item).call
+    result = DriveItems::PurgeService.new(drive_item: drive_item, actor_user: current_user).call
     unless result.success?
       render json: { error: result.message }, status: result.status
       return
@@ -66,13 +66,13 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
       action: "drive_item.purge",
       target: drive_item,
       organization: drive_item.organization,
-      changes: { purged_at: [ nil, Time.current ] }
+      changes: { purged_at: [ nil, drive_item.purged_at ] }
     )
     render json: { message: result.message }
   end
 
   def restore
-    drive_item = find_scoped_drive_item
+    drive_item = find_mutable_scoped_drive_item
     return render_not_found if drive_item.nil?
 
     before = drive_item.deleted_at
@@ -93,6 +93,10 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
 
   def find_scoped_drive_item
     scoped_drive_items.includes(:organization, :owner_user).find_by(id: params[:id])
+  end
+
+  def find_mutable_scoped_drive_item
+    scoped_drive_items.not_purged.includes(:organization, :owner_user).find_by(id: params[:id])
   end
 
   def find_deliverable_drive_item
@@ -172,6 +176,8 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
       upload_ip_address: drive_item.upload_ip_address,
       uploaded_at: drive_item.created_at,
       deleted_at: drive_item.deleted_at,
+      purged_at: drive_item.purged_at,
+      purged_by_user_id: drive_item.purged_by_user_id,
       created_at: drive_item.created_at,
       updated_at: drive_item.updated_at
     }
