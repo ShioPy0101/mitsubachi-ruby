@@ -280,6 +280,11 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def bulk_restore
+    if params[:confirmation_token].present?
+      restore_with_resolutions!(deleted_drive_items_for_bulk.map { |drive_item| { item_id: drive_item.id, resolution: "restore" } })
+      return
+    end
+
     if restore_resolution_items.present?
       restore_with_resolutions!(restore_resolution_items)
       return
@@ -327,9 +332,14 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def restore
+    if params[:confirmation_token].present?
+      restore_with_resolutions!([ { item_id: @drive_item.id, resolution: "restore" } ])
+      return
+    end
+
     resolution_items = restore_resolution_items
-    if resolution_items.present? || params[:confirmation_token].present?
-      restore_with_resolutions!(resolution_items.presence || [ { item_id: @drive_item.id, resolution: "restore" } ])
+    if resolution_items.present?
+      restore_with_resolutions!(resolution_items)
       return
     end
 

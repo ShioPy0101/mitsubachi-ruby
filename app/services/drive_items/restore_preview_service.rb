@@ -1,6 +1,4 @@
 require "set"
-require "digest"
-require "json"
 
 module DriveItems
   class RestorePreviewService
@@ -39,7 +37,24 @@ module DriveItems
     end
 
     def confirmation_token_for(items)
-      Digest::SHA256.hexdigest(JSON.generate(fingerprint_for(items)))
+      message_verifier.generate(fingerprint_for(items))
+    end
+
+    def confirmation_resolutions_for(token)
+      fingerprint = message_verifier.verify(token)
+      Array(fingerprint).to_h do |item|
+        item_id = item.fetch("item_id")
+        after = item.fetch("after")
+        [
+          item_id.to_i,
+          {
+            resolution: after.fetch("resolution"),
+            destination_parent_id: after["parent_id"]
+          }
+        ]
+      end
+    rescue ActiveSupport::MessageVerifier::InvalidSignature, KeyError, TypeError
+      nil
     end
 
     private
@@ -294,6 +309,10 @@ module DriveItems
           existing_item_will_be_trashed: preview.after[:existing_item_will_be_trashed]
         }
       }
+    end
+
+    def message_verifier
+      Rails.application.message_verifier("drive-items-restore-confirmation")
     end
 
     def recommended_resolution(preview)

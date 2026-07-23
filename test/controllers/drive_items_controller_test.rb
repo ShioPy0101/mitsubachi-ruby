@@ -622,6 +622,32 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @root.id, trashed_file.parent_id
   end
 
+  test "restore はconfirmation tokenと旧形式itemsが同時に送られてもitemsを無視する" do
+    sign_in @user
+    trashed_file = create_named_file(name: "token-only-restore", extension: "txt", body: "token-only-restore", parent: @root, deleted_at: 1.hour.ago)
+
+    post restore_preview_api_v1_drive_item_url(trashed_file)
+    assert_response :ok
+    confirmation_token = response.parsed_body.fetch("confirmation_token")
+
+    sign_in @user
+    post restore_api_v1_drive_item_url(trashed_file), params: {
+      confirmation_token: confirmation_token,
+      items: [
+        {
+          item_id: trashed_file.id,
+          resolution: "select_destination",
+          destination_parent_id: 0,
+          expected_existing_item_id: 0
+        }
+      ]
+    }
+
+    assert_response :ok
+    assert_nil trashed_file.reload.deleted_at
+    assert_equal @root.id, trashed_file.parent_id
+  end
+
   test "restore はpreview後に無関係なDriveItemを更新しても成功する" do
     sign_in @user
     trashed_file = create_named_file(name: "unrelated-restore", extension: "txt", body: "unrelated-restore", parent: @root, deleted_at: 1.hour.ago)
@@ -702,18 +728,23 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "restore with rename resolution restores using previewed name" do
     sign_in @user
     trashed_file = create_named_file(name: "restore-rename", extension: "txt", body: "trash", parent: @root, deleted_at: 1.hour.ago)
-    create_named_file(name: "restore-rename", extension: "txt", body: "active", parent: @root)
+    existing = create_named_file(name: "restore-rename", extension: "txt", body: "active", parent: @root)
 
-    post restore_api_v1_drive_item_url(trashed_file), params: {
+    post restore_preview_api_v1_drive_item_url(trashed_file), params: {
       items: [
         {
           item_id: trashed_file.id,
           resolution: "rename",
           expected_name: "restore-rename (1).txt",
-          expected_existing_item_id: DriveItem.active.find_by(name: "restore-rename", extension: "txt").id
+          expected_existing_item_id: existing.id
         }
       ]
     }
+    assert_response :ok
+    confirmation_token = response.parsed_body.fetch("confirmation_token")
+
+    sign_in @user
+    post restore_api_v1_drive_item_url(trashed_file), params: { confirmation_token: confirmation_token }
 
     assert_response :ok
     assert_nil trashed_file.reload.deleted_at
