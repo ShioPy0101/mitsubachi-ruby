@@ -128,8 +128,10 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, [ root, child, file ].map { |item| item.reload.purged_at }.uniq.size
     assert_not File.exist?(storage_path)
 
+    sign_in @user
     get api_v1_drive_item_url(root)
     assert_response :not_found
+    sign_in @user
     get trash_api_v1_drive_items_url
     assert_response :ok
     assert_not_includes response.parsed_body.pluck("id"), root.id

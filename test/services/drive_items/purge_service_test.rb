@@ -34,6 +34,7 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     directory_b = create_directory(parent: directory_a)
     file_c = create_file(parent: directory_b, body: "c")
     items = [ root, file_a, directory_a, file_b, directory_b, file_c ]
+    storage_paths = [ file_a, file_b, file_c ].map { |item| storage_path_for(item) }
 
     result = purge(root)
 
@@ -41,7 +42,7 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     assert_equal 1, items.map { |item| item.reload.purged_at }.uniq.size
     assert items.all? { |item| item.deleted_at.present? }
     assert items.all? { |item| DriveItem.exists?(item.id) }
-    assert [ file_a, file_b, file_c ].none? { |item| File.exist?(storage_path_for(item)) }
+    assert storage_paths.none? { |path| File.exist?(path) }
   end
 
   test "ファイル単体の完全削除仕様を維持する" do
@@ -102,7 +103,7 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
 
     assert result.success?
     assert file.reload.purged_at.present?
-    log = logger.errors.one
+    log = logger.errors.first
     assert_includes log, "root_drive_item_id=#{file.id}"
     assert_includes log, "drive_item_id=#{file.id}"
     assert_includes log, "storage_key=#{original_key}"
