@@ -608,10 +608,30 @@ paths:
       tags: [DriveItems]
       summary: Restore multiple deleted drive items.
       requestBody:
-        $ref: "#/components/requestBodies/BulkIds"
+        $ref: "#/components/requestBodies/RestoreExecution"
       responses:
         "200":
           $ref: "#/components/responses/Message"
+        "409":
+          $ref: "#/components/responses/RestorePreviewStale"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/bulk_restore_preview:
+    post:
+      operationId: postApiV1DriveItemsBulkRestorePreview
+      tags: [DriveItems]
+      summary: Preview restore results for multiple deleted drive items.
+      requestBody:
+        $ref: "#/components/requestBodies/RestorePreview"
+      responses:
+        "200":
+          description: Restore preview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestorePreview"
         "404":
           $ref: "#/components/responses/Error"
         "422":
@@ -746,13 +766,39 @@ paths:
       operationId: postApiV1DriveItemRestore
       tags: [DriveItems]
       summary: Restore one deleted drive item.
+      requestBody:
+        $ref: "#/components/requestBodies/RestoreExecution"
       responses:
         "200":
           description: Restored drive item.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DriveItem"
+                oneOf:
+                  - $ref: "#/components/schemas/DriveItem"
+                  - $ref: "#/components/schemas/RestoreExecutionResult"
+        "409":
+          $ref: "#/components/responses/RestorePreviewStale"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/drive_items/{id}/restore_preview:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: postApiV1DriveItemRestorePreview
+      tags: [DriveItems]
+      summary: Preview restore results for one deleted drive item.
+      requestBody:
+        $ref: "#/components/requestBodies/RestorePreview"
+      responses:
+        "200":
+          description: Restore preview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestorePreview"
+        "404":
+          $ref: "#/components/responses/Error"
         "422":
           $ref: "#/components/responses/ValidationError"
   /api/v1/drive_items/{id}/purge:
@@ -1644,6 +1690,36 @@ components:
               parent_id:
                 type: integer
                 nullable: true
+    RestorePreview:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              drive_item_ids:
+                type: array
+                items:
+                  type: integer
+              items:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RestorePreviewResolution"
+    RestoreExecution:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              drive_item_ids:
+                type: array
+                items:
+                  type: integer
+              items:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RestorePreviewResolution"
     DriveItemUpdate:
       required: true
       content:
@@ -1725,6 +1801,21 @@ components:
                 oneOf:
                   - type: string
                   - type: object
+    RestorePreviewStale:
+      description: Restore preview became stale and must be confirmed again.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/RestorePreview"
+              - type: object
+                required: [error, message]
+                properties:
+                  error:
+                    type: string
+                    enum: [restore_preview_stale]
+                  message:
+                    type: string
     FlowerError:
       description: Flower API error response.
       content:
@@ -1975,6 +2066,181 @@ components:
         updated_at:
           type: string
           format: date-time
+    RestorePreviewResolution:
+      type: object
+      required: [item_id, resolution]
+      properties:
+        item_id:
+          type: integer
+        resolution:
+          type: string
+          enum: [rename, purge_existing, select_destination, restore_to_root, skip]
+        destination_parent_id:
+          type: integer
+          nullable: true
+        expected_name:
+          type: string
+          nullable: true
+        expected_existing_item_id:
+          type: integer
+          nullable: true
+    RestorePreview:
+      type: object
+      required: [items, summary]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestorePreviewItem"
+        summary:
+          $ref: "#/components/schemas/RestorePreviewSummary"
+    RestorePreviewItem:
+      type: object
+      required:
+        - item_id
+        - item_type
+        - restore_target_id
+        - conflict_type
+        - parent_exists
+        - recommended_resolution
+        - children_count
+        - descendant_conflict_count
+        - before
+        - after
+      properties:
+        item_id:
+          type: integer
+        item_type:
+          type: string
+          enum: [file, directory]
+        restore_target_id:
+          type: integer
+        conflict_type:
+          type: string
+          enum: [none, name_conflict, missing_parent, name_conflict_and_missing_parent]
+        parent_exists:
+          type: boolean
+        existing_item_id:
+          type: integer
+          nullable: true
+        existing_item_type:
+          type: string
+          enum: [file, directory]
+          nullable: true
+        recommended_resolution:
+          type: string
+          enum: [rename, purge_existing, select_destination, restore_to_root, skip]
+        auto_renamed_name:
+          type: string
+          nullable: true
+        children_count:
+          type: integer
+        descendant_conflict_count:
+          type: integer
+        before:
+          $ref: "#/components/schemas/RestorePreviewBefore"
+        after:
+          $ref: "#/components/schemas/RestorePreviewAfter"
+    RestorePreviewBefore:
+      type: object
+      required: [name, parent_id, parent_path, state, restorable, reason]
+      properties:
+        name:
+          type: string
+        parent_id:
+          type: integer
+          nullable: true
+        parent_path:
+          type: string
+          nullable: true
+        state:
+          type: string
+        restorable:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+    RestorePreviewAfter:
+      type: object
+      required:
+        - name
+        - parent_id
+        - parent_path
+        - restorable
+        - resolution
+        - existing_item_will_be_purged
+        - state
+        - impact
+      properties:
+        name:
+          type: string
+          nullable: true
+        parent_id:
+          type: integer
+          nullable: true
+        parent_path:
+          type: string
+          nullable: true
+        restorable:
+          type: boolean
+        resolution:
+          type: string
+          enum: [rename, purge_existing, select_destination, restore_to_root, skip]
+        existing_item_will_be_purged:
+          type: boolean
+        existing_item:
+          $ref: "#/components/schemas/RestorePreviewExistingItem"
+        state:
+          type: string
+        impact:
+          type: string
+    RestorePreviewExistingItem:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: integer
+        item_type:
+          type: string
+          enum: [file, directory]
+        name:
+          type: string
+        parent_path:
+          type: string
+          nullable: true
+        purge_note:
+          type: string
+    RestorePreviewSummary:
+      type: object
+      required:
+        - total_count
+        - conflict_count
+        - restorable_count
+        - skipped_count
+        - rename_count
+        - purge_existing_count
+      properties:
+        total_count:
+          type: integer
+        conflict_count:
+          type: integer
+        restorable_count:
+          type: integer
+        skipped_count:
+          type: integer
+        rename_count:
+          type: integer
+        purge_existing_count:
+          type: integer
+    RestoreExecutionResult:
+      type: object
+      properties:
+        message:
+          type: string
+        restored_item_ids:
+          type: array
+          items:
+            type: integer
     Group:
       type: object
       properties:
