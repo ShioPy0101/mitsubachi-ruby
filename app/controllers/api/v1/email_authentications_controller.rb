@@ -84,7 +84,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     record_audit_event!(
       action: "auth.#{result.purpose}.verify",
       actor_user: result.user,
-      organization: result.user.organization,
+      organization: result.organization_invite&.organization || result.user.organization,
       target: result.user
     )
 

@@ -50,6 +50,33 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert response.parsed_body.dig("error", "request_id").present?
   end
 
+  test "所属organizationのファイル一覧をorganization URLで取得できる" do
+    sign_in @user
+
+    get api_v1_organization_drive_items_url(@organization)
+
+    assert_response :ok
+    ids = response.parsed_body.map { |item| item.fetch("id") }
+    assert_includes ids, @root.id
+    assert_not_includes ids, @other_item.id
+  end
+
+  test "未所属organizationのファイル一覧は404" do
+    sign_in @user
+
+    get api_v1_organization_drive_items_url(organizations(:two))
+
+    assert_response :not_found
+  end
+
+  test "organization URLでも別organizationのDriveItem IDは404" do
+    sign_in @user
+
+    get api_v1_organization_drive_item_url(@organization, @other_item)
+
+    assert_response :not_found
+  end
+
   test "削除済みアイテムは show できない" do
     sign_in @user
 

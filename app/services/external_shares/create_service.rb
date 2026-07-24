@@ -13,9 +13,9 @@ module ExternalShares
       end
     end
 
-    def initialize(user:, params:, password_generator: PasswordGenerator)
+    def initialize(user:, params:, organization: user.organization, password_generator: PasswordGenerator)
       @user = user
-      @organization = user.organization
+      @organization = organization
       @params = params
       @password_generator = password_generator
     end

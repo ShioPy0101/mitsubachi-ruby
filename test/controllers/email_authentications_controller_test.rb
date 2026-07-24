@@ -100,17 +100,22 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :ok
-    assert_equal organizations(:two), user.reload.organization
+    assert_equal organizations(:one), user.reload.organization
     assert_nil stale_invite.reload.stand_by_user
     assert_equal user, invite.reload.stand_by_user
     assert invite.stand_by_at.present?
   end
 
-  test "create does not move registered user to another organization" do
+  test "create invites registered user to another organization without moving current organization" do
     user = User.create!(
       organization: organizations(:one),
       email: "registered@example.com",
       password: "password123"
+    )
+    user.organization_memberships.create!(
+      organization: organizations(:one),
+      role: :member,
+      status: :active
     )
     invite = OrganizationInvite.create!(
       organization: organizations(:two),
@@ -118,16 +123,54 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       expires_at: 1.day.from_now
     )
 
-    assert_no_difference "EmailAuthentication.count" do
+    assert_difference "EmailAuthentication.count", 1 do
       post api_v1_auth_create_url, params: {
         email: "registered@example.com",
         invite_code: invite.code
       }
     end
 
-    assert_response :conflict
+    assert_response :ok
     assert_equal organizations(:one), user.reload.organization
-    assert_nil invite.reload.stand_by_user
+    assert_equal user, invite.reload.stand_by_user
+  end
+
+  test "verify registration adds membership without changing other organization memberships" do
+    user = User.create!(
+      organization: organizations(:one),
+      email: "join-other@example.com",
+      password: "password123"
+    )
+    user.organization_memberships.create!(
+      organization: organizations(:one),
+      role: :organization_admin,
+      status: :active
+    )
+    invite = OrganizationInvite.create!(
+      organization: organizations(:two),
+      code: "join-other-invite",
+      expires_at: 1.day.from_now,
+      stand_by_user: user,
+      stand_by_at: Time.current
+    )
+    raw_token = "join-other-token"
+    EmailAuthentication.create!(
+      email: user.email,
+      token: Digest::SHA256.hexdigest(raw_token),
+      expires_at: 15.minutes.from_now,
+      purpose: "registration",
+      delivery_token: raw_token,
+      organization_invite: invite
+    )
+
+    assert_difference "user.organization_memberships.count", 1 do
+      post api_v1_auth_registration_verify_url, params: { token: raw_token }
+    end
+
+    assert_response :ok
+    assert user.active_membership_for(organizations(:one)).organization_admin?
+    assert user.active_membership_for(organizations(:two)).member?
+    assert_equal organizations(:one), user.reload.organization
   end
 
   test "create rolls back stand-by state when authentication creation fails" do

@@ -1,5 +1,6 @@
 class Api::V1::Admin::BaseController < ApplicationController
   before_action :authenticate_user!
+  before_action :set_current_organization, if: :organization_path_scope?
   before_action :require_admin!
 
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
@@ -10,7 +11,8 @@ class Api::V1::Admin::BaseController < ApplicationController
   DEFAULT_PER_PAGE = 20
 
   def require_admin!
-    return if current_user.system_admin? || current_user.organization_admin?
+    return if current_user.system_admin?
+    return if current_membership&.organization_admin?
 
     render_error(:forbidden, "この操作を実行する権限がありません", :forbidden)
   end
@@ -20,33 +22,70 @@ class Api::V1::Admin::BaseController < ApplicationController
   end
 
   def scoped_organizations
+    return Organization.where(id: current_organization.id) if organization_path_scope?
     return Organization.all if system_admin?
 
-    Organization.where(id: current_user.organization_id)
+    Organization.where(
+      id: current_user
+        .organization_memberships
+        .active
+        .organization_admin
+        .select(:organization_id)
+    )
   end
 
   def scoped_users
+    return current_organization.users if organization_path_scope?
     return User.all if system_admin?
 
-    User.where(organization_id: current_user.organization_id)
+    User.joins(:organization_memberships).merge(
+      OrganizationMembership.active.where(
+        organization_id: current_user
+          .organization_memberships
+          .active
+          .organization_admin
+          .select(:organization_id)
+      )
+    ).distinct
   end
 
   def scoped_drive_items
+    return current_organization.drive_items if organization_path_scope?
     return DriveItem.all if system_admin?
 
-    DriveItem.where(organization_id: current_user.organization_id)
+    DriveItem.where(
+      organization_id: current_user
+        .organization_memberships
+        .active
+        .organization_admin
+        .select(:organization_id)
+    )
   end
 
   def scoped_admin_audit_logs
+    return current_organization.admin_audit_logs if organization_path_scope?
     return AdminAuditLog.all if system_admin?
 
-    AdminAuditLog.where(organization_id: current_user.organization_id)
+    AdminAuditLog.where(
+      organization_id: current_user
+        .organization_memberships
+        .active
+        .organization_admin
+        .select(:organization_id)
+    )
   end
 
   def scoped_audit_events
+    return current_organization.audit_events if organization_path_scope?
     return AuditEvent.all if system_admin?
 
-    AuditEvent.where(organization_id: current_user.organization_id)
+    AuditEvent.where(
+      organization_id: current_user
+        .organization_memberships
+        .active
+        .organization_admin
+        .select(:organization_id)
+    )
   end
 
   def paginate(scope)
@@ -118,7 +157,7 @@ class Api::V1::Admin::BaseController < ApplicationController
     )
   end
 
-  def record_audit_event!(action:, target: nil, organization: current_user&.organization, outcome: "success", changes: {}, metadata: {})
+  def record_audit_event!(action:, target: nil, organization: current_organization, outcome: "success", changes: {}, metadata: {})
     AuditEvents::Recorder.record!(
       action: action,
       actor_user: current_user,

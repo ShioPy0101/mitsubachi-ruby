@@ -1,0 +1,13 @@
+one_member:
+  user: one
+  organization: one
+  role: member
+  status: active
+  joined_at: 2026-07-01 00:00:00
+
+two_member:
+  user: two
+  organization: two
+  role: member
+  status: active
+  joined_at: 2026-07-01 00:00:00

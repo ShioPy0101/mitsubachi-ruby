@@ -1,5 +1,6 @@
 class Api::V1::ExternalSharesController < ApplicationController
   before_action :authenticate_user!
+  before_action :set_current_organization, if: :organization_path_scope?
   before_action :set_external_share, only: %i[show update destroy regenerate_password]
 
   def index
@@ -12,7 +13,7 @@ class Api::V1::ExternalSharesController < ApplicationController
   end
 
   def create
-    result = ExternalShares::CreateService.new(user: current_user, params: external_share_params.to_h.symbolize_keys).call
+    result = ExternalShares::CreateService.new(user: current_user, organization: current_organization, params: external_share_params.to_h.symbolize_keys).call
     unless result.success?
       render_api_error(error_code_for_status(result.status), result.error_message, status: result.status)
       return
@@ -60,8 +61,10 @@ class Api::V1::ExternalSharesController < ApplicationController
   end
 
   def manageable_external_shares
+    return current_organization.external_shares if organization_path_scope? && (current_user.system_admin? || current_membership&.organization_admin?)
+    return current_organization.external_shares.where(created_by_user: current_user) if organization_path_scope?
     return ExternalShare.all if current_user.system_admin?
-    return current_user.organization.external_shares if current_user.organization_admin?
+    return current_organization.external_shares if current_membership&.organization_admin?
 
     current_user.created_external_shares
   end

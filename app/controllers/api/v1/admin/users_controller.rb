@@ -27,17 +27,19 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
     return if forbidden_user_management?(user)
 
     attributes = permitted_user_attributes(user)
-    before = user.slice("name", "email", "role", "organization_id")
+    membership = membership_for(user)
+    before = user.slice("name", "email", "role", "organization_id").merge("membership_role" => membership&.role)
 
     return unless validate_user_update!(user, attributes)
 
-    if user.update(attributes)
-      action = before["role"] != user.role ? "user.role_change" : "user.update"
+    if update_user_and_membership!(user, membership, attributes)
+      after = user.slice("name", "email", "role", "organization_id").merge("membership_role" => membership&.reload&.role)
+      action = before["membership_role"] != after["membership_role"] || before["role"] != user.role ? "user.role_change" : "user.update"
       audit_admin_action!(
         action: action,
         target: user,
-        organization: user.organization,
-        changes: changed_values(before, user.slice("name", "email", "role", "organization_id"))
+        organization: membership&.organization || user.organization,
+        changes: changed_values(before, after)
       )
       render json: { data: user_json(user) }
     else
@@ -76,7 +78,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   private
 
   def find_scoped_user
-    scoped_users.includes(:organization).find_by(id: params[:id])
+    scoped_users.includes(:organization_memberships, :organization).find_by(id: params[:id])
   end
 
   def apply_filters(scope)
@@ -85,10 +87,17 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
       scope = scope.where("users.name ILIKE :query OR users.email ILIKE :query", query: query)
     end
 
-    scope = scope.where(organization_id: params[:organization_id]) if system_admin? && params[:organization_id].present?
-    scope = scope.where(role: params[:role]) if params[:role].present? && User.roles.key?(params[:role])
+    scope = scope.where(role: params[:role]) if params[:role].present? && User.roles.key?(params[:role]) && !OrganizationMembership.roles.key?(params[:role])
+    if params[:role].present? && OrganizationMembership.roles.key?(params[:role])
+      scope = scope.joins(:organization_memberships).merge(OrganizationMembership.where(role: params[:role]))
+    end
+    if system_admin? && params[:organization_id].present? && !organization_path_scope?
+      scope = scope.joins(:organization_memberships).merge(
+        OrganizationMembership.active.where(organization_id: params[:organization_id])
+      )
+    end
     scope = apply_status_filter(scope)
-    scope
+    scope.distinct
   end
 
   def apply_status_filter(scope)
@@ -110,7 +119,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   end
 
   def validate_user_update!(user, attributes)
-    return fail_user_update!(:validation_error, "role が不正です", :unprocessable_content) if attributes["role"].present? && !User.roles.key?(attributes["role"])
+    return fail_user_update!(:validation_error, "role が不正です", :unprocessable_content) if attributes["role"].present? && !valid_update_role?(attributes["role"])
     return fail_user_update!(:forbidden, "system_admin を変更する権限がありません", :forbidden) if !system_admin? && user.system_admin?
     return fail_user_update!(:forbidden, "system_admin へ変更する権限がありません", :forbidden) if !system_admin? && attributes["role"] == "system_admin"
     return fail_user_update!(:forbidden, "別organizationへ移動する権限がありません", :forbidden) if forbidden_organization_change?(user)
@@ -153,10 +162,18 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
 
   def removes_last_organization_admin?(user, attributes)
     return false unless user == current_user
-    return false unless user.organization_admin?
+    membership = membership_for(user)
+    return false unless membership&.organization_admin?
     return false if attributes["role"].blank? || attributes["role"] == "organization_admin"
 
-    !User.organization_admin.active.where(organization_id: user.organization_id).where.not(id: user.id).exists?
+    !OrganizationMembership
+      .active
+      .organization_admin
+      .where(organization: membership.organization)
+      .where.not(user_id: user.id)
+      .joins(:user)
+      .merge(User.active)
+      .exists?
   end
 
   def sort_column
@@ -170,13 +187,36 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
       organization_name: user.organization.name,
       email: user.email,
       name: user.name,
-      role: user.role,
+      role: membership_for(user)&.role || user.role,
+      system_admin: user.system_admin?,
       suspended: user.suspended?,
       suspended_at: user.suspended_at,
       last_sign_in_at: user.last_sign_in_at,
       created_at: user.created_at,
       updated_at: user.updated_at
     }
+  end
+
+  def membership_for(user)
+    return user.active_membership_for(current_organization) if current_organization.present?
+
+    nil
+  end
+
+  def valid_update_role?(role)
+    User.roles.key?(role) || OrganizationMembership.roles.key?(role)
+  end
+
+  def update_user_and_membership!(user, membership, attributes)
+    membership_role = attributes.delete("role") if attributes["role"].present? && OrganizationMembership.roles.key?(attributes["role"])
+
+    ActiveRecord::Base.transaction do
+      user.update!(attributes)
+      membership&.update!(role: membership_role) if membership_role.present?
+    end
+    true
+  rescue ActiveRecord::RecordInvalid
+    false
   end
 
   def changed_values(before, after)

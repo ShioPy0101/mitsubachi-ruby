@@ -34,19 +34,21 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
   private
 
   def invite_organization
+    return current_organization if organization_path_scope?
+
     requested_organization_id = params.dig(:organization_invite, :organization_id)
 
     if system_admin?
       Organization.find_by(id: requested_organization_id || current_user.organization_id)
-    elsif requested_organization_id.present? && requested_organization_id.to_i != current_user.organization_id
+    elsif requested_organization_id.present? && requested_organization_id.to_i != current_organization.id
       Organization.find_by(id: requested_organization_id)
     else
-      current_user.organization
+      current_organization
     end
   end
 
   def can_create_invite_for?(organization)
-    system_admin? || organization.id == current_user.organization_id
+    system_admin? || current_user.organization_memberships.active.organization_admin.exists?(organization: organization)
   end
 
   def invite_params

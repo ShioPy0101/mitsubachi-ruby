@@ -60,6 +60,40 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
     assert_nil detail["generated_password"]
   end
 
+  test "organization URLでは所属organizationのアイテムだけ外部公開できる" do
+    sign_in_with_magic_link @user
+
+    post api_v1_organization_external_shares_url(@user.organization), params: {
+      external_share: {
+        name: "組織URL公開",
+        drive_item_ids: [ @drive_item.id ],
+        folder_share_mode: "snapshot"
+      }
+    }
+
+    assert_response :created
+    share = ExternalShare.find(response.parsed_body.fetch("id"))
+    assert_equal @user.organization, share.organization
+
+    post api_v1_organization_external_shares_url(@user.organization), params: {
+      external_share: {
+        name: "別組織アイテム公開",
+        drive_item_ids: [ drive_items(:two).id ],
+        folder_share_mode: "snapshot"
+      }
+    }
+
+    assert_response :not_found
+  end
+
+  test "未所属organizationの外部公開一覧は404" do
+    sign_in_with_magic_link @user
+
+    get api_v1_organization_external_shares_url(organizations(:two))
+
+    assert_response :not_found
+  end
+
   test "パスワード保護ありの作成レスポンスだけが生成パスワードを返す" do
     sign_in_with_magic_link @user
 

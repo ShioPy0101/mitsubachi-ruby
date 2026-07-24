@@ -1750,6 +1750,740 @@ paths:
           description: ZIP file.
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/group:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationGroup
+      tags: [Session]
+      summary: Return group data for an explicit organization.
+      responses:
+        "200":
+          description: Group dashboard.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: patchApiV1OrganizationGroup
+      tags: [Session]
+      summary: Update an explicit organization group profile.
+      responses:
+        "200":
+          description: Updated group.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1OrganizationGroup
+      tags: [Session]
+      summary: Update an explicit organization group profile.
+      responses:
+        "200":
+          description: Updated group.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/external_shares:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationExternalShares
+      tags: [DriveItems]
+      summary: List external shares for an explicit organization.
+      responses:
+        "200":
+          description: External shares.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: postApiV1OrganizationExternalShares
+      tags: [DriveItems]
+      summary: Create an external share for an explicit organization.
+      responses:
+        "201":
+          description: External share created.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/external_shares/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationExternalShare
+      tags: [DriveItems]
+      summary: Return an external share for an explicit organization.
+      responses:
+        "200":
+          description: External share.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: patchApiV1OrganizationExternalShare
+      tags: [DriveItems]
+      summary: Update an external share for an explicit organization.
+      responses:
+        "200":
+          description: External share updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1OrganizationExternalShare
+      tags: [DriveItems]
+      summary: Update an external share for an explicit organization.
+      responses:
+        "200":
+          description: External share updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      operationId: deleteApiV1OrganizationExternalShare
+      tags: [DriveItems]
+      summary: Revoke an external share for an explicit organization.
+      responses:
+        "200":
+          description: External share revoked.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/external_shares/{id}/regenerate_password:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: postApiV1OrganizationExternalShareRegeneratePassword
+      tags: [DriveItems]
+      summary: Regenerate an external share password for an explicit organization.
+      responses:
+        "200":
+          description: Password regenerated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationDriveItems
+      tags: [DriveItems]
+      summary: List DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: DriveItems.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: postApiV1OrganizationDriveItems
+      tags: [DriveItems]
+      summary: Create a DriveItem for an explicit organization.
+      responses:
+        "201":
+          description: DriveItem created.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/search:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationDriveItemsSearch
+      tags: [DriveItems]
+      summary: Search DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: DriveItems.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/trash:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationDriveItemsTrash
+      tags: [DriveItems]
+      summary: List trashed DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: DriveItems.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_move:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkMove
+      tags: [DriveItems]
+      summary: Bulk move DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: DriveItems moved.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_delete:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkDelete
+      tags: [DriveItems]
+      summary: Bulk trash DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: DriveItems trashed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_purge:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    delete:
+      operationId: deleteApiV1OrganizationDriveItemsBulkPurge
+      tags: [DriveItems]
+      summary: Bulk purge DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: DriveItems purged.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_restore:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkRestore
+      tags: [DriveItems]
+      summary: Bulk restore DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: DriveItems restored.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_restore_preview:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkRestorePreview
+      tags: [DriveItems]
+      summary: Preview bulk restore for an explicit organization.
+      responses:
+        "200":
+          description: Restore preview.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_download:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkDownload
+      tags: [DriveItems]
+      summary: Bulk download DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: ZIP download.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItem
+      tags: [DriveItems]
+      summary: Return a DriveItem for an explicit organization.
+      responses:
+        "200":
+          description: DriveItem.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: patchApiV1OrganizationDriveItem
+      tags: [DriveItems]
+      summary: Update a DriveItem for an explicit organization.
+      responses:
+        "200":
+          description: DriveItem updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1OrganizationDriveItem
+      tags: [DriveItems]
+      summary: Update a DriveItem for an explicit organization.
+      responses:
+        "200":
+          description: DriveItem updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      operationId: deleteApiV1OrganizationDriveItem
+      tags: [DriveItems]
+      summary: Trash a DriveItem for an explicit organization.
+      responses:
+        "200":
+          description: DriveItem trashed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/preview:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItemPreview
+      tags: [DriveItems]
+      summary: Preview a DriveItem for an explicit organization.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/download:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItemDownload
+      tags: [DriveItems]
+      summary: Download a DriveItem for an explicit organization.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/stream:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItemStream
+      tags: [DriveItems]
+      summary: Stream a DriveItem for an explicit organization.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: postApiV1OrganizationDriveItemRestore
+      tags: [DriveItems]
+      summary: Restore a DriveItem for an explicit organization.
+      responses:
+        "200":
+          description: DriveItem restored.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/restore_preview:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: postApiV1OrganizationDriveItemRestorePreview
+      tags: [DriveItems]
+      summary: Preview DriveItem restore for an explicit organization.
+      responses:
+        "200":
+          description: Restore preview.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/purge:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: deleteApiV1OrganizationDriveItemPurge
+      tags: [DriveItems]
+      summary: Purge a DriveItem for an explicit organization.
+      responses:
+        "200":
+          description: DriveItem purged.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/move:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1OrganizationDriveItemMove
+      tags: [DriveItems]
+      summary: Move a DriveItem for an explicit organization.
+      responses:
+        "200":
+          description: DriveItem moved.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/admin/dashboard:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationAdminDashboard
+      tags: [Admin]
+      summary: Return admin dashboard for an explicit organization.
+      responses:
+        "200":
+          description: Dashboard.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/organization_invites:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationAdminOrganizationInvites
+      tags: [Admin]
+      summary: Create an invite for an explicit organization.
+      responses:
+        "201":
+          description: Invite created.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/admin/users:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationAdminUsers
+      tags: [Admin]
+      summary: List users for an explicit organization.
+      responses:
+        "200":
+          description: Users.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminUser
+      tags: [Admin]
+      summary: Return a user for an explicit organization.
+      responses:
+        "200":
+          description: User.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: patchApiV1OrganizationAdminUser
+      tags: [Admin]
+      summary: Update a user or membership role for an explicit organization.
+      responses:
+        "200":
+          description: User updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1OrganizationAdminUser
+      tags: [Admin]
+      summary: Update a user or membership role for an explicit organization.
+      responses:
+        "200":
+          description: User updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/admin/users/{id}/suspend:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1OrganizationAdminUserSuspend
+      tags: [Admin]
+      summary: Suspend a user from an explicit organization admin context.
+      responses:
+        "200":
+          description: User suspended.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/users/{id}/unsuspend:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1OrganizationAdminUserUnsuspend
+      tags: [Admin]
+      summary: Unsuspend a user from an explicit organization admin context.
+      responses:
+        "200":
+          description: User unsuspended.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/drive_items:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationAdminDriveItems
+      tags: [Admin]
+      summary: List admin DriveItems for an explicit organization.
+      responses:
+        "200":
+          description: DriveItems.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/drive_items/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminDriveItem
+      tags: [Admin]
+      summary: Return an admin DriveItem for an explicit organization.
+      responses:
+        "200":
+          description: DriveItem.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteApiV1OrganizationAdminDriveItem
+      tags: [Admin]
+      summary: Trash a DriveItem from an explicit organization admin context.
+      responses:
+        "200":
+          description: DriveItem trashed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/drive_items/{id}/preview:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminDriveItemPreview
+      tags: [Admin]
+      summary: Preview a DriveItem from an explicit organization admin context.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/drive_items/{id}/download:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminDriveItemDownload
+      tags: [Admin]
+      summary: Download a DriveItem from an explicit organization admin context.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/drive_items/{id}/stream:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminDriveItemStream
+      tags: [Admin]
+      summary: Stream a DriveItem from an explicit organization admin context.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/drive_items/{id}/purge:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: deleteApiV1OrganizationAdminDriveItemPurge
+      tags: [Admin]
+      summary: Purge a DriveItem from an explicit organization admin context.
+      responses:
+        "200":
+          description: DriveItem purged.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/drive_items/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1OrganizationAdminDriveItemRestore
+      tags: [Admin]
+      summary: Restore a DriveItem from an explicit organization admin context.
+      responses:
+        "200":
+          description: DriveItem restored.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/audit_logs:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationAdminAuditLogs
+      tags: [Admin]
+      summary: List admin audit logs for an explicit organization.
+      responses:
+        "200":
+          description: Audit logs.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/audit_logs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminAuditLog
+      tags: [Admin]
+      summary: Return an admin audit log for an explicit organization.
+      responses:
+        "200":
+          description: Audit log.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/audit_events:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationAdminAuditEvents
+      tags: [Admin]
+      summary: List audit events for an explicit organization.
+      responses:
+        "200":
+          description: Audit events.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/audit_events/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminAuditEvent
+      tags: [Admin]
+      summary: Return an audit event for an explicit organization.
+      responses:
+        "200":
+          description: Audit event.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     cookieSession:
@@ -1760,8 +2494,8 @@ components:
       type: http
       scheme: bearer
   parameters:
-    Id:
-      name: id
+    OrganizationId:
+      name: organization_id
       in: path
       required: true
       schema:

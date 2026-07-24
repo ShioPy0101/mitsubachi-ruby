@@ -7,7 +7,7 @@ class Api::V1::MeController < ApplicationController
   before_action :rate_limit_email_change_request!, only: :request_email_change
 
   def show
-    render json: { data: user_json(current_user) }
+    render json: me_response_json(current_user)
   end
 
   def update
@@ -111,6 +111,7 @@ class Api::V1::MeController < ApplicationController
 
   def user_json(user)
     pending_email_change = user.pending_email_change
+    memberships = user.organization_memberships.active.includes(:organization).order(:organization_id)
 
     {
       id: user.id,
@@ -121,11 +122,35 @@ class Api::V1::MeController < ApplicationController
       name: user.name,
       display_name: user.display_name,
       role: user.role,
+      system_admin: user.system_admin?,
+      memberships: memberships.map { |membership| membership_json(membership) },
       suspended: user.suspended?,
       suspended_at: user.suspended_at,
       last_sign_in_at: user.last_sign_in_at,
       created_at: user.created_at,
       updated_at: user.updated_at
+    }
+  end
+
+  def me_response_json(user)
+    data = user_json(user)
+
+    {
+      data: data,
+      user: data.slice(:id, :email, :display_name, :system_admin),
+      memberships: data.fetch(:memberships)
+    }
+  end
+
+  def membership_json(membership)
+    {
+      organization: {
+        id: membership.organization.id,
+        name: membership.organization.name
+      },
+      role: membership.role,
+      status: membership.status,
+      joined_at: membership.joined_at
     }
   end
 

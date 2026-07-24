@@ -3,6 +3,7 @@ class ApplicationController < ActionController::API
   include ActionController::RequestForgeryProtection
 
   protect_from_forgery with: :exception, unless: -> { !Rails.configuration.action_controller.allow_forgery_protection }
+  rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
   rescue_from ActionController::InvalidAuthenticityToken, with: :render_invalid_authenticity_token
   before_action :reject_suspended_user!
 
@@ -14,7 +15,7 @@ class ApplicationController < ActionController::API
     render_api_error(:unauthorized, "ログインが必要です。", status: :unauthorized)
   end
 
-  def record_audit_event!(action:, actor_user: current_user_or_nil, organization: actor_user&.organization, target: nil, outcome: "success", changes: {}, metadata: {})
+  def record_audit_event!(action:, actor_user: current_user_or_nil, organization: current_organization_for_audit(actor_user), target: nil, outcome: "success", changes: {}, metadata: {})
     AuditEvents::Recorder.record!(
       action: action,
       actor_user: actor_user,
@@ -28,7 +29,40 @@ class ApplicationController < ActionController::API
   end
 
   def current_organization
-    current_user&.organization
+    @current_organization || current_user&.organization
+  end
+
+  def current_membership
+    return @current_membership if defined?(@current_membership)
+    return nil unless current_user && current_organization
+
+    @current_membership = current_user.active_membership_for(current_organization)
+  end
+
+  def set_current_organization
+    if current_user.system_admin?
+      @current_organization = Organization.find(request.path_parameters[:organization_id])
+      @current_membership = current_user.active_membership_for(@current_organization)
+      return
+    end
+
+    @current_membership =
+      current_user
+        .organization_memberships
+        .active
+        .includes(:organization)
+        .find_by!(organization_id: request.path_parameters[:organization_id])
+
+    @current_organization = @current_membership.organization
+  end
+
+  def organization_path_scope?
+    request.path_parameters[:organization_id].present?
+  end
+
+  def require_organization_admin!
+    return if current_user&.system_admin?
+    raise ActiveRecord::RecordNotFound unless current_membership&.organization_admin?
   end
 
   def current_client_type
@@ -50,6 +84,12 @@ class ApplicationController < ActionController::API
     current_user
   rescue StandardError
     nil
+  end
+
+  def current_organization_for_audit(actor_user)
+    return current_organization if current_organization.present?
+
+    actor_user&.organization
   end
 
   def reject_suspended_user!

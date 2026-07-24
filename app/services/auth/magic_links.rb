@@ -67,9 +67,8 @@ module Auth
         validate_display_name_for_registration!(display_name, invite, existing_user)
         clear_stale_stand_by!(existing_user, now) if existing_user.present?
 
-        stand_by_user = existing_user || User.new(email: email)
-        stand_by_user.organization = invite.organization
-        stand_by_user.display_name = display_name if display_name.present?
+        stand_by_user = existing_user || User.new(email: email, organization: invite.organization)
+        stand_by_user.display_name = display_name if display_name.present? && stand_by_user.display_name.blank?
         stand_by_user.password = SecureRandom.base64(32) unless stand_by_user.persisted?
         stand_by_user.save!
         expire_active_registration_authentications!(invite, now)
@@ -153,6 +152,7 @@ module Auth
         invite.lock!
         invite.reload
         validate_invite_for_verification!(invite, user, now)
+        create_membership_from_invite!(invite, user, now)
         invite.update!(used_at: now, used_by_user: user, stand_by_at: nil, stand_by_user: nil)
         mark_authentication_used!(authentication, now)
         verified_user = user
@@ -173,9 +173,8 @@ module Auth
     def validate_user_for_registration!(user, invite)
       return if user.nil?
       raise Failure.new("このユーザーは停止されています", :unauthorized) if user.suspended?
-      raise Failure.new("このメールアドレスはすでに登録されています", :conflict) unless provisional_user?(user)
+      raise Failure.new("このメールアドレスはすでにこのorganizationへ参加しています", :conflict) if user.organization_memberships.active.exists?(organization: invite.organization)
       raise Failure.new("このメールアドレスは現在検証中です", :conflict) if active_stand_by_invite_for(user).present?
-      raise Failure.new("このメールアドレスはすでに登録されています", :conflict) if user.organization_id != invite.organization_id && !stale_provisional_user?(user)
     end
 
     def validate_user_for_login!(user)
@@ -224,6 +223,18 @@ module Auth
 
     def mark_authentication_used!(authentication, now)
       authentication.update!(used_at: now)
+    end
+
+    def create_membership_from_invite!(invite, user, now)
+      OrganizationMembership.create!(
+        user: user,
+        organization: invite.organization,
+        role: :member,
+        status: :active,
+        joined_at: now
+      )
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+      raise Failure.new("このメールアドレスはすでにこのorganizationへ参加しています", :conflict)
     end
 
     def expire_active_login_authentications!(email, now)

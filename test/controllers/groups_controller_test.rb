@@ -31,7 +31,7 @@ class GroupsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "organization admin can update group and audit event is recorded" do
-    @user.update!(role: :organization_admin)
+    @user.active_membership_for(@organization).update!(role: :organization_admin)
     sign_in @user
 
     assert_difference "AuditEvent.where(action: 'group.update').count", 1 do
