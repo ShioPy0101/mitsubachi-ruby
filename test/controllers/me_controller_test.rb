@@ -18,7 +18,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
   test "requires login to update current user" do
     sign_out @user
 
-    patch api_v1_me_url, params: { display_name: "しお" }
+    patch api_v1_me_url, params: { display_name: "新しい表示名" }
 
     assert_response :unauthorized
   end
@@ -39,7 +39,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
   test "updates display name and records audit event" do
     assert_difference "AuditEvent.where(action: 'user.profile.update').count", 1 do
       patch api_v1_me_url, params: {
-        display_name: "  しお  ",
+        display_name: "  新しい表示名  ",
         role: "system_admin",
         organization_id: organizations(:two).id
       }
@@ -47,10 +47,10 @@ class MeControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     @user.reload
-    assert_equal "しお", @user.display_name
+    assert_equal "新しい表示名", @user.display_name
     assert_equal "member", @user.role
     assert_equal organizations(:one).id, @user.organization_id
-    assert_equal "しお", response.parsed_body.dig("data", "display_name")
+    assert_equal "新しい表示名", response.parsed_body.dig("data", "display_name")
   end
 
   test "rejects blank display name" do
