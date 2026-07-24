@@ -6,12 +6,15 @@ class MeControllerTest < ActionDispatch::IntegrationTest
 
   setup do
     @user = users(:one)
+    @frontend_url = ENV["FRONTEND_URL"]
+    ENV["FRONTEND_URL"] = "https://front.example"
     sign_in @user
     Rails.cache.clear
     ActionMailer::Base.deliveries.clear
   end
 
   teardown do
+    ENV["FRONTEND_URL"] = @frontend_url
     travel_back
   end
 
