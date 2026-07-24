@@ -12,7 +12,11 @@ Rails.application.routes.draw do
 
     namespace :v1 do
       resource :csrf_token, only: :show
-      resource :me, only: :show, controller: :me
+      resource :me, only: %i[show update], controller: :me do
+        post "email_change", action: :request_email_change
+        post "email_change/verify", action: :verify_email_change
+        delete "email_change", action: :cancel_email_change
+      end
       resource :group, only: %i[show update], controller: :groups
       resources :external_shares, only: %i[index show create update destroy] do
         member do

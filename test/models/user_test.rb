@@ -67,15 +67,15 @@ class UserTest < ActiveSupport::TestCase
 
   test "display_name is normalized and unique within organization" do
     user = users(:one)
-    user.update!(display_name: "  しお  ")
+    user.update!(display_name: "  表示名テスト  ")
 
-    assert_equal "しお", user.display_name
+    assert_equal "表示名テスト", user.display_name
 
     duplicate = User.new(
       organization: user.organization,
       email: "duplicate@example.com",
       password: "password123",
-      display_name: "しお"
+      display_name: "表示名テスト"
     )
 
     assert_not duplicate.valid?
