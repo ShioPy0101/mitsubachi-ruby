@@ -25,6 +25,7 @@ class User < ApplicationRecord
 
   has_many :flower_device_authorizations, dependent: :restrict_with_error
   has_many :flower_access_tokens, dependent: :restrict_with_error
+  has_many :user_email_changes, dependent: :restrict_with_error
   has_many :created_external_shares,
            class_name: "ExternalShare",
            foreign_key: :created_by_user_id,
@@ -44,12 +45,16 @@ class User < ApplicationRecord
 
   validates :email, uniqueness: { case_sensitive: false }
   validates :display_name,
-            length: { maximum: 50 },
+            length: { maximum: 100 },
             uniqueness: { scope: :organization_id, allow_blank: true }
   validate :display_name_has_no_control_characters
 
   def safe_display_name
     display_name.presence || name.presence || "未設定ユーザー"
+  end
+
+  def pending_email_change
+    user_email_changes.active.order(created_at: :desc).first
   end
 
   def suspended?

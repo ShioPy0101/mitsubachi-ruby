@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_23_152000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_24_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -119,13 +119,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_23_152000) do
     t.index ["user_id"], name: "index_drive_permissions_on_user_id"
   end
 
+  create_table "email_authentications", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "delivery_token_ciphertext"
+    t.string "email"
+    t.datetime "expires_at"
+    t.bigint "organization_invite_id"
+    t.string "purpose", default: "login", null: false
+    t.string "token"
+    t.datetime "updated_at", null: false
+    t.datetime "used_at"
+    t.index ["organization_invite_id"], name: "index_email_authentications_on_organization_invite_id"
+    t.index ["purpose"], name: "index_email_authentications_on_purpose"
+    t.index ["token"], name: "index_email_authentications_on_token", unique: true
+  end
+
   create_table "external_share_items", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "drive_item_id", null: false
     t.bigint "external_share_id", null: false
     t.datetime "updated_at", null: false
     t.index ["drive_item_id"], name: "index_external_share_items_on_drive_item_id"
-    t.index ["external_share_id", "drive_item_id"], name: "idx_on_external_share_id_drive_item_id_99a4d1b3b2", unique: true
+    t.index ["external_share_id", "drive_item_id"], name: "idx_on_external_share_id_drive_item_id_9e200af3a2", unique: true
     t.index ["external_share_id"], name: "index_external_share_items_on_external_share_id"
   end
 
@@ -143,25 +158,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_23_152000) do
     t.string "token_digest", null: false
     t.datetime "updated_at", null: false
     t.index ["created_by_user_id"], name: "index_external_shares_on_created_by_user_id"
-    t.index ["organization_id", "created_by_user_id"], name: "index_external_shares_on_organization_id_and_created_by_user_id"
+    t.index ["organization_id", "created_by_user_id"], name: "idx_on_organization_id_created_by_user_id_4049a50bf2"
     t.index ["organization_id"], name: "index_external_shares_on_organization_id"
     t.index ["token_digest"], name: "index_external_shares_on_token_digest", unique: true
     t.check_constraint "folder_share_mode::text = ANY (ARRAY['snapshot'::character varying, 'dynamic'::character varying]::text[])", name: "external_shares_folder_share_mode_check"
-  end
-
-  create_table "email_authentications", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.text "delivery_token_ciphertext"
-    t.string "email"
-    t.datetime "expires_at"
-    t.bigint "organization_invite_id"
-    t.string "purpose", default: "login", null: false
-    t.string "token"
-    t.datetime "updated_at", null: false
-    t.datetime "used_at"
-    t.index ["organization_invite_id"], name: "index_email_authentications_on_organization_invite_id"
-    t.index ["purpose"], name: "index_email_authentications_on_purpose"
-    t.index ["token"], name: "index_email_authentications_on_token", unique: true
   end
 
   create_table "flower_access_tokens", force: :cascade do |t|
@@ -232,6 +232,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_23_152000) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "user_email_changes", force: :cascade do |t|
+    t.datetime "cancelled_at"
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false
+    t.string "new_email", null: false
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.datetime "used_at"
+    t.bigint "user_id", null: false
+    t.index "lower((new_email)::text)", name: "index_active_email_changes_on_lower_new_email", unique: true, where: "((used_at IS NULL) AND (cancelled_at IS NULL))"
+    t.index ["token_digest"], name: "index_user_email_changes_on_token_digest", unique: true
+    t.index ["user_id"], name: "index_active_email_changes_on_user_id", unique: true, where: "((used_at IS NULL) AND (cancelled_at IS NULL))"
+    t.index ["user_id"], name: "index_user_email_changes_on_user_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "display_name"
@@ -281,6 +296,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_23_152000) do
   add_foreign_key "organization_invites", "organizations"
   add_foreign_key "organization_invites", "users", column: "stand_by_user_id"
   add_foreign_key "organization_invites", "users", column: "used_by_user_id"
+  add_foreign_key "user_email_changes", "users"
   add_foreign_key "users", "organizations"
 end
-# rubocop:enable Layout/SpaceInsideArrayLiteralBrackets

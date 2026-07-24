@@ -30,7 +30,7 @@ module Auth
 
       raise Failure.new("email は必須です", :bad_request) if email.blank?
       raise Failure.new("invite_code は必須です", :bad_request) if invite_code.blank?
-      raise Failure.new("表示名は50文字以内で入力してください", :bad_request) if display_name&.length.to_i > 50
+      raise Failure.new("表示名は100文字以内で入力してください", :bad_request) if display_name&.length.to_i > 100
 
       build_registration_request!(email:, invite_code:, display_name:)
     end

@@ -241,6 +241,121 @@ paths:
                     $ref: "#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: patchApiV1Me
+      tags: [Session]
+      summary: Update the authenticated user's profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                  maxLength: 100
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1Me
+      tags: [Session]
+      summary: Update the authenticated user's profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                  maxLength: 100
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/me/email_change:
+    post:
+      operationId: postApiV1MeEmailChange
+      tags: [Session]
+      summary: Request an email address change for the authenticated user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Confirmation mail sent.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      operationId: deleteApiV1MeEmailChange
+      tags: [Session]
+      summary: Cancel the authenticated user's pending email address change.
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/me/email_change/verify:
+    post:
+      operationId: postApiV1MeEmailChangeVerify
+      tags: [Session]
+      summary: Confirm a pending email address change token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "410":
+          $ref: "#/components/responses/ValidationError"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/group:
     get:
       operationId: getApiV1Group
@@ -1945,6 +2060,21 @@ components:
             properties:
               error:
                 type: string
+    TooManyRequests:
+      description: Too many requests.
+      headers:
+        Retry-After:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                oneOf:
+                  - type: string
+                  - type: object
     NotFound:
       description: Resource was not found or is outside the tenant boundary.
       content:
@@ -2407,6 +2537,10 @@ components:
         email:
           type: string
           format: email
+        pending_email:
+          type: string
+          format: email
+          nullable: true
         name:
           type: string
         display_name:
