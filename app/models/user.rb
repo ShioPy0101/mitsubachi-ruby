@@ -5,7 +5,12 @@ class User < ApplicationRecord
     system_admin: 2
   }
 
-  # このユーザーは1つのOrganizationに所属する
+  has_many :organization_memberships,
+           dependent: :destroy
+  has_many :organizations,
+           through: :organization_memberships
+
+  # users.organization_id は organization_memberships への段階的移行中の互換カラムとして残す
   belongs_to :organization
 
   # このユーザーに付与されたDrivePermission
@@ -55,6 +60,10 @@ class User < ApplicationRecord
 
   def pending_email_change
     user_email_changes.active.order(created_at: :desc).first
+  end
+
+  def active_membership_for(organization)
+    organization_memberships.active.find_by(organization: organization)
   end
 
   def suspended?

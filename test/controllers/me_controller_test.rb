@@ -39,6 +39,24 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     assert_equal "pending@example.com", response.parsed_body.dig("data", "pending_email")
   end
 
+  test "returns active organization memberships" do
+    @user.active_membership_for(organizations(:one)).update!(role: :organization_admin)
+    @user.organization_memberships.create!(
+      organization: organizations(:two),
+      role: :member,
+      status: :active
+    )
+
+    get api_v1_me_url
+
+    assert_response :ok
+    assert_equal @user.id, response.parsed_body.dig("user", "id")
+    memberships = response.parsed_body.fetch("memberships")
+    roles_by_organization_id = memberships.index_by { |membership| membership.dig("organization", "id") }
+    assert_equal "organization_admin", roles_by_organization_id.fetch(organizations(:one).id).fetch("role")
+    assert_equal "member", roles_by_organization_id.fetch(organizations(:two).id).fetch("role")
+  end
+
   test "updates display name and records audit event" do
     assert_difference "AuditEvent.where(action: 'user.profile.update').count", 1 do
       patch api_v1_me_url, params: {

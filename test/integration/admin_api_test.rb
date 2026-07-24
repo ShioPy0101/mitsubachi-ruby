@@ -58,6 +58,27 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "organization_admin は所属organizationのnested管理APIだけ利用できる" do
+    sign_in @organization_admin
+
+    get api_v1_organization_admin_users_url(@organization)
+    assert_response :ok
+
+    sign_in @organization_admin
+    get api_v1_organization_admin_users_url(@other_organization)
+    assert_response :not_found
+  end
+
+  test "system_admin はorganization所属と独立してnested管理APIを利用できる" do
+    sign_in @system_admin
+
+    get api_v1_organization_admin_users_url(@other_organization)
+
+    assert_response :ok
+    ids = response.parsed_body.fetch("data").pluck("id")
+    assert_includes ids, @other_org_user.id
+  end
+
   test "未認証ユーザーはorganizationを作成できない" do
     post api_v1_admin_organizations_url, params: {
       organization: { name: "Acme Inc." }
@@ -397,12 +418,18 @@ class AdminApiTest < ActionDispatch::IntegrationTest
   private
 
   def create_user(role:, organization:, email:)
-    User.create!(
+    user = User.create!(
       organization: organization,
       email: email,
       name: email.split("@").first,
       password: "password123",
       role: role
     )
+    user.organization_memberships.create!(
+      organization: organization,
+      role: role == :organization_admin ? :organization_admin : :member,
+      status: :active
+    )
+    user
   end
 end

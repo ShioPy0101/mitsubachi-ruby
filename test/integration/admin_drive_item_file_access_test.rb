@@ -211,13 +211,19 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
   private
 
   def create_user(role:, organization:, email:)
-    User.create!(
+    user = User.create!(
       organization: organization,
       email: email,
       name: email.split("@").first,
       password: "password123",
       role: role
     )
+    user.organization_memberships.create!(
+      organization: organization,
+      role: role == :organization_admin ? :organization_admin : :member,
+      status: :active
+    )
+    user
   end
 
   def prepare_file(drive_item, body)

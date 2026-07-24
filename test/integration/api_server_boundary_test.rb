@@ -53,6 +53,18 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
         "name" => @user.name,
         "display_name" => @user.display_name,
         "role" => @user.role,
+        "system_admin" => false,
+        "memberships" => [
+          {
+            "organization" => {
+              "id" => @user.organization.id,
+              "name" => @user.organization.name
+            },
+            "role" => "member",
+            "status" => "active",
+            "joined_at" => organization_memberships(:one_member).joined_at.iso8601(3)
+          }
+        ],
         "suspended" => false,
         "suspended_at" => nil,
         "last_sign_in_at" => @user.last_sign_in_at&.iso8601(3),

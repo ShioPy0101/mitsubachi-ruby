@@ -73,6 +73,60 @@ Rails.application.routes.draw do
         resources :audit_events, only: %i[index show]
       end
 
+      resources :organizations, only: [] do
+        resource :group, only: %i[show update], controller: :groups
+        resources :external_shares, only: %i[index show create update destroy] do
+          member do
+            post :regenerate_password
+          end
+        end
+
+        namespace :admin do
+          resource :dashboard, only: :show
+          resources :organization_invites, only: :create
+          resources :users, only: %i[index show update] do
+            member do
+              patch :suspend
+              patch :unsuspend
+            end
+          end
+          resources :drive_items, only: %i[index show destroy] do
+            member do
+              get :preview
+              get :download
+              get :stream
+              delete :purge
+              patch :restore
+            end
+          end
+          resources :audit_logs, only: %i[index show]
+          resources :audit_events, only: %i[index show]
+        end
+
+        resources :drive_items do
+          collection do
+            get :search
+            get :trash
+            post :bulk_move
+            post :bulk_delete
+            delete :bulk_purge
+            post :bulk_restore_preview
+            post :bulk_restore
+            post :bulk_download
+          end
+
+          member do
+            get :preview
+            get :download
+            get :stream
+            patch :move
+            post :restore_preview
+            post :restore
+            delete :purge
+          end
+        end
+      end
+
       post "auth/create", to: "email_authentications#create"
       post "auth/login", to: "email_authentications#login"
       post "auth/verify", to: "email_authentications#verify"

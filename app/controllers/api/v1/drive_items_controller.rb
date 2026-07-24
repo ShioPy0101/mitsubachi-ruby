@@ -5,6 +5,7 @@ require "set"
 
 class Api::V1::DriveItemsController < ApplicationController
   before_action :authenticate_user!
+  before_action :set_current_organization, if: :organization_path_scope?
   before_action :set_active_drive_item, only: %i[show update move destroy]
   before_action :set_deleted_drive_item, only: %i[restore restore_preview purge]
   before_action :set_deliverable_drive_item, only: %i[preview download stream]
@@ -64,7 +65,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
     extension = item_type == "file" ? get_extension_from_filename(params[:file].original_filename) : nil
 
-    @drive_item = current_user.organization.drive_items.new(
+    @drive_item = current_organization.drive_items.new(
       name: name,
       item_type: item_type,
       parent_id: parent_id,
@@ -229,11 +230,11 @@ class Api::V1::DriveItemsController < ApplicationController
     @drive_items =
       if params[:parent_id].present?
         DriveItems::TrashChildrenQuery.new(
-          organization: current_user.organization,
+          organization: current_organization,
           parent_id: params[:parent_id]
         ).call
       else
-        DriveItems::TrashRootsQuery.new(organization: current_user.organization).call
+        DriveItems::TrashRootsQuery.new(organization: current_organization).call
       end
     render json: @drive_items.map { |drive_item| drive_item_json(drive_item) }
   end
@@ -300,7 +301,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def bulk_download
     result = DriveItems::BulkDownloadService.new(
-      organization: current_user.organization,
+      organization: current_organization,
       drive_item_ids: params[:drive_item_ids]
     ).call
 
@@ -369,7 +370,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def bulk_purge
     result = DriveItems::BulkPurgeService.new(
-      organization: current_user.organization,
+      organization: current_organization,
       drive_item_ids: bulk_drive_item_ids,
       actor_user: current_user
     ).call
@@ -392,7 +393,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def set_deleted_drive_item
-    @drive_item = current_user.organization.drive_items.deleted.find_by(id: params[:id])
+    @drive_item = current_organization.drive_items.deleted.find_by(id: params[:id])
     return if @drive_item.present?
 
     render_not_found
@@ -433,7 +434,7 @@ class Api::V1::DriveItemsController < ApplicationController
   def validate_parent_id(parent_id, not_found_message:, invalid_message:)
     return true if parent_id.blank?
 
-    parent = current_user.organization.drive_items.active.find_by(id: parent_id)
+    parent = current_organization.drive_items.active.find_by(id: parent_id)
     if parent.nil?
       render_api_error(:invalid_parent, not_found_message, status: :not_found)
       return false
@@ -458,11 +459,11 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def active_drive_items_for_bulk
-    current_user.organization.drive_items.active.where(id: bulk_drive_item_ids)
+    current_organization.drive_items.active.where(id: bulk_drive_item_ids)
   end
 
   def deleted_drive_items_for_bulk
-    current_user.organization.drive_items.deleted.where(id: bulk_drive_item_ids)
+    current_organization.drive_items.deleted.where(id: bulk_drive_item_ids)
   end
 
   def bulk_drive_item_ids
@@ -487,7 +488,7 @@ class Api::V1::DriveItemsController < ApplicationController
   def restore_preview_json(drive_items, items)
     resolutions = items.index_by { |item| item.fetch(:item_id).to_i }
     DriveItems::RestorePreviewService.new(
-      organization: current_user.organization,
+      organization: current_organization,
       drive_items: drive_items,
       resolutions: resolutions
     ).as_json
@@ -495,7 +496,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def restore_with_resolutions!(items)
     result = DriveItems::RestoreResolutionService.new(
-      organization: current_user.organization,
+      organization: current_organization,
       actor_user: current_user,
       items: items,
       confirmation_token: params[:confirmation_token]
@@ -531,7 +532,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def drive_item_query
-    @drive_item_query ||= DriveItems::Query.new(organization: current_user.organization)
+    @drive_item_query ||= DriveItems::Query.new(organization: current_organization)
   end
 
   def drive_item_json(drive_item, include_breadcrumbs: false)
@@ -560,7 +561,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
     while current.present?
       return root_breadcrumbs if current.deleted_at.present?
-      return root_breadcrumbs if current.organization_id != current_user.organization_id
+      return root_breadcrumbs if current.organization_id != current_organization.id
 
       ancestors.unshift({ id: current.id, name: current.name })
       current = current.parent
@@ -603,7 +604,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def descendant_id?(drive_item, parent_id)
-    current = current_user.organization.drive_items.active.find_by(id: parent_id)
+    current = current_organization.drive_items.active.find_by(id: parent_id)
     while current.present?
       return true if current.parent_id == drive_item.id
 
@@ -692,7 +693,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def replace_target_for_upload(upload_hash)
-    replace_target = current_user.organization.drive_items.find_by(id: replace_trashed_drive_item_id)
+    replace_target = current_organization.drive_items.find_by(id: replace_trashed_drive_item_id)
     unless replace_target
       render_not_found
       return nil
@@ -770,7 +771,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def validate_replace_target_state!(replace_target, upload_hash)
-    raise ActiveRecord::RecordNotFound unless replace_target.organization_id == current_user.organization_id
+    raise ActiveRecord::RecordNotFound unless replace_target.organization_id == current_organization.id
 
     if replace_target.purged_at.present?
       raise ActiveRecord::RecordInvalid.new(replace_target.tap { |item| item.errors.add(:base, "置換対象はすでに完全削除済みです") })
@@ -818,7 +819,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def active_duplicate_item(parent_id:, name:, extension:)
-    current_user.organization.drive_items.active.find_by(parent_id:, name:, extension:)
+    current_organization.drive_items.active.find_by(parent_id:, name:, extension:)
   end
 
   def active_content_duplicate_item(upload_hash)
@@ -897,7 +898,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def original_parent_json(parent)
     return nil if parent.nil?
-    return nil if parent.organization_id != current_user.organization_id
+    return nil if parent.organization_id != current_organization.id
 
     {
       id: parent.id,
@@ -918,7 +919,7 @@ class Api::V1::DriveItemsController < ApplicationController
   def drive_item_path(drive_item)
     names = []
     current = drive_item
-    while current.present? && current.organization_id == current_user.organization_id
+    while current.present? && current.organization_id == current_organization.id
       names.unshift(current.name)
       current = current.parent
     end
@@ -936,7 +937,7 @@ class Api::V1::DriveItemsController < ApplicationController
   def deleted_ancestor(drive_item)
     current = drive_item.parent
     visited_ids = Set.new
-    while current.present? && current.organization_id == current_user.organization_id
+    while current.present? && current.organization_id == current_organization.id
       return current if current.deleted_at.present? || current.purged_at.present?
       return if visited_ids.include?(current.id)
 
@@ -959,7 +960,7 @@ class Api::V1::DriveItemsController < ApplicationController
     return unless validate_parent_id(restore_target.parent_id, not_found_message: "復元先フォルダが見つかりません", invalid_message: "復元先にはディレクトリを指定してください")
 
     conflicts = DriveItems::RestoreConflictService.new(
-      organization: current_user.organization,
+      organization: current_organization,
       restore_target:,
       restore_items: service.restore_items
     ).as_json
@@ -1052,7 +1053,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
     drive_items.each do |drive_item|
       DriveItemAccessLog.create!(
-        organization: current_user.organization,
+        organization: current_organization,
         user: current_user,
         drive_item: drive_item,
         action: "bulk_download",
@@ -1079,7 +1080,7 @@ class Api::V1::DriveItemsController < ApplicationController
     record_audit_event!(
       action: action,
       target: drive_item,
-      organization: current_user.organization,
+      organization: current_organization,
       changes: changes,
       metadata: metadata.merge(
         item_type: drive_item.item_type,
@@ -1092,7 +1093,7 @@ class Api::V1::DriveItemsController < ApplicationController
   def record_bulk_drive_item_event!(action, metadata = {})
     record_audit_event!(
       action: action,
-      organization: current_user.organization,
+      organization: current_organization,
       metadata: metadata.merge(
         drive_item_ids: bulk_drive_item_ids
       )
