@@ -11,6 +11,7 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
     invite.code = generate_invite_code
     invite.expires_at ||= DEFAULT_TTL.from_now
     invite.invited_by_user ||= current_user
+    invite.role = invite_role if invite_role.present?
 
     if invite.expires_at > MAX_TTL.from_now
       return render_error(:validation_error, "expires_at は30日以内を指定してください", :unprocessable_content)
@@ -55,7 +56,15 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
   end
 
   def invite_params
-    params.fetch(:organization_invite, ActionController::Parameters.new).permit(:email, :role, :expires_at)
+    params.fetch(:organization_invite, ActionController::Parameters.new).permit(:email, :expires_at)
+  end
+
+  def invite_role
+    role = params.dig(:organization_invite, :role).to_s
+    return if role.blank?
+    return role if OrganizationInvite.roles.key?(role)
+
+    "member"
   end
 
   def generate_invite_code
