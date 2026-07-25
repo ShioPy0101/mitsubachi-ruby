@@ -133,6 +133,12 @@ Rails.application.routes.draw do
       post "auth/registration/verify", to: "email_authentications#verify_registration"
       post "auth/login/verify", to: "email_authentications#verify_login"
       delete "logout", to: "sessions#destroy"
+      get "organization_invitations/:token",
+          to: "organization_invitations#show",
+          as: :organization_invitation
+      post "organization_invitations/:token/accept",
+           to: "organization_invitations#accept",
+           as: :accept_organization_invitation
 
       resources :drive_items do
         collection do

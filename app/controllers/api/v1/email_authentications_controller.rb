@@ -124,8 +124,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   end
 
   def login_organization_for(user)
-    user.organization_memberships.active.includes(:organization).order(:organization_id).first&.organization ||
-      user.organization
+    user.organization_memberships.active.includes(:organization).order(:organization_id).first&.organization
   end
 
   def rate_limit_auth_request!

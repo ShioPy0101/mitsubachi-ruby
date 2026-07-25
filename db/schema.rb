@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_24_133000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_24_134000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -211,15 +211,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_133000) do
   create_table "organization_invites", force: :cascade do |t|
     t.string "code", null: false
     t.datetime "created_at", null: false
+    t.string "email"
     t.datetime "expires_at", null: false
+    t.bigint "invited_by_user_id"
     t.bigint "organization_id", null: false
+    t.datetime "revoked_at"
+    t.integer "role", default: 0, null: false
     t.datetime "stand_by_at"
     t.bigint "stand_by_user_id"
     t.datetime "updated_at", null: false
     t.datetime "used_at"
     t.bigint "used_by_user_id"
+    t.index "lower((email)::text)", name: "index_organization_invites_on_lower_email"
     t.index [ "code" ], name: "index_organization_invites_on_code", unique: true
+    t.index [ "invited_by_user_id" ], name: "index_organization_invites_on_invited_by_user_id"
     t.index [ "organization_id" ], name: "index_organization_invites_on_organization_id"
+    t.index [ "revoked_at" ], name: "index_organization_invites_on_revoked_at"
     t.index [ "stand_by_user_id" ], name: "index_organization_invites_on_stand_by_user_id"
     t.index [ "used_by_user_id" ], name: "index_organization_invites_on_used_by_user_id"
   end
@@ -306,6 +313,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_133000) do
   add_foreign_key "flower_device_authorizations", "organizations"
   add_foreign_key "flower_device_authorizations", "users"
   add_foreign_key "organization_invites", "organizations"
+  add_foreign_key "organization_invites", "users", column: "invited_by_user_id"
   add_foreign_key "organization_invites", "users", column: "stand_by_user_id"
   add_foreign_key "organization_invites", "users", column: "used_by_user_id"
   add_foreign_key "organization_memberships", "organizations"

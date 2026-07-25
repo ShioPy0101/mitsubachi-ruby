@@ -4,6 +4,8 @@
 - 通常作業では `bin/ai-check`、最終確認では `bin/check` を使う。
 - `.env`、credentials、本番 DB 設定には触れない。
 - AI 用の自動化に `db:drop`、`db:reset`、`db:purge`、`db:seed:replant` を入れない。
+- 作業中に Ruby 言語、Rails、Rails 周辺ツールに起因する難しさ・問題・言語/フレームワークとして改善されるとよい点に気づいた場合は、`docs/ruby-rails-improvement-notes.md` に追記し、その変更も同じ作業ブランチでコミットする。
+- 上記の記録は、愚痴ではなく再発防止や設計判断に使える観察として書く。発生日、状況、困った点、望ましい改善、今回の回避策を簡潔に残す。
 
 ## Git / Commit rules
 
