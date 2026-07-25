@@ -11,7 +11,7 @@ class User < ApplicationRecord
            through: :organization_memberships
 
   # users.organization_id は organization_memberships への段階的移行中の互換カラムとして残す
-  belongs_to :organization
+  belongs_to :organization, optional: true
 
   # このユーザーに付与されたDrivePermission
   has_many :drive_permissions, dependent: :restrict_with_error

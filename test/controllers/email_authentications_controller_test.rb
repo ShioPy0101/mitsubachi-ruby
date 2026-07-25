@@ -7,6 +7,12 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     Rails.cache.clear
   end
 
+  def assert_auth_error(message, code:)
+    error = response.parsed_body.fetch("error")
+    assert_equal code.to_s, error.fetch("code")
+    assert_equal message, error.fetch("message")
+  end
+
   test "should require params for create" do
     post api_v1_auth_create_url
     assert_response :bad_request
@@ -38,12 +44,19 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       email: "pending@example.com",
       password: "password123"
     )
-    OrganizationInvite.create!(
+    invite = OrganizationInvite.create!(
       organization: organizations(:one),
       code: "pending-invite",
       expires_at: 1.day.from_now,
       stand_by_user: user,
       stand_by_at: 1.minute.ago
+    )
+    EmailAuthentication.create!(
+      email: user.email,
+      token: Digest::SHA256.hexdigest("pending-registration-token"),
+      expires_at: 15.minutes.from_now,
+      purpose: "registration",
+      organization_invite: invite
     )
 
     assert_difference "AuditEvent.where(action: 'auth.login_link.create', outcome: 'failure').count", 1 do
@@ -53,6 +66,125 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :unauthorized
+    assert_auth_error "メール認証を完了してください", code: :email_verification_required
+  end
+
+  test "login accepts verified user with multiple memberships and stale registration standby" do
+    user = User.create!(
+      organization: organizations(:one),
+      email: "multi-verified@example.com",
+      password: "password123"
+    )
+    user.organization_memberships.create!(
+      organization: organizations(:one),
+      role: :organization_admin,
+      status: :active
+    )
+    user.organization_memberships.create!(
+      organization: organizations(:two),
+      role: :member,
+      status: :active
+    )
+    OrganizationInvite.create!(
+      organization: organizations(:two),
+      code: "stale-registration-after-verified",
+      expires_at: 1.day.from_now,
+      stand_by_user: user,
+      stand_by_at: 20.minutes.ago
+    )
+
+    assert_difference "EmailAuthentication.count", 1 do
+      post api_v1_auth_login_url, params: { email: user.email }
+    end
+
+    assert_response :ok
+  end
+
+  test "login accepts active membership when legacy organization id is nil" do
+    user = User.create!(
+      organization: organizations(:one),
+      email: "membership-without-legacy-org@example.com",
+      password: "password123"
+    )
+    user.organization_memberships.create!(
+      organization: organizations(:one),
+      role: :member,
+      status: :active
+    )
+    user.update_column(:organization_id, nil)
+
+    assert_difference "EmailAuthentication.count", 1 do
+      post api_v1_auth_login_url, params: { email: user.email }
+    end
+
+    assert_response :ok
+  end
+
+  test "login accepts verified user after registration standby window" do
+    user = User.create!(
+      organization: organizations(:one),
+      email: "verified-after-window@example.com",
+      password: "password123"
+    )
+    user.organization_memberships.create!(
+      organization: organizations(:one),
+      role: :member,
+      status: :active
+    )
+    invite = OrganizationInvite.create!(
+      organization: organizations(:one),
+      code: "used-registration-before-window",
+      expires_at: 1.day.from_now,
+      used_at: 20.minutes.ago,
+      used_by_user: user
+    )
+    EmailAuthentication.create!(
+      email: user.email,
+      token: Digest::SHA256.hexdigest("used-registration-token-before-window"),
+      expires_at: 1.minute.ago,
+      purpose: "registration",
+      used_at: 20.minutes.ago,
+      organization_invite: invite
+    )
+
+    assert_difference "EmailAuthentication.count", 1 do
+      post api_v1_auth_login_url, params: { email: user.email }
+    end
+
+    assert_response :ok
+  end
+
+  test "login rejects user without active organization membership separately from email verification" do
+    user = User.create!(
+      organization: organizations(:one),
+      email: "no-membership@example.com",
+      password: "password123"
+    )
+
+    assert_no_difference "EmailAuthentication.count" do
+      post api_v1_auth_login_url, params: { email: user.email }
+    end
+
+    assert_response :forbidden
+    assert_auth_error "所属する組織がありません", code: :organization_membership_required
+  end
+
+  test "create rejects expired invite with dedicated invitation error" do
+    invite = OrganizationInvite.create!(
+      organization: organizations(:one),
+      code: "expired-registration-invite",
+      expires_at: 1.minute.ago
+    )
+
+    assert_no_difference "EmailAuthentication.count" do
+      post api_v1_auth_create_url, params: {
+        email: "expired-invite@example.com",
+        invite_code: invite.code
+      }
+    end
+
+    assert_response :unauthorized
+    assert_auth_error "招待リンクの有効期限が切れています", code: :invitation_expired
   end
 
   test "login rejects suspended user" do
@@ -68,7 +200,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :unauthorized
-    assert_equal({ "error" => "このユーザーは停止されています" }, response.parsed_body)
+    assert_auth_error "このユーザーは停止されています", code: :user_suspended
   end
 
   test "create reuses stale provisional user" do
@@ -229,6 +361,11 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       email: "repeat-login@example.com",
       password: "password123"
     )
+    user.organization_memberships.create!(
+      organization: organizations(:one),
+      role: :member,
+      status: :active
+    )
     old_authentication = EmailAuthentication.create!(
       email: user.email,
       token: Digest::SHA256.hexdigest("old-login-token"),
@@ -281,6 +418,11 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       email: "mixedcase@example.com",
       password: "password123"
     )
+    user.organization_memberships.create!(
+      organization: organizations(:one),
+      role: :member,
+      status: :active
+    )
     raw_token = "login-token"
     authentication = EmailAuthentication.create!(
       email: " MixedCase@Example.com ",
@@ -289,6 +431,34 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
 
     post api_v1_auth_verify_url, params: { token: raw_token }
+
+    assert_response :ok
+    assert authentication.reload.used_at.present?
+    assert_equal user.id, response.parsed_body.dig("user", "id")
+  end
+
+  test "verify login accepts active membership when legacy organization id is nil" do
+    user = User.create!(
+      organization: organizations(:one),
+      email: "verify-without-legacy-org@example.com",
+      password: "password123"
+    )
+    user.organization_memberships.create!(
+      organization: organizations(:one),
+      role: :member,
+      status: :active
+    )
+    user.update_column(:organization_id, nil)
+    raw_token = "login-token-without-legacy-org"
+    authentication = EmailAuthentication.create!(
+      email: user.email,
+      token: Digest::SHA256.hexdigest(raw_token),
+      expires_at: 15.minutes.from_now
+    )
+
+    assert_difference "AuditEvent.where(action: 'auth.login.verify', organization: organizations(:one)).count", 1 do
+      post api_v1_auth_login_verify_url, params: { token: raw_token }
+    end
 
     assert_response :ok
     assert authentication.reload.used_at.present?
@@ -307,7 +477,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     post api_v1_auth_verify_url, params: { token: raw_token }
 
     assert_response :unauthorized
-    assert_equal({ "error" => "このリンクは既に使用されています" }, response.parsed_body)
+    assert_auth_error "このリンクは既に使用されています", code: :authentication_failed
   end
 
   test "verify rejects expired token without marking used" do
@@ -321,7 +491,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     post api_v1_auth_verify_url, params: { token: raw_token }
 
     assert_response :unauthorized
-    assert_equal({ "error" => "リンクの有効期限が切れています" }, response.parsed_body)
+    assert_auth_error "リンクの有効期限が切れています", code: :authentication_failed
     assert_nil authentication.reload.used_at
   end
 
@@ -342,7 +512,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     post api_v1_auth_verify_url, params: { token: raw_token }
 
     assert_response :unauthorized
-    assert_equal({ "error" => "このユーザーは停止されています" }, response.parsed_body)
+    assert_auth_error "このユーザーは停止されています", code: :authentication_failed
     assert authentication.reload.used_at.present?
   end
 
@@ -372,7 +542,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     post api_v1_auth_verify_url, params: { token: raw_token }
 
     assert_response :unauthorized
-    assert_equal({ "error" => "このユーザーは停止されています" }, response.parsed_body)
+    assert_auth_error "このユーザーは停止されています", code: :authentication_failed
     assert authentication.reload.used_at.present?
     assert_nil invite.reload.used_at
   end
@@ -391,7 +561,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
 
     post api_v1_auth_verify_url, params: { token: raw_token }
     assert_response :unauthorized
-    assert_equal({ "error" => "このリンクは既に使用されています" }, response.parsed_body)
+    assert_auth_error "このリンクは既に使用されています", code: :authentication_failed
   end
 
   test "registration verify fails without using invite when stand-by user mismatches" do
@@ -440,7 +610,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     post api_v1_auth_registration_verify_url, params: { token: raw_token }
 
     assert_response :unauthorized
-    assert_equal({ "error" => "リンクの用途が正しくありません" }, response.parsed_body)
+    assert_auth_error "リンクの用途が正しくありません", code: :authentication_failed
   end
 
   test "login verify endpoint rejects registration token" do
@@ -468,6 +638,6 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     post api_v1_auth_login_verify_url, params: { token: raw_token }
 
     assert_response :unauthorized
-    assert_equal({ "error" => "リンクの用途が正しくありません" }, response.parsed_body)
+    assert_auth_error "リンクの用途が正しくありません", code: :authentication_failed
   end
 end

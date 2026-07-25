@@ -27,7 +27,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     render json: { message: "認証リンクを送信しました" }, status: :ok
   rescue Auth::MagicLinks::Failure => error
     record_auth_failure!("auth.registration_link.create", email: normalize_email(params[:email]), error: error)
-    render_error(error.message, error.status)
+    render_error(error)
   end
 
   def login
@@ -44,14 +44,14 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     render json: { message: "認証リンクを送信しました" }, status: :ok
   rescue Auth::MagicLinks::Failure => error
     record_auth_failure!("auth.login_link.create", email: normalize_email(params[:email]), error: error)
-    render_error(error.message, error.status)
+    render_error(error)
   end
 
   def verify
     render_verified_user(auth_magic_links.verify(params[:token]))
   rescue Auth::MagicLinks::Failure => error
     record_auth_failure!("auth.verify", error: error)
-    render_error(error.message, error.status)
+    render_error(error)
   end
 
   def verify_registration
@@ -68,7 +68,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     render_verified_user(auth_magic_links.verify(params[:token], expected_purpose: purpose))
   rescue Auth::MagicLinks::Failure => error
     record_auth_failure!("auth.#{purpose}.verify", error: error)
-    render_error(error.message, error.status)
+    render_error(error)
   end
 
   def deliver_magic_link(result)
@@ -84,7 +84,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     record_audit_event!(
       action: "auth.#{result.purpose}.verify",
       actor_user: result.user,
-      organization: result.organization_invite&.organization || result.user.organization,
+      organization: result.organization_invite&.organization || login_organization_for(result.user),
       target: result.user
     )
 
@@ -98,8 +98,8 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     }, status: :ok
   end
 
-  def render_error(message, status)
-    render json: { error: message }, status: status
+  def render_error(error)
+    render_api_error(error.code, error.message, status: error.status)
   end
 
   def record_auth_failure!(action, email: nil, error:)
@@ -108,6 +108,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       outcome: "failure",
       metadata: {
         email: email,
+        code: error.code,
         status: error.status,
         reason: error.message
       }
@@ -120,6 +121,11 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   def auth_magic_links
     @auth_magic_links ||= Auth::MagicLinks.new
+  end
+
+  def login_organization_for(user)
+    user.organization_memberships.active.includes(:organization).order(:organization_id).first&.organization ||
+      user.organization
   end
 
   def rate_limit_auth_request!

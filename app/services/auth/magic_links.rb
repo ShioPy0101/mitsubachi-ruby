@@ -4,11 +4,12 @@ module Auth
     AUTHENTICATION_TOKEN_TTL = 15.minutes
 
     Failure = Class.new(StandardError) do
-      attr_reader :message, :status
+      attr_reader :message, :status, :code
 
-      def initialize(message, status)
+      def initialize(message, status, code: :authentication_failed)
         @message = message
         @status = status
+        @code = code
         super(message)
       end
     end
@@ -96,10 +97,10 @@ module Auth
 
       ActiveRecord::Base.transaction do
         user = find_user_by_email(email)
-        validate_user_for_login!(user)
+        validate_user_for_login!(user, now:)
         user.lock!
         user.reload
-        validate_user_for_login!(user)
+        validate_user_for_login!(user, now:)
         expire_active_login_authentications!(email, now)
 
         authentication = EmailAuthentication.create!(
@@ -111,7 +112,7 @@ module Auth
         )
       end
 
-      RequestResult.new(email, raw_token, user, user.organization, nil, authentication)
+      RequestResult.new(email, raw_token, user, login_organization_for(user), nil, authentication)
     end
 
     def verify_token!(raw_token, expected_purpose:)
@@ -141,7 +142,8 @@ module Auth
         if authentication.login?
           raise Failure.new("ログイン用リンクが正しくありません", :unauthorized) if invite.present?
 
-          reject_provisional_login_user!(user)
+          reject_pending_registration_verification!(user, now)
+          reject_user_without_active_membership!(user)
           mark_authentication_used!(authentication, now)
           verified_user = user
           next
@@ -165,7 +167,7 @@ module Auth
 
     def validate_invite_for_registration!(invite, now)
       raise Failure.new("invite_code が正しくありません", :unauthorized) if invite.nil?
-      raise Failure.new("invite_code の有効期限が切れています", :unauthorized) if invite.expires_at <= now
+      raise Failure.new("招待リンクの有効期限が切れています", :unauthorized, code: :invitation_expired) if invite.expires_at <= now
       raise Failure.new("この invite_code は既に使用されています", :unauthorized) if invite.used_at.present?
       raise Failure.new("この invite_code は現在検証中です", :conflict) if invite_stand_by_active?(invite, now)
     end
@@ -177,10 +179,11 @@ module Auth
       raise Failure.new("このメールアドレスは現在検証中です", :conflict) if active_stand_by_invite_for(user).present?
     end
 
-    def validate_user_for_login!(user)
+    def validate_user_for_login!(user, now:)
       validate_user_presence!(user)
-      raise Failure.new("このユーザーは停止されています", :unauthorized) if user.suspended?
-      reject_provisional_login_user!(user)
+      raise Failure.new("このユーザーは停止されています", :unauthorized, code: :user_suspended) if user.suspended?
+      reject_pending_registration_verification!(user, now)
+      reject_user_without_active_membership!(user)
     end
 
     def validate_display_name_for_registration!(display_name, invite, existing_user)
@@ -194,11 +197,20 @@ module Auth
     end
 
     def validate_user_presence!(user)
-      raise Failure.new("ユーザーが存在しません", :unauthorized) if user.nil?
+      raise Failure.new("ユーザーが存在しません", :unauthorized, code: :user_not_found) if user.nil?
     end
 
-    def reject_provisional_login_user!(user)
-      raise Failure.new("登録用リンクでメール認証を完了してください", :unauthorized) if provisional_user?(user)
+    def reject_pending_registration_verification!(user, now)
+      return unless pending_registration_verification?(user, now)
+
+      raise Failure.new("メール認証を完了してください", :unauthorized, code: :email_verification_required)
+    end
+
+    def reject_user_without_active_membership!(user)
+      return if user.system_admin?
+      return if user.organization_memberships.active.exists?
+
+      raise Failure.new("所属する組織がありません", :forbidden, code: :organization_membership_required)
     end
 
     def validate_authentication!(authentication, now)
@@ -216,7 +228,7 @@ module Auth
 
     def validate_invite_for_verification!(invite, user, now)
       raise Failure.new("この invite_code は既に使用されています", :unauthorized) if invite.used_at.present?
-      raise Failure.new("この invite_code の有効期限が切れています", :unauthorized) if invite.expires_at <= now
+      raise Failure.new("招待リンクの有効期限が切れています", :unauthorized, code: :invitation_expired) if invite.expires_at <= now
       raise Failure.new("このユーザーは stand-by ではありません", :unauthorized) if invite.stand_by_user_id != user.id
       raise Failure.new("この invite_code は現在検証中ではありません", :unauthorized) unless invite_stand_by_active?(invite, now)
     end
@@ -261,15 +273,20 @@ module Auth
         invite.stand_by_at > REGISTRATION_STAND_BY_WINDOW.ago(now)
     end
 
-    def provisional_user?(user)
-      OrganizationInvite.where(stand_by_user: user, used_at: nil).exists? &&
-        !OrganizationInvite.where(used_by_user: user).exists?
+    def pending_registration_verification?(user, now)
+      active_invites = OrganizationInvite.where(stand_by_user: user, used_at: nil)
+                                         .where("stand_by_at > ?", REGISTRATION_STAND_BY_WINDOW.ago(now))
+      return false unless active_invites.exists?
+
+      EmailAuthentication.where(organization_invite: active_invites, purpose: "registration", used_at: nil)
+                         .where("expires_at > ?", now)
+                         .where("LOWER(email) = ?", user.email.downcase)
+                         .exists?
     end
 
-    def stale_provisional_user?(user)
-      OrganizationInvite.where(stand_by_user: user, used_at: nil)
-                        .where("stand_by_at IS NULL OR stand_by_at <= ?", REGISTRATION_STAND_BY_WINDOW.ago)
-                        .exists?
+    def login_organization_for(user)
+      user.organization_memberships.active.includes(:organization).order(:organization_id).first&.organization ||
+        user.organization
     end
 
     def active_stand_by_invite_for(user)
