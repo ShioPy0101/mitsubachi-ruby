@@ -43,7 +43,8 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
     requested_organization_id = params.dig(:organization_invite, :organization_id)
 
     if system_admin?
-      Organization.find_by(id: requested_organization_id || current_user.organization_id)
+      Organization.find_by(id: requested_organization_id) ||
+        current_user.organization_memberships.active.includes(:organization).order(:organization_id).first&.organization
     elsif requested_organization_id.present? && requested_organization_id.to_i != current_organization.id
       Organization.find_by(id: requested_organization_id)
     else

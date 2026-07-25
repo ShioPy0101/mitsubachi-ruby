@@ -285,8 +285,7 @@ module Auth
     end
 
     def login_organization_for(user)
-      user.organization_memberships.active.includes(:organization).order(:organization_id).first&.organization ||
-        user.organization
+      user.organization_memberships.active.includes(:organization).order(:organization_id).first&.organization
     end
 
     def active_stand_by_invite_for(user)
