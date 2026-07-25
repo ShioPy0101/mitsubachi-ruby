@@ -575,6 +575,65 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/organization_invitations/{token}:
+    get:
+      operationId: getApiV1OrganizationInvitation
+      tags: [Session]
+      summary: Return public organization invitation details.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Organization invitation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitation]
+                properties:
+                  invitation:
+                    $ref: "#/components/schemas/OrganizationInvitation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organization_invitations/{token}/accept:
+    post:
+      operationId: postApiV1OrganizationInvitationAccept
+      tags: [Session]
+      summary: Accept an organization invitation for the current user.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Joined organization.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, membership]
+                properties:
+                  message:
+                    type: string
+                  membership:
+                    $ref: "#/components/schemas/OrganizationMembership"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
   /api/v1/logout:
     delete:
       operationId: deleteApiV1Logout
@@ -3259,6 +3318,68 @@ components:
         updated_at:
           type: string
           format: date-time
+    OrganizationInvitation:
+      type: object
+      properties:
+        token:
+          type: string
+        organization:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+              nullable: true
+        invited_by:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            display_name:
+              type: string
+            email:
+              type: string
+              format: email
+        email:
+          type: string
+          format: email
+          nullable: true
+        role:
+          type: string
+          enum: [member, organization_admin]
+        expires_at:
+          type: string
+          format: date-time
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+    OrganizationMembership:
+      type: object
+      properties:
+        organization:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+        role:
+          type: string
+          enum: [member, organization_admin]
+        status:
+          type: string
+          enum: [invited, active, suspended, left, removed]
+        joined_at:
+          type: string
+          format: date-time
+          nullable: true
     User:
       type: object
       properties:

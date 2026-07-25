@@ -10,6 +10,7 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
     invite = organization.organization_invites.new(invite_params)
     invite.code = generate_invite_code
     invite.expires_at ||= DEFAULT_TTL.from_now
+    invite.invited_by_user ||= current_user
 
     if invite.expires_at > MAX_TTL.from_now
       return render_error(:validation_error, "expires_at は30日以内を指定してください", :unprocessable_content)
@@ -22,6 +23,8 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
         organization: organization,
         changes: {
           code: [ nil, invite.code ],
+          email: [ nil, invite.email ],
+          role: [ nil, invite.role ],
           expires_at: [ nil, invite.expires_at ]
         }
       )
@@ -52,7 +55,7 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
   end
 
   def invite_params
-    params.fetch(:organization_invite, ActionController::Parameters.new).permit(:expires_at)
+    params.fetch(:organization_invite, ActionController::Parameters.new).permit(:email, :role, :expires_at)
   end
 
   def generate_invite_code
@@ -68,9 +71,13 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
       organization_id: invite.organization_id,
       organization_name: invite.organization.name,
       code: invite.code,
+      email: invite.email,
+      role: invite.role,
       expires_at: invite.expires_at,
+      revoked_at: invite.revoked_at,
       used_at: invite.used_at,
       used_by_user_id: invite.used_by_user_id,
+      invited_by_user_id: invite.invited_by_user_id,
       stand_by_at: invite.stand_by_at,
       stand_by_user_id: invite.stand_by_user_id,
       created_at: invite.created_at,
