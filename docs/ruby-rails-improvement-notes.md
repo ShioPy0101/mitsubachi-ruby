@@ -36,3 +36,10 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: enum の許可値を validation していても、権限に関わる属性は mass assignment として検出される。警告自体は妥当だが、安全な enum 代入パターンを毎回個別に書く必要がある。
 - 改善されるとよい点: 権限属性などの sensitive enum に対して、許可値・代入権限・監査ログをまとめて宣言できる Rails 標準の仕組みがあるとよい。
 - 今回の回避策: `role` は strong parameters から外し、`OrganizationInvite.roles.key?` で明示確認した値だけを controller 内で代入した。
+
+## 2026-07-27: AIチェック用シェルスクリプトのBashバージョン依存
+
+- 状況: macOS環境で `bin/ai-check` を実行すると、内部の `bin/ai-lint-changed` が利用する `mapfile` を標準Bash 3.2で解釈できず、Lint開始前に終了した。
+- 困った点: Ruby/Railsコードの検証結果ではなく開発端末のBashバージョンでチェック可否が変わり、通常の実行方法だけでは失敗原因を判別しにくい。
+- 改善されるとよい点: Rails周辺の検証スクリプトがPOSIX shell互換の構文を使うか、必要なBashバージョンを起動時に検査して具体的な導入・再実行方法を表示するとよい。
+- 今回の回避策: Homebrew Bashを明示して `bin/ai-check` と `bin/check` を実行する。
