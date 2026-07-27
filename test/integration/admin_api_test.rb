@@ -69,6 +69,26 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "無効なmembershipは現在organizationとして選択できない" do
+    membership = @organization_admin.organization_memberships.create!(
+      organization: @other_organization,
+      role: :organization_admin,
+      status: :active
+    )
+
+    %i[left suspended].each do |status|
+      membership.update!(status: status)
+      sign_in @organization_admin
+
+      get api_v1_organization_admin_users_url(@other_organization)
+      assert_response :not_found
+
+      sign_in @organization_admin
+      get api_v1_organization_drive_items_url(@other_organization)
+      assert_response :not_found
+    end
+  end
+
   test "system_admin はorganization所属と独立してnested管理APIを利用できる" do
     sign_in @system_admin
 
