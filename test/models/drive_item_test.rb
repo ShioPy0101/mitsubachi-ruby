@@ -29,4 +29,17 @@ class DriveItemTest < ActiveSupport::TestCase
     assert_includes DriveItem.not_purged, @trashed
     assert_not_includes DriveItem.not_purged, @purged
   end
+
+  test "親と異なるorganization_idのDriveItemは作成できない" do
+    drive_item = DriveItem.new(
+      organization: organizations(:two),
+      owner_user: users(:two),
+      parent: drive_items(:one),
+      name: "invalid_parent_organization",
+      item_type: "directory"
+    )
+
+    assert_not drive_item.valid?
+    assert_includes drive_item.errors[:parent], "must belong to the same organization"
+  end
 end

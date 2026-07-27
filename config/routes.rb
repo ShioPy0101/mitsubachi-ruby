@@ -162,6 +162,31 @@ Rails.application.routes.draw do
           delete :purge
         end
       end
+
+      resources :organizations, only: [] do
+        resources :drive_items, controller: :drive_items do
+          collection do
+            get :search
+            get :trash
+            post :bulk_move
+            post :bulk_delete
+            delete :bulk_purge
+            post :bulk_restore_preview
+            post :bulk_restore
+            post :bulk_download
+          end
+
+          member do
+            get :preview
+            get :download
+            get :stream
+            patch :move
+            post :restore_preview
+            post :restore
+            delete :purge
+          end
+        end
+      end
     end
   end
 end

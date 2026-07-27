@@ -4,6 +4,8 @@ require "securerandom"
 require "set"
 
 class Api::V1::DriveItemsController < ApplicationController
+  rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
+
   before_action :authenticate_user!
   before_action :set_current_organization, if: :organization_path_scope?
   before_action :set_active_drive_item, only: %i[show update move destroy]
@@ -193,19 +195,30 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def move
-    before = @drive_item.slice("parent_id")
-    return unless assign_parent_for_move!(@drive_item, normalized_parent_id)
+    parent_id = normalized_parent_id
+    destination_organization = move_destination_organization(parent_id)
+    return if performed?
 
-    if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension: @drive_item.extension, excluding_id: @drive_item.id)
+    before = @drive_item.slice("parent_id", "organization_id")
+    return unless assign_parent_for_move!(@drive_item, parent_id, destination_organization:)
+
+    if duplicate_active_item?(
+      organization: destination_organization,
+      parent_id: @drive_item.parent_id,
+      name: @drive_item.name,
+      extension: @drive_item.extension,
+      excluding_id: @drive_item.id
+    )
       render_duplicate_name(@drive_item.name, parent_id: @drive_item.parent_id, extension: @drive_item.extension)
       return
     end
 
-    if @drive_item.save
+    if move_drive_item_tree!(@drive_item, destination_organization)
       record_drive_item_event!(
         "drive_item.move",
         @drive_item,
-        changes: changed_values(before, @drive_item.slice("parent_id"))
+        changes: changed_values(before, @drive_item.slice("parent_id", "organization_id")),
+        metadata: { destination_organization_id: destination_organization.id }
       )
       render json: { data: drive_item_json(@drive_item), request_id: request.request_id }
     else
@@ -241,13 +254,26 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def bulk_move
     new_parent_id = normalized_parent_id
-    return unless validate_parent_id(new_parent_id, not_found_message: "指定された新しい親フォルダが見つかりません", invalid_message: "新しい親にはディレクトリを指定してください")
+    destination_organization = move_destination_organization(new_parent_id)
+    return if performed?
+    return unless validate_parent_id(
+      new_parent_id,
+      organization: destination_organization,
+      not_found_message: "指定された新しい親フォルダが見つかりません",
+      invalid_message: "新しい親にはディレクトリを指定してください"
+    )
 
     drive_items = active_drive_items_for_bulk.to_a
     drive_items.each do |drive_item|
       return if invalid_move_target?(drive_item, new_parent_id)
 
-      if duplicate_active_item?(parent_id: new_parent_id, name: drive_item.name, extension: drive_item.extension, excluding_id: drive_item.id)
+      if duplicate_active_item?(
+        organization: destination_organization,
+        parent_id: new_parent_id,
+        name: drive_item.name,
+        extension: drive_item.extension,
+        excluding_id: drive_item.id
+      )
         render_duplicate_name(drive_item.name, parent_id: new_parent_id, extension: drive_item.extension)
         return
       end
@@ -255,17 +281,32 @@ class Api::V1::DriveItemsController < ApplicationController
 
     update_drive_items!(drive_items) do |drive_item|
       old_parent_id = drive_item.parent_id
-      drive_item.update!(parent_id: new_parent_id)
+      old_organization_id = drive_item.organization_id
+      drive_item.parent_id = new_parent_id
+      raise ActiveRecord::Rollback unless move_drive_item_tree!(drive_item, destination_organization)
+
       record_drive_item_event!(
         "drive_item.move",
         drive_item,
-        changes: { parent_id: [ old_parent_id, new_parent_id ] },
-        metadata: { bulk: true, count: drive_items.size }
+        changes: {
+          parent_id: [ old_parent_id, new_parent_id ],
+          organization_id: [ old_organization_id, destination_organization.id ]
+        },
+        metadata: {
+          bulk: true,
+          count: drive_items.size,
+          destination_organization_id: destination_organization.id
+        }
       )
     end
-    record_bulk_drive_item_event!("drive_item.bulk_move", parent_id: new_parent_id, count: drive_items.size) unless performed?
+    record_bulk_drive_item_event!(
+      "drive_item.bulk_move",
+      parent_id: new_parent_id,
+      count: drive_items.size,
+      destination_organization_id: destination_organization.id
+    ) unless performed?
 
-    render json: { message: "ファイルまたはフォルダを移動しました" } unless performed?
+    render json: { message: "ファイルまたはフォルダを移動しました", organization_id: destination_organization.id } unless performed?
   end
 
   def bulk_delete
@@ -406,6 +447,10 @@ class Api::V1::DriveItemsController < ApplicationController
     render_not_found
   end
 
+  def can_access_organization?(organization)
+    current_user.system_admin? || current_user.active_membership_for(organization).present?
+  end
+
   def get_extension_from_filename(filename)
     File.extname(filename).delete_prefix(".").downcase
   end
@@ -431,10 +476,10 @@ class Api::V1::DriveItemsController < ApplicationController
     item_type == "directory" && params[:file].present?
   end
 
-  def validate_parent_id(parent_id, not_found_message:, invalid_message:)
+  def validate_parent_id(parent_id, organization: current_organization, not_found_message:, invalid_message:)
     return true if parent_id.blank?
 
-    parent = current_organization.drive_items.active.find_by(id: parent_id)
+    parent = organization.drive_items.active.find_by(id: parent_id)
     if parent.nil?
       render_api_error(:invalid_parent, not_found_message, status: :not_found)
       return false
@@ -448,9 +493,8 @@ class Api::V1::DriveItemsController < ApplicationController
     true
   end
 
-  def duplicate_active_item?(parent_id:, name:, extension:, excluding_id: nil)
-    scope = current_user
-      .organization
+  def duplicate_active_item?(organization: current_organization, parent_id:, name:, extension:, excluding_id: nil)
+    scope = organization
       .drive_items
       .active
       .where(parent_id: parent_id, name: name, extension: extension)
@@ -538,6 +582,7 @@ class Api::V1::DriveItemsController < ApplicationController
   def drive_item_json(drive_item, include_breadcrumbs: false)
     data = {
       id: drive_item.id,
+      organization_id: drive_item.organization_id,
       parent_id: drive_item.parent_id,
       parent_name: drive_item.parent&.name,
       name: drive_item.name,
@@ -562,7 +607,6 @@ class Api::V1::DriveItemsController < ApplicationController
     while current.present?
       return root_breadcrumbs if current.deleted_at.present?
       return root_breadcrumbs if current.organization_id != current_organization.id
-
       ancestors.unshift({ id: current.id, name: current.name })
       current = current.parent
     end
@@ -574,11 +618,37 @@ class Api::V1::DriveItemsController < ApplicationController
     [ { id: nil, name: "共有ドライブ" } ]
   end
 
-  def assign_parent_for_move!(drive_item, parent_id)
+  def move_destination_organization(parent_id)
+    if params[:destination_organization_id].present?
+      organization = Organization.find_by(id: params[:destination_organization_id])
+      unless organization && can_access_organization?(organization)
+        render_not_found
+        return
+      end
+      return organization
+    end
+
+    return current_organization if parent_id.blank?
+
+    parent = DriveItem.active.directory.find_by(id: parent_id)
+    unless parent && can_access_organization?(parent.organization)
+      render_api_error(:invalid_parent, "指定された移動先フォルダが見つかりません", status: :not_found)
+      return
+    end
+
+    parent.organization
+  end
+
+  def assign_parent_for_move!(drive_item, parent_id, destination_organization:)
     return false if invalid_move_target?(drive_item, parent_id)
     return true if parent_id.blank? && drive_item.parent_id.nil?
 
-    return false unless validate_parent_id(parent_id, not_found_message: "指定された移動先フォルダが見つかりません", invalid_message: "移動先にはフォルダーを指定してください")
+    return false unless validate_parent_id(
+      parent_id,
+      organization: destination_organization,
+      not_found_message: "指定された移動先フォルダが見つかりません",
+      invalid_message: "移動先にはフォルダーを指定してください"
+    )
 
     drive_item.parent_id = parent_id
     true
@@ -604,12 +674,33 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def descendant_id?(drive_item, parent_id)
-    current = current_organization.drive_items.active.find_by(id: parent_id)
+    current = DriveItem.active.find_by(id: parent_id)
     while current.present?
       return true if current.parent_id == drive_item.id
 
       current = current.parent
     end
+    false
+  end
+
+  def move_drive_item_tree!(drive_item, destination_organization)
+    ActiveRecord::Base.transaction do
+      descendants = drive_item.directory? ? DriveItems::TreeCollector.new(root: drive_item).call.drop(1) : []
+      drive_item.organization = destination_organization
+      drive_item.save!
+      if descendants.any?
+        DriveItem
+          .where(id: descendants.map(&:id))
+          .update_all(organization_id: destination_organization.id, updated_at: Time.current)
+      end
+    end
+    drive_item.reload
+    true
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_failed(error.record)
+    false
+  rescue DriveItems::TreeCollector::OrganizationBoundaryError
+    render_api_error(:validation_failed, "フォルダ配下に別組織の項目が含まれています", status: :unprocessable_content)
     false
   end
 
@@ -772,7 +863,6 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def validate_replace_target_state!(replace_target, upload_hash)
     raise ActiveRecord::RecordNotFound unless replace_target.organization_id == current_organization.id
-
     if replace_target.purged_at.present?
       raise ActiveRecord::RecordInvalid.new(replace_target.tap { |item| item.errors.add(:base, "置換対象はすでに完全削除済みです") })
     end
@@ -899,7 +989,6 @@ class Api::V1::DriveItemsController < ApplicationController
   def original_parent_json(parent)
     return nil if parent.nil?
     return nil if parent.organization_id != current_organization.id
-
     {
       id: parent.id,
       name: parent.name,

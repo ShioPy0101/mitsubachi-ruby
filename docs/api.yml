@@ -1030,6 +1030,419 @@ paths:
           $ref: "#/components/responses/Error"
         "422":
           $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationDriveItems
+      tags: [DriveItems]
+      summary: List active drive items for an organization.
+      parameters:
+        - $ref: "#/components/parameters/ParentId"
+      responses:
+        "200":
+          description: Drive item list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DriveItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: postApiV1OrganizationDriveItems
+      tags: [DriveItems]
+      summary: Create a file or directory for an organization.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DriveItemCreateRequest"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriveItemCreateRequest"
+      responses:
+        "201":
+          description: Created drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/search:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationDriveItemsSearch
+      tags: [DriveItems]
+      summary: Search active drive items within an organization.
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [current, organization]
+        - $ref: "#/components/parameters/ParentId"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DriveItem"
+                  meta:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/trash:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationDriveItemsTrash
+      tags: [DriveItems]
+      summary: List deleted drive items for an organization.
+      responses:
+        "200":
+          description: Deleted drive item list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DriveItem"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_move:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkMove
+      tags: [DriveItems]
+      summary: Move multiple drive items to a directory.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkMove"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_delete:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkDelete
+      tags: [DriveItems]
+      summary: Move multiple drive items to trash.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkIds"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_purge:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    delete:
+      operationId: deleteApiV1OrganizationDriveItemsBulkPurge
+      tags: [DriveItems]
+      summary: Permanently purge multiple deleted drive items.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkIds"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_restore:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkRestore
+      tags: [DriveItems]
+      summary: Restore multiple deleted drive items.
+      requestBody:
+        $ref: "#/components/requestBodies/RestoreExecution"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "409":
+          $ref: "#/components/responses/RestorePreviewStale"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_restore_preview:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkRestorePreview
+      tags: [DriveItems]
+      summary: Preview restore results for multiple deleted drive items.
+      requestBody:
+        $ref: "#/components/requestBodies/RestorePreview"
+      responses:
+        "200":
+          description: Restore preview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestorePreview"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/bulk_download:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    post:
+      operationId: postApiV1OrganizationDriveItemsBulkDownload
+      tags: [DriveItems]
+      summary: Download multiple drive items as a ZIP archive.
+      requestBody:
+        $ref: "#/components/requestBodies/BulkIds"
+      responses:
+        "200":
+          description: ZIP archive.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItem
+      tags: [DriveItems]
+      summary: Return one active drive item for an organization.
+      responses:
+        "200":
+          description: Drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: patchApiV1OrganizationDriveItem
+      tags: [DriveItems]
+      summary: Update drive item name or parent.
+      requestBody:
+        $ref: "#/components/requestBodies/DriveItemUpdate"
+      responses:
+        "200":
+          description: Updated drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    put:
+      operationId: putApiV1OrganizationDriveItem
+      tags: [DriveItems]
+      summary: Update drive item name or parent.
+      requestBody:
+        $ref: "#/components/requestBodies/DriveItemUpdate"
+      responses:
+        "200":
+          description: Updated drive item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      operationId: deleteApiV1OrganizationDriveItem
+      tags: [DriveItems]
+      summary: Move a drive item to trash.
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/preview:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItemPreview
+      tags: [DriveItems]
+      summary: Deliver a file inline through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/download:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItemDownload
+      tags: [DriveItems]
+      summary: Deliver a file as an attachment through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/stream:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItemStream
+      tags: [DriveItems]
+      summary: Deliver a file inline for streaming through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: postApiV1OrganizationDriveItemRestore
+      tags: [DriveItems]
+      summary: Restore one deleted drive item.
+      requestBody:
+        $ref: "#/components/requestBodies/RestoreExecution"
+      responses:
+        "200":
+          description: Restored drive item.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DriveItem"
+                  - $ref: "#/components/schemas/RestoreExecutionResult"
+        "409":
+          $ref: "#/components/responses/RestorePreviewStale"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/restore_preview:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: postApiV1OrganizationDriveItemRestorePreview
+      tags: [DriveItems]
+      summary: Preview restore results for one deleted drive item.
+      requestBody:
+        $ref: "#/components/requestBodies/RestorePreview"
+      responses:
+        "200":
+          description: Restore preview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestorePreview"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/purge:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: deleteApiV1OrganizationDriveItemPurge
+      tags: [DriveItems]
+      summary: Permanently purge one deleted drive item.
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/move:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: patchApiV1OrganizationDriveItemMove
+      tags: [DriveItems]
+      summary: Move one active drive item to another folder.
+      requestBody:
+        $ref: "#/components/requestBodies/DriveItemMove"
+      responses:
+        "200":
+          description: Moved drive item.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DriveItem"
+                  request_id:
+                    type: string
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/admin/dashboard:
     get:
       operationId: getApiV1AdminDashboard
@@ -2559,6 +2972,12 @@ components:
       required: true
       schema:
         type: integer
+    OrganizationId:
+      name: organization_id
+      in: path
+      required: true
+      schema:
+        type: integer
     ParentId:
       name: parent_id
       in: query
@@ -2612,6 +3031,9 @@ components:
               parent_id:
                 type: integer
                 nullable: true
+              destination_organization_id:
+                type: integer
+                nullable: true
     RestorePreview:
       required: false
       content:
@@ -2652,6 +3074,9 @@ components:
               name:
                 type: string
               parent_id:
+                type: integer
+                nullable: true
+              destination_organization_id:
                 type: integer
                 nullable: true
     DriveItemMove:
