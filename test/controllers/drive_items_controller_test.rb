@@ -1523,6 +1523,71 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, DriveItemAccessLog.where(action: "bulk_download").count
   end
 
+  test "フォルダを同じdownload APIから階層と空フォルダを保ったZIPで取得できる" do
+    sign_in @user
+    folder = create_directory(name: "資料 フォルダ")
+    nested = create_directory(name: "画像", parent: folder)
+    create_directory(name: "空フォルダ", parent: folder)
+    create_file_item(name: "説明.txt", parent: folder, body: "日本語の内容")
+    create_file_item(name: "sample.png", parent: nested, body: "png-content")
+
+    assert_difference "DriveItemAccessLog.where(action: 'download_folder').count", 1 do
+      assert_difference "AuditEvent.where(action: 'drive_item.download_folder').count", 1 do
+        get download_api_v1_drive_item_url(folder)
+      end
+    end
+
+    assert_response :ok
+    assert_equal "application/zip", response.media_type
+    assert_match(/attachment;/, response.headers["Content-Disposition"])
+    assert_match(/filename\*=UTF-8''%E8%B3%87%E6%96%99%20%E3%83%95%E3%82%A9%E3%83%AB%E3%83%80.zip/, response.headers["Content-Disposition"])
+    entries = zip_entries(response.body)
+    assert entries.key?("資料 フォルダ/説明.txt"), entries.keys.inspect
+    assert_equal "日本語の内容".b, entries.fetch("資料 フォルダ/説明.txt")
+    assert_equal "png-content", entries.fetch("資料 フォルダ/画像/sample.png")
+    assert entries.key?("資料 フォルダ/空フォルダ/")
+
+    log = DriveItemAccessLog.where(action: "download_folder").last
+    assert_equal({ "file_count" => 2, "directory_count" => 3, "total_size" => 0 }, log.metadata.slice("file_count", "directory_count", "total_size"))
+  end
+
+  test "空のフォルダも有効なZIPとして取得できる" do
+    sign_in @user
+    folder = create_directory(name: "empty")
+
+    get download_api_v1_drive_item_url(folder)
+
+    assert_response :ok
+    assert_equal({ "empty/" => nil }, zip_entries(response.body))
+  end
+
+  test "フォルダZIPは削除済みの親を経由する項目と完全削除済み項目を含めない" do
+    sign_in @user
+    folder = create_directory(name: "root")
+    deleted_folder = create_directory(name: "deleted", parent: folder, deleted_at: Time.current)
+    create_file_item(name: "hidden.txt", parent: deleted_folder, body: "hidden")
+    purged_file = create_file_item(name: "purged.txt", parent: folder, body: "purged")
+    purged_file.update_columns(purged_at: Time.current)
+    create_file_item(name: "visible.txt", parent: folder, body: "visible")
+
+    get download_api_v1_drive_item_url(folder)
+
+    assert_response :ok
+    assert_equal [ "root/", "root/visible.txt" ], zip_entries(response.body).keys
+  end
+
+  test "フォルダZIP内の物理ファイル欠損は成功レスポンスにしない" do
+    sign_in @user
+    folder = create_directory(name: "broken")
+    missing = create_file_item(name: "missing.txt", parent: folder, body: "missing")
+    FileUtils.rm_f(missing.absolute_storage_path)
+
+    get download_api_v1_drive_item_url(folder)
+
+    assert_response :not_found
+    assert_equal "not_found", response.parsed_body.dig("error", "code")
+  end
+
   test "フォルダ構造がZIP内で維持される" do
     sign_in @user
     folder = create_directory(name: "docs")
@@ -1626,7 +1691,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
 
     post bulk_download_api_v1_drive_items_url, params: { drive_item_ids: [ file.id ] }
 
-    assert_response :unprocessable_entity
+    assert_response :internal_server_error
     assert captured_zip_path
     assert_not File.exist?(captured_zip_path)
   ensure
@@ -1747,7 +1812,8 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
 
     Zip::File.open_buffer(StringIO.new(body)) do |zip|
       zip.each do |entry|
-        entries[entry.name] = entry.get_input_stream.read
+        assert entry.gp_flags.anybits?(Zip::Entry::EFS), "ZIP entry must declare an UTF-8 name"
+        entries[entry.name.dup.force_encoding(Encoding::UTF_8)] = entry.directory? ? nil : entry.get_input_stream.read
       end
     end
 

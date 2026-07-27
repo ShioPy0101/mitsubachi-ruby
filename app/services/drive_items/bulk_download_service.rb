@@ -5,21 +5,23 @@ require "zip"
 
 module DriveItems
   class BulkDownloadService
+    # rubyzipは入力を逐次圧縮できるため、ファイル総容量をRubyメモリへ展開せず一時ZIPへ書き込む。
+    # 現時点では容量上限がないので、同時実行数や巨大フォルダ次第でtmp領域を枯渇させるリスクが残る。
     BULK_DOWNLOAD_DIRECTORY = Rails.root.join("tmp", "bulk_downloads").expand_path.freeze
     ZIP_CONTENT_TYPE = "application/zip"
     CHUNK_SIZE = 5.megabytes
 
-    Result = Data.define(:success?, :status, :error_message, :zip_path, :filename, :drive_items) do
+    Result = Data.define(:success?, :status, :error_message, :zip_path, :filename, :drive_items, :file_count, :directory_count, :total_size) do
       def self.bulk_download_directory
         BulkDownloadService::BULK_DOWNLOAD_DIRECTORY
       end
 
-      def self.success(zip_path:, filename:, drive_items:)
-        new(true, :ok, nil, zip_path, filename, drive_items)
+      def self.success(zip_path:, filename:, drive_items:, file_count: 0, directory_count: 0, total_size: 0)
+        new(true, :ok, nil, zip_path, filename, drive_items, file_count, directory_count, total_size)
       end
 
       def self.failure(status, error_message)
-        new(false, status, error_message, nil, nil, [])
+        new(false, status, error_message, nil, nil, [], 0, 0, 0)
       end
 
       def cleanup!
@@ -65,10 +67,11 @@ module DriveItems
       end
     end
 
-    def initialize(organization:, drive_item_ids: nil, drive_items: nil)
+    def initialize(organization:, drive_item_ids: nil, drive_items: nil, filename: nil)
       @organization = organization
       @drive_item_ids = Array(drive_item_ids).reject(&:blank?)
       @drive_items = drive_items
+      @filename = filename
     end
 
     def call
@@ -83,19 +86,31 @@ module DriveItems
       zip_path = build_zip_path
 
       write_zip!(zip_path, entries)
-      Result.success(zip_path: zip_path, filename: zip_filename, drive_items: entries.map(&:drive_item))
+      files = entries.reject(&:directory?)
+      Result.success(
+        zip_path: zip_path,
+        filename: @filename.presence || zip_filename,
+        drive_items: files.map(&:drive_item),
+        file_count: files.size,
+        directory_count: entries.count(&:directory?),
+        total_size: files.sum { |entry| entry.drive_item.file_size.to_i }
+      )
     rescue InvalidEntryError => error
       cleanup_zip(zip_path)
       Result.failure(error.status, error.message)
     rescue StandardError => error
       cleanup_zip(zip_path)
       Rails.logger.error("[drive_items.bulk_download] failed error=#{error.class}: #{error.message}")
-      Result.failure(:unprocessable_content, "ZIPファイルを作成できませんでした")
+      Result.failure(:internal_server_error, "ZIPファイルを作成できませんでした")
     end
 
     private
 
-    Entry = Data.define(:drive_item, :entry_name, :absolute_path)
+    Entry = Data.define(:drive_item, :entry_name, :absolute_path) do
+      def directory?
+        drive_item.directory?
+      end
+    end
     InvalidEntryError = Class.new(StandardError) do
       attr_reader :status
 
@@ -114,18 +129,22 @@ module DriveItems
       entries = []
       used_entry_names = {}
       included_file_ids = {}
+      active_items = @organization.drive_items.active.order(:item_type, :name, :id).to_a
+      children_by_parent_id = active_items.group_by(&:parent_id)
 
       roots.each do |root|
-        collect_file_entries(root, base_components(root), entries, used_entry_names, included_file_ids)
+        collect_entries(root, base_components(root), entries, used_entry_names, included_file_ids, children_by_parent_id)
       end
 
       entries
     end
 
-    def collect_file_entries(drive_item, path_components, entries, used_entry_names, included_file_ids)
+    def collect_entries(drive_item, path_components, entries, used_entry_names, included_file_ids, children_by_parent_id)
       if drive_item.directory?
-        drive_item.children.active.order(:item_type, :name, :id).find_each do |child|
-          collect_file_entries(child, path_components + [ safe_component(child.name) ], entries, used_entry_names, included_file_ids)
+        entry_name = unique_entry_name(path_components, used_entry_names, directory: true)
+        entries << Entry.new(drive_item, entry_name, nil)
+        children_by_parent_id.fetch(drive_item.id, []).each do |child|
+          collect_entries(child, path_components + [ safe_component(child.name) ], entries, used_entry_names, included_file_ids, children_by_parent_id)
         end
         return
       end
@@ -156,7 +175,9 @@ module DriveItems
     def write_zip!(zip_path, entries)
       Zip::OutputStream.open(zip_path) do |zip|
         entries.each do |entry|
-          zip.put_next_entry(entry.entry_name)
+          zip.put_next_entry(zip_entry(entry.entry_name))
+          next if entry.directory?
+
           File.open(entry.absolute_path, "rb") do |file|
             while (chunk = file.read(CHUNK_SIZE))
               zip.write(chunk)
@@ -164,6 +185,13 @@ module DriveItems
           end
         end
       end
+    end
+
+    def zip_entry(entry_name)
+      entry = Zip::Entry.new("", entry_name)
+      # ZIP仕様のEFSビットを項目ごとに立て、グローバルなrubyzip設定を変更せずUTF-8名を保証する。
+      entry.gp_flags |= Zip::Entry::EFS
+      entry
     end
 
     def safe_storage_path(drive_item)
@@ -174,20 +202,30 @@ module DriveItems
         raise InvalidEntryError.new("保存先キーが不正なファイルが含まれています", status: :not_found)
       end
 
+      real_path = Pathname.new(absolute_path).realpath.to_s
+      unless real_path.start_with?("#{storage_root}/")
+        raise InvalidEntryError.new("保存先キーが不正なファイルが含まれています", status: :not_found)
+      end
+
       absolute_path
+    rescue Errno::ENOENT
+      raise InvalidEntryError.new("実ファイルが見つからないファイルが含まれています", status: :not_found)
     end
 
-    def unique_entry_name(components, used_entry_names)
+    def unique_entry_name(components, used_entry_names, directory: false)
       entry_name = components.join("/")
+      entry_name = "#{entry_name}/" if directory
       return used_entry_names[entry_name] = entry_name unless used_entry_names.key?(entry_name)
 
-      dirname = File.dirname(entry_name)
-      basename = File.basename(entry_name, ".*")
+      collision_name = entry_name.delete_suffix("/")
+      dirname = File.dirname(collision_name)
+      basename = File.basename(collision_name, ".*")
       extension = File.extname(entry_name)
       index = 2
 
       loop do
         candidate = [ dirname == "." ? nil : dirname, "#{basename} (#{index})#{extension}" ].compact.join("/")
+        candidate = "#{candidate}/" if directory
         return used_entry_names[candidate] = candidate unless used_entry_names.key?(candidate)
 
         index += 1

@@ -366,7 +366,9 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def download
-    deliver_drive_item(:download)
+    return deliver_drive_item(:download) if @drive_item.file?
+
+    download_folder
   end
 
   def stream
@@ -1152,6 +1154,50 @@ class Api::V1::DriveItemsController < ApplicationController
         request_id: request.request_id
       )
     end
+  end
+
+  def download_folder
+    result = DriveItems::BulkDownloadService.new(
+      organization: current_organization,
+      drive_items: [ @drive_item ],
+      filename: "#{@drive_item.name}.zip"
+    ).call
+
+    unless result.success?
+      render_api_error(error_code_for_status(result.status), result.error_message, status: result.status)
+      return
+    end
+
+    audit_result = AuditLogs::Recorder.new(
+      organization: current_organization,
+      user: current_user,
+      drive_item: @drive_item,
+      action: :download_folder,
+      request: request,
+      metadata: archive_metadata(result)
+    ).call
+    unless audit_result.success?
+      result.cleanup!
+      render_api_error(:service_unavailable, audit_result.error_message, status: :service_unavailable)
+      return
+    end
+
+    record_drive_item_event!("drive_item.download_folder", @drive_item, metadata: archive_metadata(result))
+    send_zip_file(result)
+  rescue StandardError => error
+    result&.cleanup!
+    Rails.logger.error("[drive_items.folder_download] failed request_id=#{request.request_id} error=#{error.class}: #{error.message}")
+    return if performed?
+
+    render_api_error(:internal_server_error, "ZIPファイルを送信できませんでした", status: :internal_server_error)
+  end
+
+  def archive_metadata(result)
+    {
+      file_count: result.file_count,
+      directory_count: result.directory_count,
+      total_size: result.total_size
+    }
   end
 
   def send_zip_file(result)
