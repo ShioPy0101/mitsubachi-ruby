@@ -1002,6 +1002,55 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ @root.id, destination.id ], event.change_set["parent_id"]
   end
 
+  test "move API はフォルダと子孫を移動先organizationへ移動する" do
+    @user.update!(role: :system_admin)
+    sign_in @user
+    destination = DriveItem.create!(
+      organization: organizations(:two),
+      owner_user: users(:two),
+      name: "destination",
+      item_type: "directory"
+    )
+    nested_file = create_named_file(
+      name: "nested",
+      extension: "txt",
+      body: "nested",
+      parent: @grandchild_folder
+    )
+
+    patch "/api/v1/organizations/#{@organization.id}/drive_items/#{@child_folder.id}/move",
+      params: { parent_id: destination.id }
+
+    assert_response :ok
+    assert_equal organizations(:two).id, response.parsed_body.dig("data", "organization_id")
+    assert_equal organizations(:two), @child_folder.reload.organization
+    assert_equal destination.id, @child_folder.parent_id
+    assert_equal organizations(:two), @grandchild_folder.reload.organization
+    assert_equal organizations(:two), nested_file.reload.organization
+
+    sign_in @user
+    get "/api/v1/organizations/#{@organization.id}/drive_items/#{@child_folder.id}"
+    assert_response :not_found
+
+    sign_in @user
+    get "/api/v1/organizations/#{organizations(:two).id}/drive_items/#{@child_folder.id}"
+    assert_response :ok
+    assert_equal organizations(:two).id, response.parsed_body.fetch("organization_id")
+  end
+
+  test "move API は移動先organizationのルートへフォルダを移動できる" do
+    @user.update!(role: :system_admin)
+    sign_in @user
+
+    patch "/api/v1/organizations/#{@organization.id}/drive_items/#{@child_folder.id}/move",
+      params: { parent_id: nil, destination_organization_id: organizations(:two).id }
+
+    assert_response :ok
+    assert_equal organizations(:two), @child_folder.reload.organization
+    assert_nil @child_folder.parent_id
+    assert_equal organizations(:two), @grandchild_folder.reload.organization
+  end
+
   test "move API は別organizationの親を拒否する" do
     sign_in @user
 
@@ -1010,6 +1059,24 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert_equal "invalid_parent", response.parsed_body.dig("error", "code")
     assert_equal @root.id, @file.reload.parent_id
+  end
+
+  test "move API はアクセスできない移動先organizationの親を拒否する" do
+    sign_in @user
+    destination = DriveItem.create!(
+      organization: organizations(:two),
+      owner_user: users(:two),
+      name: "private_destination",
+      item_type: "directory"
+    )
+
+    patch "/api/v1/organizations/#{@organization.id}/drive_items/#{@child_folder.id}/move",
+      params: { parent_id: destination.id }
+
+    assert_response :not_found
+    assert_equal "invalid_parent", response.parsed_body.dig("error", "code")
+    assert_equal @organization, @child_folder.reload.organization
+    assert_equal @root.id, @child_folder.parent_id
   end
 
   test "move API は自分自身への移動を拒否する" do
