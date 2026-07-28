@@ -402,6 +402,69 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     ids = response.parsed_body.fetch("data").pluck("id")
     assert_includes ids, own_event.id
     assert_includes ids, other_event.id
+
+    serialized_other_event = response.parsed_body.fetch("data").find { |event| event.fetch("id") == other_event.id }
+    assert_equal @other_org_user.id, serialized_other_event.fetch("actor_user_id")
+    assert_equal @other_org_user.name, serialized_other_event.fetch("actor_name")
+    assert_equal @other_org_user.email, serialized_other_event.fetch("actor_email")
+  end
+
+  test "system_admin の全般監査イベントは明示した実行者だけで絞り込める" do
+    selected_event = AuditEvent.create!(
+      organization: @organization,
+      actor_user: @organization_admin,
+      action: "test.selected_actor",
+      outcome: "success",
+      occurred_at: Time.current
+    )
+    AuditEvent.create!(
+      organization: @organization,
+      actor_user: @managed_user,
+      action: "test.other_actor",
+      outcome: "success",
+      occurred_at: Time.current
+    )
+
+    sign_in @system_admin
+    get api_v1_admin_audit_events_url, params: { actor_user_id: @organization_admin.id, per_page: 100 }
+
+    assert_response :ok
+    events = response.parsed_body.fetch("data")
+    assert_includes events.pluck("id"), selected_event.id
+    assert_equal [ @organization_admin.id ], events.pluck("actor_user_id").uniq
+  end
+
+  test "system_admin の全般監査イベントは明示したOrganizationだけで絞り込める" do
+    selected_event = AuditEvent.create!(
+      organization: @other_organization,
+      actor_user: @other_org_user,
+      action: "test.selected_organization",
+      outcome: "success",
+      occurred_at: Time.current
+    )
+    AuditEvent.create!(
+      organization: @organization,
+      actor_user: @organization_admin,
+      action: "test.other_organization",
+      outcome: "success",
+      occurred_at: Time.current
+    )
+
+    sign_in @system_admin
+    get api_v1_admin_audit_events_url, params: { organization_id: @other_organization.id, per_page: 100 }
+
+    assert_response :ok
+    events = response.parsed_body.fetch("data")
+    assert_includes events.pluck("id"), selected_event.id
+    assert_equal [ @other_organization.id ], events.pluck("organization_id").compact.uniq
+  end
+
+  test "一般ユーザーはシステム管理者用の全般監査イベントAPIを利用できない" do
+    sign_in @managed_user
+
+    get api_v1_admin_audit_events_url, params: { per_page: 100 }
+
+    assert_response :forbidden
   end
 
   test "organization_admin は自組織の全般監査イベントだけを閲覧できる" do

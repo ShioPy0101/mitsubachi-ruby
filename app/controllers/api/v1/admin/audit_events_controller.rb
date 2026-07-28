@@ -34,6 +34,7 @@ class Api::V1::Admin::AuditEventsController < Api::V1::Admin::BaseController
       organization_id: audit_event.organization_id,
       organization_name: audit_event.organization&.name,
       actor_user_id: audit_event.actor_user_id,
+      actor_name: audit_event.actor_user&.display_name.presence || audit_event.actor_user&.name,
       actor_email: audit_event.actor_user&.email,
       action: audit_event.action,
       outcome: audit_event.outcome,
