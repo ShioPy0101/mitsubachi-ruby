@@ -28,7 +28,7 @@ module OperationLogs
         target_type: @target&.class&.name,
         target_id: @target&.id,
         change_set: sanitized_hash(@changes),
-        metadata: sanitized_hash(snapshot_metadata.merge(@metadata)),
+        metadata: sanitized_hash(@metadata.merge(snapshot_metadata)),
         ip_address: @request&.remote_ip,
         user_agent: @request&.user_agent.to_s,
         request_id: @request&.request_id.to_s,
@@ -77,9 +77,20 @@ module OperationLogs
     end
 
     def target_path
+      return drive_item_path if @target.is_a?(DriveItem)
       return unless @target.respond_to?(:path)
 
       @target.path
+    end
+
+    def drive_item_path
+      components = []
+      item = @target
+      while item
+        components.unshift(item.filename)
+        item = item.parent
+      end
+      components.join("/")
     end
   end
 end
