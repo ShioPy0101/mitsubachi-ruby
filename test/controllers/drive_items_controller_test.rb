@@ -1532,7 +1532,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     create_file_item(name: "sample.png", parent: nested, body: "png-content")
 
     assert_difference "DriveItemAccessLog.where(action: 'download_folder').count", 1 do
-      assert_no_difference "OperationLog.where(operation_type: 'drive_item.download_folder').count" do
+      assert_difference "OperationLog.where(operation_type: 'drive_item.download_folder').count", 1 do
         get download_api_v1_drive_item_url(folder)
       end
     end
@@ -1549,6 +1549,10 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
 
     log = DriveItemAccessLog.where(action: "download_folder").last
     assert_equal({ "file_count" => 2, "directory_count" => 3, "total_size" => 0 }, log.metadata.slice("file_count", "directory_count", "total_size"))
+    operation = OperationLog.where(operation_type: "drive_item.download_folder").last
+    assert_equal folder, DriveItem.find(operation.target_id)
+    assert_equal folder.filename, operation.metadata["target_name"]
+    assert_equal 2, operation.metadata["file_count"]
   end
 
   test "空のフォルダも有効なZIPとして取得できる" do

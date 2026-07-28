@@ -1177,6 +1177,12 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
+    record_operation!(
+      operation_type: "drive_item.download_folder",
+      target: @drive_item,
+      metadata: archive_metadata(result)
+    )
+
     send_zip_file(result)
   rescue StandardError => error
     result&.cleanup!
