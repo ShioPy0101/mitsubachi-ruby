@@ -21,7 +21,7 @@ class Api::V1::MeController < ApplicationController
 
     if current_user.save
       record_audit_event!(
-        action: "user.profile.update",
+        action: "user.profile_updated",
         target: current_user,
         changes: { display_name: [ before_display_name, current_user.display_name ] }
       ) if before_display_name != current_user.display_name
@@ -38,7 +38,7 @@ class Api::V1::MeController < ApplicationController
       email: email_change_params.fetch(:email)
     ).call
     record_audit_event!(
-      action: "user.email_change.request",
+      action: "user.email_change_requested",
       target: current_user,
       metadata: { email_domain: email_domain(result.email_change.new_email) }
     )
@@ -57,6 +57,7 @@ class Api::V1::MeController < ApplicationController
     render_validation_failed([ "このメールアドレスは既に使用されています" ])
   rescue StandardError => error
     record_email_change_failure!("確認メールの送信に失敗しました")
+    record_mail_delivery_failure!(error, phase: "email_change_request")
     Rails.logger.error("[me.email_change] delivery failed user_id=#{current_user.id} error=#{error.class}: #{error.message}")
     render_api_error(:email_delivery_failed, "確認メールの送信に失敗しました", status: :unprocessable_content)
   end
@@ -64,7 +65,7 @@ class Api::V1::MeController < ApplicationController
   def verify_email_change
     result = UserEmailChanges::ConfirmService.new(token: params[:token]).call
     record_audit_event!(
-      action: "user.email_change.confirm",
+      action: "user.email_changed",
       actor_user: result.user,
       organization: result.user.organization,
       target: result.user,
@@ -80,6 +81,7 @@ class Api::V1::MeController < ApplicationController
     render_api_error(:email_change_failed, error.message, status: error.status)
   rescue StandardError => error
     record_email_change_failure!("変更完了通知メールの送信に失敗しました")
+    record_mail_delivery_failure!(error, phase: "email_change_confirmation")
     Rails.logger.error("[me.email_change] confirmation failed error=#{error.class}: #{error.message}")
     render_api_error(:email_delivery_failed, "変更完了通知メールの送信に失敗しました", status: :unprocessable_content)
   end
@@ -90,7 +92,7 @@ class Api::V1::MeController < ApplicationController
     if email_change.present?
       email_change.update!(cancelled_at: Time.current)
       record_audit_event!(
-        action: "user.email_change.cancel",
+        action: "user.email_change_cancelled",
         target: current_user,
         metadata: { email_domain: email_domain(email_change.new_email) }
       )
@@ -193,12 +195,27 @@ class Api::V1::MeController < ApplicationController
     actor = current_user_or_nil
 
     record_audit_event!(
-      action: "user.email_change.failure",
+      action: "user.email_change_failed",
       actor_user: actor,
       organization: actor&.organization,
       target: actor,
       outcome: "failure",
       metadata: { reason: reason }
+    )
+  end
+
+  def record_mail_delivery_failure!(error, phase:)
+    actor = current_user_or_nil
+    SystemEvents::Recorder.record!(
+      event_type: "mail.delivery_failed",
+      severity: "error",
+      source: "mailer",
+      organization: actor&.organization,
+      related_user: actor,
+      target: actor,
+      request: request,
+      error: error,
+      metadata: { phase: phase }
     )
   end
 end

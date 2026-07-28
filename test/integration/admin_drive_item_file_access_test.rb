@@ -27,8 +27,10 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
   test "system_admin can preview a file from another organization" do
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'drive_item.preview').count", 1 do
-      get preview_api_v1_admin_drive_item_url(@other_file), headers: request_headers
+    assert_difference "DriveItemAccessLog.where(action: 'preview').count", 1 do
+      assert_no_difference "AuditEvent.count" do
+        get preview_api_v1_admin_drive_item_url(@other_file), headers: request_headers
+      end
     end
 
     assert_response :ok
@@ -40,8 +42,10 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
   test "system_admin can download a file from another organization" do
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'drive_item.download').count", 1 do
-      get download_api_v1_admin_drive_item_url(@other_file), headers: request_headers
+    assert_difference "DriveItemAccessLog.where(action: 'download').count", 1 do
+      assert_no_difference "AuditEvent.count" do
+        get download_api_v1_admin_drive_item_url(@other_file), headers: request_headers
+      end
     end
 
     assert_response :ok
@@ -51,8 +55,10 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
   test "system_admin can stream a file from another organization" do
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'drive_item.stream').count", 1 do
-      get stream_api_v1_admin_drive_item_url(@other_file), headers: request_headers.merge("Range" => "bytes=0-10")
+    assert_difference "DriveItemAccessLog.where(action: 'stream').count", 1 do
+      assert_no_difference "AuditEvent.count" do
+        get stream_api_v1_admin_drive_item_url(@other_file), headers: request_headers.merge("Range" => "bytes=0-10")
+      end
     end
 
     assert_response :ok
@@ -129,7 +135,7 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
     )
 
     assert File.exist?(storage_path)
-    assert_difference "AdminAuditLog.where(action: 'drive_item.purge').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'drive_item.purged').count", 1 do
       assert_no_difference "DriveItemAccessLog.count" do
         delete purge_api_v1_admin_drive_item_url(@deleted_file)
       end

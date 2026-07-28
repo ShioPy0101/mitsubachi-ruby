@@ -58,7 +58,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "updates display name and records audit event" do
-    assert_difference "AuditEvent.where(action: 'user.profile.update').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'user.profile_updated').count", 1 do
       patch api_v1_me_url, params: {
         display_name: "  新しい表示名  ",
         role: "system_admin",
@@ -90,7 +90,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
 
   test "requests email change without changing current email" do
     assert_difference "UserEmailChange.count", 1 do
-      assert_difference "AuditEvent.where(action: 'user.email_change.request').count", 1 do
+      assert_difference "OperationLog.where(operation_type: 'user.email_change_requested').count", 1 do
         post email_change_api_v1_me_url, params: { email: " NewEmail@Example.com " }
       end
     end
@@ -153,7 +153,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     )
     sign_out @user
 
-    assert_difference "AuditEvent.where(action: 'user.email_change.confirm').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'user.email_changed').count", 1 do
       post email_change_verify_api_v1_me_url, params: { token: raw_token }
       assert_response :ok
     end
@@ -204,7 +204,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
       expires_at: 30.minutes.from_now
     )
 
-    assert_difference "AuditEvent.where(action: 'user.email_change.cancel').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'user.email_change_cancelled').count", 1 do
       delete email_change_api_v1_me_url
     end
 

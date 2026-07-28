@@ -19,7 +19,7 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
 
     if invite.save
       audit_admin_action!(
-        action: "organization_invite.create",
+        action: "organization.invitation_created",
         target: invite,
         organization: organization,
         changes: {

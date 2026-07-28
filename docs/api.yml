@@ -1850,8 +1850,150 @@ paths:
                 properties:
                   data:
                     $ref: "#/components/schemas/AdminDriveItem"
+  /api/v1/admin/operation_logs:
+    get:
+      operationId: getApiV1AdminOperationLogs
+      tags: [Admin]
+      summary: List human operation history across authorized organizations.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - { name: organization_id, in: query, schema: { type: integer } }
+        - { name: actor_kind, in: query, schema: { type: string, enum: [user, external_share, anonymous] } }
+        - { name: actor_user_id, in: query, schema: { type: integer } }
+        - { name: operation_type, in: query, schema: { type: string } }
+        - { name: result, in: query, schema: { type: string, enum: [success, failure, denied] } }
+        - { name: request_id, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Paginated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/admin/operation_logs/{id}:
+    get:
+      operationId: getApiV1AdminOperationLog
+      tags: [Admin]
+      summary: Return one operation log.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Operation log. }
+  /api/v1/organizations/{organization_id}/admin/operation_logs:
+    get:
+      operationId: getApiV1OrganizationAdminOperationLogs
+      tags: [Admin]
+      summary: List operation history scoped to one managed organization.
+      parameters:
+        - { name: organization_id, in: path, required: true, schema: { type: integer } }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200": { $ref: "#/components/responses/Paginated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/organizations/{organization_id}/admin/operation_logs/{id}:
+    get:
+      operationId: getApiV1OrganizationAdminOperationLog
+      tags: [Admin]
+      summary: Return one organization-scoped operation log.
+      parameters:
+        - { name: organization_id, in: path, required: true, schema: { type: integer } }
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Operation log. }
+  /api/v1/admin/drive_item_access_logs:
+    get:
+      operationId: getApiV1AdminDriveItemAccessLogs
+      tags: [Admin]
+      summary: List actual file access history across authorized organizations.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - { name: organization_id, in: query, schema: { type: integer } }
+        - { name: user_id, in: query, schema: { type: integer } }
+        - { name: external_share_id, in: query, schema: { type: integer } }
+        - { name: action, in: query, schema: { type: string, enum: [preview, stream, download, bulk_download, download_folder] } }
+        - { name: filename, in: query, schema: { type: string } }
+        - { name: request_id, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Paginated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/admin/drive_item_access_logs/{id}:
+    get:
+      operationId: getApiV1AdminDriveItemAccessLog
+      tags: [Admin]
+      summary: Return one file access log.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: File access log. }
+  /api/v1/organizations/{organization_id}/admin/drive_item_access_logs:
+    get:
+      operationId: getApiV1OrganizationAdminDriveItemAccessLogs
+      tags: [Admin]
+      summary: List file access history scoped to one managed organization.
+      parameters:
+        - { name: organization_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/responses/Paginated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/organizations/{organization_id}/admin/drive_item_access_logs/{id}:
+    get:
+      operationId: getApiV1OrganizationAdminDriveItemAccessLog
+      tags: [Admin]
+      summary: Return one organization-scoped file access log.
+      parameters:
+        - { name: organization_id, in: path, required: true, schema: { type: integer } }
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: File access log. }
+  /api/v1/organizations/{organization_id}/admin/system_events:
+    get:
+      operationId: getApiV1OrganizationAdminSystemEvents
+      tags: [Admin]
+      summary: List redacted system events for one managed organization.
+      parameters:
+        - { name: organization_id, in: path, required: true, schema: { type: integer } }
+        - { name: severity, in: query, schema: { type: string, enum: [info, warning, error, critical] } }
+        - { name: source, in: query, schema: { type: string } }
+        - { name: event_type, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Paginated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/organizations/{organization_id}/admin/system_events/{id}:
+    get:
+      operationId: getApiV1OrganizationAdminSystemEvent
+      tags: [Admin]
+      summary: Return one redacted organization system event.
+      parameters:
+        - { name: organization_id, in: path, required: true, schema: { type: integer } }
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Redacted system event. }
+  /api/v1/system_admin/system_events:
+    get:
+      operationId: getApiV1SystemAdminSystemEvents
+      tags: [Admin]
+      summary: List full system event details for system administrators.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - { name: organization_id, in: query, schema: { type: integer } }
+        - { name: severity, in: query, schema: { type: string, enum: [info, warning, error, critical] } }
+        - { name: source, in: query, schema: { type: string } }
+        - { name: event_type, in: query, schema: { type: string } }
+        - { name: request_id, in: query, schema: { type: string } }
+        - { name: job_id, in: query, schema: { type: string } }
+        - { name: trace_id, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Paginated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/system_admin/system_events/{id}:
+    get:
+      operationId: getApiV1SystemAdminSystemEvent
+      tags: [Admin]
+      summary: Return one full system event.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: System event with internal details. }
   /api/v1/admin/audit_logs:
     get:
+      deprecated: true
       operationId: getApiV1AdminAuditLogs
       tags: [Admin]
       summary: List admin audit logs.
@@ -1891,6 +2033,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      deprecated: true
       operationId: getApiV1AdminAuditLog
       tags: [Admin]
       summary: Return one admin audit log.
@@ -1903,6 +2046,7 @@ paths:
                 type: object
   /api/v1/admin/audit_events:
     get:
+      deprecated: true
       operationId: getApiV1AdminAuditEvents
       tags: [Admin]
       summary: List general audit events.
@@ -1943,10 +2087,75 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Paginated"
+  /api/v1/admin/file_access_logs:
+    get:
+      deprecated: true
+      operationId: getApiV1AdminFileAccessLogs
+      tags: [Admin]
+      summary: List file access history separately from audit events.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: organization_id
+          in: query
+          schema:
+            type: integer
+        - name: drive_item_id
+          in: query
+          schema:
+            type: integer
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [preview, stream, download, bulk_download, download_folder]
+        - name: occurred_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: occurred_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          $ref: "#/components/responses/Paginated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/admin/file_access_logs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      deprecated: true
+      operationId: getApiV1AdminFileAccessLog
+      tags: [Admin]
+      summary: Return one file access history entry.
+      responses:
+        "200":
+          description: File access history entry.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/admin/audit_events/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
+      deprecated: true
       operationId: getApiV1AdminAuditEvent
       tags: [Admin]
       summary: Return one general audit event.
@@ -2937,6 +3146,35 @@ paths:
       responses:
         "200":
           description: Audit events.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/file_access_logs:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationAdminFileAccessLogs
+      tags: [Admin]
+      summary: List file access history for an explicit organization.
+      responses:
+        "200":
+          description: File access history.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/file_access_logs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminFileAccessLog
+      tags: [Admin]
+      summary: Return one file access history entry for an explicit organization.
+      responses:
+        "200":
+          description: File access history entry.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":

@@ -10,56 +10,16 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_24_134000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_28_093000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
-  create_table "admin_audit_logs", force: :cascade do |t|
-    t.string "action", null: false
-    t.bigint "actor_user_id", null: false
-    t.jsonb "change_set", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.string "ip_address"
-    t.bigint "organization_id", null: false
-    t.bigint "target_id", null: false
-    t.string "target_type", null: false
-    t.datetime "updated_at", null: false
-    t.text "user_agent"
-    t.index [ "action" ], name: "index_admin_audit_logs_on_action"
-    t.index [ "actor_user_id" ], name: "index_admin_audit_logs_on_actor_user_id"
-    t.index [ "created_at" ], name: "index_admin_audit_logs_on_created_at"
-    t.index [ "organization_id" ], name: "index_admin_audit_logs_on_organization_id"
-    t.index [ "target_type", "target_id" ], name: "index_admin_audit_logs_on_target_type_and_target_id"
-  end
-
-  create_table "audit_events", force: :cascade do |t|
-    t.string "action", null: false
-    t.bigint "actor_user_id"
-    t.jsonb "change_set", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.string "ip_address"
-    t.jsonb "metadata", default: {}, null: false
-    t.datetime "occurred_at", null: false
-    t.bigint "organization_id"
-    t.string "outcome", default: "success", null: false
-    t.string "request_id"
-    t.bigint "target_id"
-    t.string "target_type"
-    t.datetime "updated_at", null: false
-    t.text "user_agent"
-    t.index [ "action" ], name: "index_audit_events_on_action"
-    t.index [ "actor_user_id", "occurred_at" ], name: "index_audit_events_on_actor_user_id_and_occurred_at"
-    t.index [ "actor_user_id" ], name: "index_audit_events_on_actor_user_id"
-    t.index [ "occurred_at" ], name: "index_audit_events_on_occurred_at"
-    t.index [ "organization_id", "occurred_at" ], name: "index_audit_events_on_organization_id_and_occurred_at"
-    t.index [ "organization_id" ], name: "index_audit_events_on_organization_id"
-    t.index [ "target_type", "target_id" ], name: "index_audit_events_on_target_type_and_target_id"
-  end
-
   create_table "drive_item_access_logs", force: :cascade do |t|
     t.string "action"
+    t.string "actor_kind", default: "user", null: false
     t.datetime "created_at", null: false
     t.bigint "drive_item_id"
+    t.bigint "external_share_id"
     t.string "ip_address", null: false
     t.jsonb "metadata", default: {}, null: false
     t.datetime "occurred_at"
@@ -67,11 +27,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_134000) do
     t.string "request_id", null: false
     t.datetime "updated_at", null: false
     t.text "user_agent"
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
+    t.index [ "actor_kind", "occurred_at" ], name: "index_drive_item_access_logs_on_actor_kind_and_occurred_at"
     t.index [ "drive_item_id", "occurred_at" ], name: "index_access_logs_on_item_and_accessed_at"
     t.index [ "drive_item_id" ], name: "index_drive_item_access_logs_on_drive_item_id"
+    t.index [ "external_share_id" ], name: "index_drive_item_access_logs_on_external_share_id"
     t.index [ "organization_id", "user_id", "drive_item_id", "action", "occurred_at" ], name: "index_drive_item_access_logs_on_stream_dedupe_lookup"
     t.index [ "organization_id" ], name: "index_drive_item_access_logs_on_organization_id"
+    t.index [ "request_id", "action" ], name: "index_drive_item_access_logs_on_request_id_and_action"
     t.index [ "user_id", "occurred_at" ], name: "index_access_logs_on_user_and_accessed_at"
     t.index [ "user_id" ], name: "index_drive_item_access_logs_on_user_id"
   end
@@ -160,7 +123,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_134000) do
     t.index [ "organization_id", "created_by_user_id" ], name: "idx_on_organization_id_created_by_user_id_4049a50bf2"
     t.index [ "organization_id" ], name: "index_external_shares_on_organization_id"
     t.index [ "token_digest" ], name: "index_external_shares_on_token_digest", unique: true
-    t.check_constraint "folder_share_mode::text = ANY (ARRAY['snapshot'::character varying, 'dynamic'::character varying]::text[])", name: "external_shares_folder_share_mode_check"
+    t.check_constraint "folder_share_mode::text = ANY (ARRAY['snapshot'::character varying::text, 'dynamic'::character varying::text])", name: "external_shares_folder_share_mode_check"
   end
 
   create_table "flower_access_tokens", force: :cascade do |t|
@@ -205,7 +168,53 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_134000) do
     t.index [ "status", "expires_at" ], name: "index_flower_device_authorizations_on_status_and_expires_at"
     t.index [ "user_code_digest" ], name: "index_flower_device_authorizations_on_user_code_digest", unique: true
     t.index [ "user_id" ], name: "index_flower_device_authorizations_on_user_id"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'approved'::character varying, 'denied'::character varying, 'consumed'::character varying, 'expired'::character varying]::text[])", name: "flower_device_authorizations_status_check"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'approved'::character varying::text, 'denied'::character varying::text, 'consumed'::character varying::text, 'expired'::character varying::text])", name: "flower_device_authorizations_status_check"
+  end
+
+  create_table "legacy_admin_audit_logs", force: :cascade do |t|
+    t.string "action", null: false
+    t.bigint "actor_user_id", null: false
+    t.jsonb "change_set", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "ip_address"
+    t.bigint "organization_id", null: false
+    t.bigint "target_id", null: false
+    t.string "target_type", null: false
+    t.datetime "updated_at", null: false
+    t.text "user_agent"
+    t.index [ "action" ], name: "index_legacy_admin_audit_logs_on_action"
+    t.index [ "actor_user_id" ], name: "index_legacy_admin_audit_logs_on_actor_user_id"
+    t.index [ "created_at" ], name: "index_legacy_admin_audit_logs_on_created_at"
+    t.index [ "organization_id" ], name: "index_legacy_admin_audit_logs_on_organization_id"
+    t.index [ "target_type", "target_id" ], name: "index_legacy_admin_audit_logs_on_target_type_and_target_id"
+  end
+
+  create_table "operation_logs", force: :cascade do |t|
+    t.bigint "actor_external_share_id"
+    t.string "actor_kind", default: "anonymous", null: false
+    t.bigint "actor_user_id"
+    t.jsonb "change_set", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "ip_address"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.string "operation_type", null: false
+    t.bigint "organization_id"
+    t.string "request_id"
+    t.string "result", default: "success", null: false
+    t.bigint "target_id"
+    t.string "target_type"
+    t.datetime "updated_at", null: false
+    t.text "user_agent"
+    t.index [ "actor_external_share_id" ], name: "index_operation_logs_on_actor_external_share_id"
+    t.index [ "actor_kind", "occurred_at" ], name: "index_operation_logs_on_actor_kind_and_occurred_at"
+    t.index [ "actor_user_id", "occurred_at" ], name: "index_operation_logs_on_actor_user_id_and_occurred_at"
+    t.index [ "actor_user_id" ], name: "index_operation_logs_on_actor_user_id"
+    t.index [ "occurred_at" ], name: "index_operation_logs_on_occurred_at"
+    t.index [ "operation_type" ], name: "index_operation_logs_on_operation_type"
+    t.index [ "organization_id", "occurred_at" ], name: "index_operation_logs_on_organization_id_and_occurred_at"
+    t.index [ "organization_id" ], name: "index_operation_logs_on_organization_id"
+    t.index [ "target_type", "target_id" ], name: "index_operation_logs_on_target_type_and_target_id"
   end
 
   create_table "organization_invites", force: :cascade do |t|
@@ -251,6 +260,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_134000) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "system_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "error_class"
+    t.text "error_message"
+    t.string "event_type", null: false
+    t.string "job_id"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "organization_id"
+    t.bigint "related_user_id"
+    t.string "request_id"
+    t.string "severity", null: false
+    t.string "source", null: false
+    t.bigint "target_id"
+    t.string "target_type"
+    t.string "trace_id"
+    t.datetime "updated_at", null: false
+    t.index [ "event_type", "occurred_at" ], name: "index_system_events_on_event_type_and_occurred_at"
+    t.index [ "job_id" ], name: "index_system_events_on_job_id"
+    t.index [ "organization_id", "occurred_at" ], name: "index_system_events_on_organization_id_and_occurred_at"
+    t.index [ "organization_id" ], name: "index_system_events_on_organization_id"
+    t.index [ "related_user_id" ], name: "index_system_events_on_related_user_id"
+    t.index [ "request_id" ], name: "index_system_events_on_request_id"
+    t.index [ "severity", "occurred_at" ], name: "index_system_events_on_severity_and_occurred_at"
+    t.index [ "source", "occurred_at" ], name: "index_system_events_on_source_and_occurred_at"
+    t.index [ "target_type", "target_id" ], name: "index_system_events_on_target_type_and_target_id"
+    t.index [ "trace_id" ], name: "index_system_events_on_trace_id"
+  end
+
   create_table "user_email_changes", force: :cascade do |t|
     t.datetime "cancelled_at"
     t.datetime "created_at", null: false
@@ -289,11 +327,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_134000) do
     t.index [ "suspended_at" ], name: "index_users_on_suspended_at"
   end
 
-  add_foreign_key "admin_audit_logs", "organizations"
-  add_foreign_key "admin_audit_logs", "users", column: "actor_user_id"
-  add_foreign_key "audit_events", "organizations"
-  add_foreign_key "audit_events", "users", column: "actor_user_id"
   add_foreign_key "drive_item_access_logs", "drive_items", on_delete: :nullify
+  add_foreign_key "drive_item_access_logs", "external_shares", on_delete: :nullify
   add_foreign_key "drive_item_access_logs", "organizations"
   add_foreign_key "drive_item_access_logs", "users"
   add_foreign_key "drive_items", "drive_items", column: "parent_id"
@@ -312,12 +347,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_134000) do
   add_foreign_key "flower_access_tokens", "users"
   add_foreign_key "flower_device_authorizations", "organizations"
   add_foreign_key "flower_device_authorizations", "users"
+  add_foreign_key "legacy_admin_audit_logs", "organizations"
+  add_foreign_key "legacy_admin_audit_logs", "users", column: "actor_user_id"
+  add_foreign_key "operation_logs", "external_shares", column: "actor_external_share_id", on_delete: :nullify
+  add_foreign_key "operation_logs", "organizations"
+  add_foreign_key "operation_logs", "users", column: "actor_user_id"
   add_foreign_key "organization_invites", "organizations"
   add_foreign_key "organization_invites", "users", column: "invited_by_user_id"
   add_foreign_key "organization_invites", "users", column: "stand_by_user_id"
   add_foreign_key "organization_invites", "users", column: "used_by_user_id"
   add_foreign_key "organization_memberships", "organizations"
   add_foreign_key "organization_memberships", "users"
+  add_foreign_key "system_events", "organizations"
+  add_foreign_key "system_events", "users", column: "related_user_id"
   add_foreign_key "user_email_changes", "users"
   add_foreign_key "users", "organizations"
 end

@@ -62,11 +62,11 @@ class Api::V1::Admin::BaseController < ApplicationController
     )
   end
 
-  def scoped_admin_audit_logs
-    return current_organization.admin_audit_logs if organization_path_scope?
-    return AdminAuditLog.all if system_admin?
+  def scoped_operation_logs
+    return current_organization.operation_logs if organization_path_scope?
+    return OperationLog.all if system_admin?
 
-    AdminAuditLog.where(
+    OperationLog.where(
       organization_id: current_user
         .organization_memberships
         .active
@@ -75,11 +75,27 @@ class Api::V1::Admin::BaseController < ApplicationController
     )
   end
 
-  def scoped_audit_events
-    return current_organization.audit_events if organization_path_scope?
-    return AuditEvent.all if system_admin?
+  alias_method :scoped_admin_audit_logs, :scoped_operation_logs
+  alias_method :scoped_audit_events, :scoped_operation_logs
 
-    AuditEvent.where(
+  def scoped_system_events
+    return current_organization.system_events if organization_path_scope?
+    return SystemEvent.all if system_admin?
+
+    SystemEvent.where(
+      organization_id: current_user
+        .organization_memberships
+        .active
+        .organization_admin
+        .select(:organization_id)
+    )
+  end
+
+  def scoped_file_access_logs
+    return current_organization.drive_item_access_logs if organization_path_scope?
+    return DriveItemAccessLog.all if system_admin?
+
+    DriveItemAccessLog.where(
       organization_id: current_user
         .organization_memberships
         .active
@@ -139,16 +155,6 @@ class Api::V1::Admin::BaseController < ApplicationController
   end
 
   def audit_admin_action!(action:, target:, organization:, changes: {})
-    AdminAuditLog.create!(
-      actor_user: current_user,
-      organization: organization,
-      action: action,
-      target_type: target.class.name,
-      target_id: target.id,
-      change_set: sanitize_audit_changes(changes),
-      ip_address: request.remote_ip,
-      user_agent: request.user_agent.to_s
-    )
     record_audit_event!(
       action: action,
       target: target,

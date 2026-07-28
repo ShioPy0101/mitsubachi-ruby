@@ -56,12 +56,11 @@ class Api::V1::Public::SharesController < ApplicationController
       current_user: nil,
       request: request,
       action: :download,
-      record_audit: false,
+      external_share: @external_share,
       client_type: "external_share"
     ).call
     return render_public_not_found unless result.success?
 
-    record_external_access!("external_share.file_downloaded", drive_item: drive_item, outcome: "success")
     result.headers.each { |key, value| response.headers[key] = value }
     response.headers["Cache-Control"] = "private, no-store"
     head result.status
@@ -77,12 +76,11 @@ class Api::V1::Public::SharesController < ApplicationController
       current_user: nil,
       request: request,
       action: :preview,
-      record_audit: false,
+      external_share: @external_share,
       client_type: "external_share"
     ).call
     return render_public_not_found unless result.success?
 
-    record_external_access!("external_share.file_previewed", drive_item: drive_item, outcome: "success")
     result.headers.each { |key, value| response.headers[key] = value }
     response.headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self' data:; media-src 'self'; frame-ancestors 'none'"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -101,10 +99,27 @@ class Api::V1::Public::SharesController < ApplicationController
     ).call
     return render_public_not_found unless result.success?
 
-    record_external_access!("external_share.bulk_downloaded", outcome: "success", metadata: { target_count: result.drive_items.size })
+    AuditLogs::BulkRecorder.new(
+      organization: @external_share.organization,
+      drive_items: result.drive_items,
+      action: :bulk_download,
+      request: request,
+      external_share: @external_share,
+      metadata: { client_type: "external_share", target_count: result.drive_items.size }
+    ).call
     send_zip_file(result)
   rescue StandardError => error
     result&.cleanup!
+    SystemEvents::Recorder.record!(
+      event_type: "storage.archive_delivery_failed",
+      severity: "error",
+      source: "storage",
+      organization: @external_share&.organization,
+      target: @external_share,
+      request: request,
+      error: error,
+      metadata: { operation: "external_share_bulk_download" }
+    )
     Rails.logger.error("[public.external_shares.bulk_download] failed request_id=#{request.request_id} error=#{error.class}: #{error.message}")
     render_public_not_found unless performed?
   end
@@ -237,11 +252,12 @@ class Api::V1::Public::SharesController < ApplicationController
   end
 
   def record_external_access!(action, drive_item: nil, outcome: "success", metadata: {})
-    AuditEvents::Recorder.record!(
-      action: action,
+    OperationLogs::Recorder.record!(
+      operation_type: action,
+      actor_external_share: @external_share,
       organization: @external_share.organization,
       target: @external_share,
-      outcome: outcome,
+      result: outcome,
       metadata: {
         external_share_id: @external_share.id,
         drive_item_id: drive_item&.id

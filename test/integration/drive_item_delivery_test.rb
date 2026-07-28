@@ -37,7 +37,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItemAccessLog.count", 1 do
-      assert_difference "AuditEvent.where(action: 'drive_item.preview').count", 1 do
+      assert_no_difference "AuditEvent.count" do
         get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
       end
     end
@@ -52,15 +52,9 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     assert_equal "203.0.113.10", log.ip_address
     assert_equal "DeliveryTest/1.0", log.user_agent
     assert_equal @user.organization, log.organization
-
-    event = AuditEvent.where(action: "drive_item.preview").order(:id).last
-    assert_equal @user, event.actor_user
-    assert_equal @user.organization, event.organization
-    assert_equal "DriveItem", event.target_type
-    assert_equal @drive_item.id, event.target_id
   end
 
-  test "同じ organization の別ユーザーによる preview は操作ユーザーを actor として記録する" do
+  test "同じ organization の別ユーザーによる preview は操作ユーザーのアクセスログを記録する" do
     viewer = User.create!(
       organization: @user.organization,
       email: "preview-viewer@example.com",
@@ -74,14 +68,15 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     )
     sign_in viewer
 
-    assert_difference "AuditEvent.where(action: 'drive_item.preview', actor_user: viewer).count", 1 do
-      get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+    assert_difference "DriveItemAccessLog.where(action: 'preview', user: viewer).count", 1 do
+      assert_no_difference "AuditEvent.count" do
+        get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+      end
     end
 
-    event = AuditEvent.where(action: "drive_item.preview", actor_user: viewer).order(:id).last
-    assert_equal @user.organization, event.organization
-    assert_equal "DriveItem", event.target_type
-    assert_equal @drive_item.id, event.target_id
+    log = DriveItemAccessLog.where(action: "preview", user: viewer).order(:id).last
+    assert_equal @user.organization, log.organization
+    assert_equal @drive_item, log.drive_item
   end
 
   test "download は attachment を返す" do
@@ -112,7 +107,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItemAccessLog.where(action: 'stream').count", 1 do
-      assert_no_difference "AuditEvent.where(action: 'drive_item.preview').count" do
+      assert_no_difference "AuditEvent.count" do
         get stream_api_v1_drive_item_url(@drive_item), headers: request_headers.merge("Range" => "bytes=0-10")
         assert_response :ok
         sign_in @user
@@ -155,7 +150,9 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
     FileUtils.rm_f(@drive_item.absolute_storage_path)
 
-    get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+    assert_difference "SystemEvent.where(event_type: 'storage.file_missing').count", 1 do
+      get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+    end
 
     assert_response :not_found
   end

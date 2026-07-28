@@ -126,7 +126,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
         saved = @drive_item.save
         if saved
-          record_drive_item_event!("drive_item.create", @drive_item)
+          record_drive_item_event!("drive_item.created", @drive_item)
           render json: drive_item_json(@drive_item), status: :created
         else
           render_validation_failed(@drive_item)
@@ -153,7 +153,7 @@ class Api::V1::DriveItemsController < ApplicationController
       @drive_item.content_type = nil
 
       if @drive_item.save
-        record_drive_item_event!("drive_item.create", @drive_item)
+        record_drive_item_event!("drive_item.created", @drive_item)
         render json: drive_item_json(@drive_item), status: :created
       else
         render_validation_failed(@drive_item)
@@ -184,7 +184,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
     if @drive_item.save
       record_drive_item_event!(
-        "drive_item.update",
+        "drive_item.updated",
         @drive_item,
         changes: changed_values(before, @drive_item.slice("name", "parent_id"))
       )
@@ -215,7 +215,7 @@ class Api::V1::DriveItemsController < ApplicationController
 
     if move_drive_item_tree!(@drive_item, destination_organization)
       record_drive_item_event!(
-        "drive_item.move",
+        "drive_item.moved",
         @drive_item,
         changes: changed_values(before, @drive_item.slice("parent_id", "organization_id")),
         metadata: { destination_organization_id: destination_organization.id }
@@ -235,7 +235,7 @@ class Api::V1::DriveItemsController < ApplicationController
     end
 
     @drive_item.reload
-    record_drive_item_event!("drive_item.delete", @drive_item, changes: { deleted_at: [ before, @drive_item.deleted_at ] })
+    record_drive_item_event!("drive_item.deleted", @drive_item, changes: { deleted_at: [ before, @drive_item.deleted_at ] })
     render json: { message: result.message }
   end
 
@@ -286,7 +286,7 @@ class Api::V1::DriveItemsController < ApplicationController
       raise ActiveRecord::Rollback unless move_drive_item_tree!(drive_item, destination_organization)
 
       record_drive_item_event!(
-        "drive_item.move",
+        "drive_item.moved",
         drive_item,
         changes: {
           parent_id: [ old_parent_id, new_parent_id ],
@@ -300,7 +300,7 @@ class Api::V1::DriveItemsController < ApplicationController
       )
     end
     record_bulk_drive_item_event!(
-      "drive_item.bulk_move",
+      "drive_item.bulk_moved",
       parent_id: new_parent_id,
       count: drive_items.size,
       destination_organization_id: destination_organization.id
@@ -316,7 +316,7 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    record_bulk_drive_item_event!("drive_item.bulk_delete") unless performed?
+    record_bulk_drive_item_event!("drive_item.bulk_deleted") unless performed?
 
     render json: { message: result.message } unless performed?
   end
@@ -335,7 +335,7 @@ class Api::V1::DriveItemsController < ApplicationController
     deleted_drive_items_for_bulk.each do |drive_item|
       return unless restore_drive_item!(drive_item)
     end
-    record_bulk_drive_item_event!("drive_item.bulk_restore") unless performed?
+    record_bulk_drive_item_event!("drive_item.bulk_restored") unless performed?
 
     render json: { message: "ファイルまたはフォルダを復元しました" } unless performed?
   end
@@ -355,6 +355,7 @@ class Api::V1::DriveItemsController < ApplicationController
     send_zip_file(result)
   rescue StandardError => error
     result&.cleanup!
+    record_archive_delivery_failure!(error, operation: "bulk_download")
     Rails.logger.error("[drive_items.bulk_download] failed to send zip error=#{error.class}: #{error.message}")
     return if performed?
 
@@ -407,7 +408,7 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    record_drive_item_event!("drive_item.purge", @drive_item, changes: { purged_at: [ nil, @drive_item.purged_at ] })
+    record_drive_item_event!("drive_item.purged", @drive_item, changes: { purged_at: [ nil, @drive_item.purged_at ] })
     render json: { message: result.message }
   end
 
@@ -422,7 +423,7 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    record_bulk_drive_item_event!("drive_item.bulk_purge", count: result.purged_count)
+    record_bulk_drive_item_event!("drive_item.bulk_purged", count: result.purged_count)
     render json: { message: result.message }
   end
 
@@ -562,7 +563,7 @@ class Api::V1::DriveItemsController < ApplicationController
     end
 
     result.items.each do |drive_item|
-      record_drive_item_event!("drive_item.restore", drive_item, changes: { deleted_at: [ drive_item.deleted_at, nil ] })
+      record_drive_item_event!("drive_item.restored", drive_item, changes: { deleted_at: [ drive_item.deleted_at, nil ] })
     end
     render json: { message: result.message, restored_item_ids: result.items.map(&:id) }
   end
@@ -843,7 +844,7 @@ class Api::V1::DriveItemsController < ApplicationController
       end
       committed = true
 
-      record_drive_item_event!("drive_item.replace_trashed", @drive_item, metadata: {
+      record_drive_item_event!("drive_item.replaced_from_trash", @drive_item, metadata: {
         source: "trash_duplicate_invalid_parent_resolution",
         old_drive_item_id: replace_target.id,
         new_drive_item_id: @drive_item.id,
@@ -1072,7 +1073,7 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    record_drive_item_event!("drive_item.restore", result.restore_target, changes: { deleted_at: [ before, nil ] })
+    record_drive_item_event!("drive_item.restored", result.restore_target, changes: { deleted_at: [ before, nil ] })
     result.restore_target.reload
   end
 
@@ -1128,9 +1129,6 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    # 実ファイルはNginxが配信するため、Rangeごとのstreamではなくpreview開始時に一度だけ記録する。
-    record_drive_item_event!("drive_item.preview", @drive_item) if action.to_sym == :preview
-
     result.headers.each do |key, value|
       response.headers[key] = value
     end
@@ -1143,20 +1141,14 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def record_bulk_download_access!(drive_items)
-    now = Time.current
-
-    drive_items.each do |drive_item|
-      DriveItemAccessLog.create!(
-        organization: current_organization,
-        user: current_user,
-        drive_item: drive_item,
-        action: "bulk_download",
-        occurred_at: now,
-        ip_address: request.remote_ip,
-        user_agent: request.user_agent,
-        request_id: request.request_id
-      )
-    end
+    AuditLogs::BulkRecorder.new(
+      organization: current_organization,
+      drive_items: drive_items,
+      action: :bulk_download,
+      request: request,
+      user: current_user,
+      metadata: { client_type: current_client_type }
+    ).call
   end
 
   def download_folder
@@ -1185,10 +1177,10 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    record_drive_item_event!("drive_item.download_folder", @drive_item, metadata: archive_metadata(result))
     send_zip_file(result)
   rescue StandardError => error
     result&.cleanup!
+    record_archive_delivery_failure!(error, operation: "download_folder")
     Rails.logger.error("[drive_items.folder_download] failed request_id=#{request.request_id} error=#{error.class}: #{error.message}")
     return if performed?
 
@@ -1201,6 +1193,20 @@ class Api::V1::DriveItemsController < ApplicationController
       directory_count: result.directory_count,
       total_size: result.total_size
     }
+  end
+
+  def record_archive_delivery_failure!(error, operation:)
+    SystemEvents::Recorder.record!(
+      event_type: "storage.archive_delivery_failed",
+      severity: "error",
+      source: "storage",
+      organization: current_organization,
+      related_user: current_user,
+      target: @drive_item,
+      request: request,
+      error: error,
+      metadata: { operation: operation }
+    )
   end
 
   def send_zip_file(result)

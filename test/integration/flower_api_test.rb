@@ -21,7 +21,7 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
 
   test "device authorization stores digests and does not persist plaintext codes" do
     assert_difference "FlowerDeviceAuthorization.count", 1 do
-      assert_difference "AuditEvent.where(action: 'flower.device_authorization.created').count", 1 do
+      assert_difference "OperationLog.where(operation_type: 'flower.device_authorization_created').count", 1 do
         post api_v1_flower_device_authorizations_url, params: device_params
       end
     end
@@ -50,7 +50,7 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
     assert_equal "authorization_pending", response.parsed_body.dig("error", "code")
 
     sign_in @user
-    assert_difference "AuditEvent.where(action: 'flower.authorization.approved').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'flower.authorization_approved').count", 1 do
       post approve_api_v1_flower_device_authorizations_url, params: {
         user_code: user_code.downcase.delete("-"),
         organization_id: @user.organization_id
@@ -61,7 +61,7 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
 
     travel 6.seconds do
       assert_difference "FlowerAccessToken.count", 1 do
-        assert_difference "AuditEvent.where(action: 'flower.token.issued').count", 1 do
+        assert_difference "OperationLog.where(operation_type: 'flower.token_issued').count", 1 do
           post api_v1_flower_tokens_url, params: token_params(device_code)
         end
       end
@@ -153,7 +153,7 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
     image = create_media_file(name: "still", extension: "png", content_type: "image/png", body: "image")
     create_media_file(name: "text", extension: "txt", content_type: "text/plain", body: "text")
 
-    assert_difference "AuditEvent.where(action: 'flower.drive_item.listed').count", 1 do
+    assert_no_difference "OperationLog.count" do
       get api_v1_flower_drive_items_url, params: { limit: 1 }, headers: bearer_headers(token)
     end
 
@@ -197,7 +197,7 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
     token = create_access_token(scopes: FlowerAccessToken::DEFAULT_SCOPES)
 
     assert_difference "DriveItemAccessLog.where(action: 'download').count", 1 do
-      assert_difference "AuditEvent.where(action: 'flower.file.downloaded').count", 1 do
+      assert_no_difference "OperationLog.where(operation_type: 'flower.file_downloaded').count" do
         get download_api_v1_flower_drive_item_url(@file), headers: bearer_headers(token).merge(request_headers)
       end
     end
@@ -218,7 +218,7 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
   test "flower download rejects boundary deleted directory suspended and missing scope" do
     token = create_access_token(scopes: FlowerAccessToken::DEFAULT_SCOPES)
 
-    assert_difference "AuditEvent.where(action: 'flower.download.denied', outcome: 'denied').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'flower.download_denied', result: 'denied').count", 1 do
       get download_api_v1_flower_drive_item_url(@other_file), headers: bearer_headers(token)
     end
     assert_response :not_found

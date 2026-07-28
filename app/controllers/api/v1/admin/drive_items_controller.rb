@@ -27,7 +27,7 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
     before = drive_item.deleted_at
     if drive_item.update(deleted_at: Time.current)
       audit_admin_action!(
-        action: "drive_item.delete",
+        action: "drive_item.deleted",
         target: drive_item,
         organization: drive_item.organization,
         changes: { deleted_at: [ before, drive_item.deleted_at ] }
@@ -63,7 +63,7 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
     end
 
     audit_admin_action!(
-      action: "drive_item.purge",
+      action: "drive_item.purged",
       target: drive_item,
       organization: drive_item.organization,
       changes: { purged_at: [ nil, drive_item.purged_at ] }
@@ -78,7 +78,7 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
     before = drive_item.deleted_at
     if drive_item.update(deleted_at: nil)
       audit_admin_action!(
-        action: "drive_item.restore",
+        action: "drive_item.restored",
         target: drive_item,
         organization: drive_item.organization,
         changes: { deleted_at: [ before, nil ] }
@@ -120,11 +120,6 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
       return
     end
 
-    audit_admin_action!(
-      action: "drive_item.#{action}",
-      target: drive_item,
-      organization: drive_item.organization
-    )
     result.headers.each do |key, value|
       response.headers[key] = value
     end

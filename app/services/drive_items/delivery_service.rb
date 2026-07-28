@@ -16,12 +16,13 @@ module DriveItems
       end
     end
 
-    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil, client_type: "web", record_audit: true)
+    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil, external_share: nil, client_type: "web", record_audit: true)
       @drive_item = drive_item
       @current_user = current_user
       @request = request
       @action = action.to_sym
       @audit_organization = audit_organization || drive_item.organization
+      @external_share = external_share
       @client_type = client_type
       @record_audit = record_audit
     end
@@ -39,6 +40,7 @@ module DriveItems
         audit_result = AuditLogs::Recorder.new(
           organization: @audit_organization,
           user: @current_user,
+          external_share: @external_share,
           drive_item: @drive_item,
           action: @action,
           request: @request,
@@ -58,6 +60,17 @@ module DriveItems
         "X-Mitsubachi-Updated-At" => @drive_item.updated_at.iso8601(3)
       )
     rescue StandardError => error
+      SystemEvents::Recorder.record!(
+        event_type: "storage.delivery_preparation_failed",
+        severity: "error",
+        source: "storage",
+        organization: @audit_organization,
+        related_user: @current_user,
+        target: @drive_item,
+        request: @request,
+        error: error,
+        metadata: { action: @action }
+      )
       Rails.logger.error(
         "[drive_items.delivery_service] failed drive_item_id=#{@drive_item.id} action=#{@action} " \
         "request_id=#{@request.request_id} error=#{error.class}: #{error.message}"
@@ -68,6 +81,16 @@ module DriveItems
     private
 
     def invalid_delivery(reason)
+      SystemEvents::Recorder.record!(
+        event_type: reason == "missing_file" ? "storage.file_missing" : "storage.invalid_key_detected",
+        severity: reason == "missing_file" ? "error" : "warning",
+        source: "storage",
+        organization: @audit_organization,
+        related_user: @current_user,
+        target: @drive_item,
+        request: @request,
+        metadata: { action: @action }
+      )
       Rails.logger.warn(
         "[drive_items.delivery_service] denied reason=#{reason} drive_item_id=#{@drive_item.id} " \
         "organization_id=#{@audit_organization.id} user_id=#{@current_user&.id} request_id=#{@request.request_id}"

@@ -18,11 +18,11 @@ class Api::V1::Admin::AuditEventsController < Api::V1::Admin::BaseController
   def apply_filters(scope)
     scope = scope.where(actor_user_id: params[:actor_user_id]) if params[:actor_user_id].present?
     scope = scope.where(organization_id: params[:organization_id]) if system_admin? && params[:organization_id].present?
-    scope = scope.where(action: request.query_parameters["action"]) if request.query_parameters["action"].present?
-    scope = scope.where(outcome: params[:outcome]) if params[:outcome].present? && AuditEvent::OUTCOMES.include?(params[:outcome])
+    scope = scope.where(operation_type: request.query_parameters["action"]) if request.query_parameters["action"].present?
+    scope = scope.where(result: params[:outcome]) if params[:outcome].present? && OperationLog::RESULTS.include?(params[:outcome])
     scope = scope.where(target_type: params[:target_type]) if params[:target_type].present?
-    scope = scope.where("audit_events.occurred_at >= ?", Time.zone.parse(params[:occurred_from])) if params[:occurred_from].present?
-    scope = scope.where("audit_events.occurred_at <= ?", Time.zone.parse(params[:occurred_to])) if params[:occurred_to].present?
+    scope = scope.where("operation_logs.occurred_at >= ?", Time.zone.parse(params[:occurred_from])) if params[:occurred_from].present?
+    scope = scope.where("operation_logs.occurred_at <= ?", Time.zone.parse(params[:occurred_to])) if params[:occurred_to].present?
     scope
   rescue ArgumentError
     scope.none

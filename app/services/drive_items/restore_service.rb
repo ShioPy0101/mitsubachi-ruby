@@ -42,6 +42,14 @@ module DriveItems
         Result.success(message: "ファイルまたはフォルダを復元しました", restore_target:, items:)
       end
     rescue ActiveRecord::ActiveRecordError => error
+      SystemEvents::Recorder.record!(
+        event_type: "storage.restore_failed",
+        severity: "error",
+        source: "storage",
+        organization: @drive_item.organization,
+        target: @drive_item,
+        error: error
+      )
       Rails.logger.error("[drive_items.restore] failed error=#{error.class}: #{error.message}")
       Result.failure(:unprocessable_content, "復元できませんでした", restore_target: @drive_item)
     end

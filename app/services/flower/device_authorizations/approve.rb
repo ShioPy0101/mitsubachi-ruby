@@ -35,7 +35,7 @@ module Flower
             organization_id: @organization_id,
             approved_at: Time.current
           )
-          audit!("flower.authorization.approved", authorization, "success")
+          audit!("flower.authorization_approved", authorization, "success")
           Result.success(authorization)
         end
       end
@@ -61,7 +61,7 @@ module Flower
       end
 
       def failure(status, code, message, authorization = nil)
-        audit!("flower.authorization.approved", authorization, "denied", reason: code) if authorization
+        audit!("flower.authorization_approved", authorization, "denied", reason: code) if authorization
         Result.failure(status:, error_code: code, message:, authorization:)
       end
 

@@ -17,16 +17,16 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     )
     deliver_magic_link(result)
     record_audit_event!(
-      action: "auth.registration_link.create",
+      action: "auth.registration_link_requested",
       actor_user: result.user,
       organization: result.organization,
       target: result.organization_invite,
-      metadata: { email: result.email }
+      metadata: { email_identifier: OperationLogs::EmailIdentifier.call(result.email) }
     )
 
     render json: { message: "認証リンクを送信しました" }, status: :ok
   rescue Auth::MagicLinks::Failure => error
-    record_auth_failure!("auth.registration_link.create", email: normalize_email(params[:email]), error: error)
+    record_auth_failure!("auth.registration_link_requested", email: normalize_email(params[:email]), error: error)
     render_error(error)
   end
 
@@ -34,23 +34,23 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     result = auth_magic_links.request_login(email: params[:email])
     deliver_magic_link(result)
     record_audit_event!(
-      action: "auth.login_link.create",
+      action: "auth.login_link_requested",
       actor_user: result.user,
       organization: result.organization,
       target: result.user,
-      metadata: { email: result.email }
+      metadata: { email_identifier: OperationLogs::EmailIdentifier.call(result.email) }
     )
 
     render json: { message: "認証リンクを送信しました" }, status: :ok
   rescue Auth::MagicLinks::Failure => error
-    record_auth_failure!("auth.login_link.create", email: normalize_email(params[:email]), error: error)
+    record_auth_failure!("auth.login_link_requested", email: normalize_email(params[:email]), error: error)
     render_error(error)
   end
 
   def verify
     render_verified_user(auth_magic_links.verify(params[:token]))
   rescue Auth::MagicLinks::Failure => error
-    record_auth_failure!("auth.verify", error: error)
+    record_auth_failure!("auth.verification_failed", error: error)
     render_error(error)
   end
 
@@ -67,7 +67,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   def verify_for_purpose!(purpose)
     render_verified_user(auth_magic_links.verify(params[:token], expected_purpose: purpose))
   rescue Auth::MagicLinks::Failure => error
-    record_auth_failure!("auth.#{purpose}.verify", error: error)
+    record_auth_failure!("auth.#{purpose}_verification_failed", error: error)
     render_error(error)
   end
 
@@ -82,7 +82,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   def render_verified_user(result)
     create_authenticated_session!(result.user, client_type: "web")
     record_audit_event!(
-      action: "auth.#{result.purpose}.verify",
+      action: result.purpose == "login" ? "auth.login_succeeded" : "auth.registration_verified",
       actor_user: result.user,
       organization: result.organization_invite&.organization || login_organization_for(result.user),
       target: result.user
@@ -107,7 +107,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       action: action,
       outcome: "failure",
       metadata: {
-        email: email,
+        email_identifier: OperationLogs::EmailIdentifier.call(email),
         code: error.code,
         status: error.status,
         reason: error.message

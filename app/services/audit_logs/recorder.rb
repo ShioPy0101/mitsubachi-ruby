@@ -12,9 +12,10 @@ module AuditLogs
 
     STREAM_DEDUP_WINDOW = 5.minutes
 
-    def initialize(organization:, user:, drive_item:, action:, request:, metadata: {})
+    def initialize(organization:, user: nil, external_share: nil, drive_item:, action:, request:, metadata: {})
       @organization = organization
       @user = user
+      @external_share = external_share
       @drive_item = drive_item
       @action = action.to_s
       @request = request
@@ -26,7 +27,9 @@ module AuditLogs
 
       DriveItemAccessLog.create!(
         organization: @organization,
+        actor_kind: actor_kind,
         user: @user,
+        external_share: @external_share,
         drive_item: @drive_item,
         action: @action,
         occurred_at: Time.current,
@@ -39,7 +42,7 @@ module AuditLogs
       Result.success
     rescue StandardError => error
       Rails.logger.error(
-        "[audit_logs.recorder] failed organization_id=#{@organization.id} user_id=#{@user.id} " \
+        "[audit_logs.recorder] failed organization_id=#{@organization.id} user_id=#{@user&.id} " \
         "drive_item_id=#{@drive_item.id} action=#{@action} request_id=#{@request.request_id} " \
         "error=#{error.class}: #{error.message}"
       )
@@ -57,6 +60,13 @@ module AuditLogs
         drive_item: @drive_item,
         since: STREAM_DEDUP_WINDOW.ago
       ).exists?
+    end
+
+    def actor_kind
+      return "user" if @user.present?
+      return "external_share" if @external_share.present?
+
+      "anonymous"
     end
 
     def metadata

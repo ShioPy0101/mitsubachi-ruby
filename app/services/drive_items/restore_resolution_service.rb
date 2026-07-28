@@ -51,6 +51,15 @@ module DriveItems
 
       Result.success(items: restored_items)
     rescue ActiveRecord::ActiveRecordError => error
+      SystemEvents::Recorder.record!(
+        event_type: "application.restore_resolution_failed",
+        severity: "error",
+        source: "application",
+        organization: @organization,
+        related_user: @actor_user,
+        error: error,
+        metadata: { drive_item_ids: @items.map { |item| item[:item_id] } }
+      )
       Rails.logger.error("[drive_items.restore_resolution] failed error=#{error.class}: #{error.message}")
       Result.failure(:unprocessable_content, "復元できませんでした")
     end

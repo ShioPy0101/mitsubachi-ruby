@@ -128,7 +128,7 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     sign_in @system_admin
 
     assert_difference "Organization.count", 1 do
-      assert_difference "AdminAuditLog.where(action: 'organization.create').count", 1 do
+      assert_difference "OperationLog.where(operation_type: 'organization.created').count", 1 do
         post api_v1_admin_organizations_url, params: {
           organization: { name: "Acme Inc." }
         }
@@ -152,8 +152,8 @@ class AdminApiTest < ActionDispatch::IntegrationTest
       data
     )
 
-    audit_log = AdminAuditLog.find_by!(
-      action: "organization.create",
+    audit_log = OperationLog.find_by!(
+      operation_type: "organization.created",
       target_type: "Organization",
       target_id: organization.id
     )
@@ -178,8 +178,8 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     sign_in @system_admin
 
     assert_difference "OrganizationInvite.count", 1 do
-      assert_difference "AdminAuditLog.where(action: 'organization_invite.create').count", 1 do
-        assert_difference "AuditEvent.where(action: 'organization_invite.create').count", 1 do
+      assert_difference "OperationLog.where(operation_type: 'organization.invitation_created').count", 1 do
+        assert_no_difference "LegacyAdminAuditLog.count" do
           post api_v1_admin_organization_invites_url, params: {
             organization_invite: {
               organization_id: @other_organization.id,
@@ -257,8 +257,10 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     create_user(role: :system_admin, organization: @other_organization, email: "second-system@example.com")
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'user.suspend').count", 1 do
-      patch suspend_api_v1_admin_user_url(@managed_user)
+    assert_no_difference "LegacyAdminAuditLog.count" do
+      assert_difference "OperationLog.where(operation_type: 'user.suspended').count", 1 do
+        patch suspend_api_v1_admin_user_url(@managed_user)
+      end
     end
 
     assert_response :ok
@@ -266,8 +268,10 @@ class AdminApiTest < ActionDispatch::IntegrationTest
 
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'user.unsuspend').count", 1 do
-      patch unsuspend_api_v1_admin_user_url(@managed_user)
+    assert_no_difference "LegacyAdminAuditLog.count" do
+      assert_difference "OperationLog.where(operation_type: 'user.unsuspended').count", 1 do
+        patch unsuspend_api_v1_admin_user_url(@managed_user)
+      end
     end
 
     assert_response :ok
@@ -277,8 +281,10 @@ class AdminApiTest < ActionDispatch::IntegrationTest
   test "DriveItemの削除と復元で監査ログが作成される" do
     sign_in @organization_admin
 
-    assert_difference "AdminAuditLog.where(action: 'drive_item.delete').count", 1 do
-      delete api_v1_admin_drive_item_url(@drive_item)
+    assert_no_difference "LegacyAdminAuditLog.count" do
+      assert_difference "OperationLog.where(operation_type: 'drive_item.deleted').count", 1 do
+        delete api_v1_admin_drive_item_url(@drive_item)
+      end
     end
 
     assert_response :ok
@@ -286,8 +292,10 @@ class AdminApiTest < ActionDispatch::IntegrationTest
 
     sign_in @organization_admin
 
-    assert_difference "AdminAuditLog.where(action: 'drive_item.restore').count", 1 do
-      patch restore_api_v1_admin_drive_item_url(@drive_item)
+    assert_no_difference "LegacyAdminAuditLog.count" do
+      assert_difference "OperationLog.where(operation_type: 'drive_item.restored').count", 1 do
+        patch restore_api_v1_admin_drive_item_url(@drive_item)
+      end
     end
 
     assert_response :ok
@@ -338,7 +346,7 @@ class AdminApiTest < ActionDispatch::IntegrationTest
   test "Organization更新で監査ログが作成される" do
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'organization.update').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'organization.settings_updated').count", 1 do
       patch api_v1_admin_organization_url(@organization), params: {
         organization: { name: "Updated Organization" }
       }
@@ -349,19 +357,25 @@ class AdminApiTest < ActionDispatch::IntegrationTest
   end
 
   test "organization_admin は自組織の監査ログだけを閲覧できる" do
-    own_log = AdminAuditLog.create!(
+    own_log = OperationLog.create!(
+      actor_kind: "user",
       actor_user: @organization_admin,
       organization: @organization,
-      action: "user.update",
+      operation_type: "user.updated",
+      result: "success",
       target_type: "User",
-      target_id: @managed_user.id
+      target_id: @managed_user.id,
+      occurred_at: Time.current
     )
-    other_log = AdminAuditLog.create!(
+    other_log = OperationLog.create!(
+      actor_kind: "user",
       actor_user: @system_admin,
       organization: @other_organization,
-      action: "user.update",
+      operation_type: "user.updated",
+      result: "success",
       target_type: "User",
-      target_id: @other_org_user.id
+      target_id: @other_org_user.id,
+      occurred_at: Time.current
     )
 
     sign_in @organization_admin
@@ -377,6 +391,57 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     get api_v1_admin_audit_log_url(other_log)
 
     assert_response :not_found
+  end
+
+  test "新ログAPIはorganization境界と管理権限を維持する" do
+    own_operation = OperationLogs::Recorder.record!(
+      operation_type: "user.updated", actor_user: @managed_user, organization: @organization
+    )
+    other_operation = OperationLogs::Recorder.record!(
+      operation_type: "user.updated", actor_user: @other_org_user, organization: @other_organization
+    )
+    access = DriveItemAccessLog.create!(
+      actor_kind: "user", user: @managed_user, organization: @organization, drive_item: @drive_item,
+      action: "preview", occurred_at: Time.current, ip_address: "192.0.2.1", request_id: "access-request",
+      metadata: { filename: @drive_item.filename }
+    )
+
+    sign_in @organization_admin
+    get api_v1_organization_admin_operation_logs_url(@organization), params: { per_page: 100 }
+    assert_response :ok
+    assert_includes response.parsed_body.fetch("data").pluck("id"), own_operation.id
+    assert_not_includes response.parsed_body.fetch("data").pluck("id"), other_operation.id
+
+    sign_in @organization_admin
+    get api_v1_organization_admin_drive_item_access_logs_url(@organization), params: { action: "preview" }
+    assert_response :ok
+    assert_includes response.parsed_body.fetch("data").pluck("id"), access.id
+
+    sign_in @member
+    get api_v1_organization_admin_operation_logs_url(@organization)
+    assert_response :forbidden
+  end
+
+  test "system adminだけが全system event詳細を閲覧できる" do
+    event = SystemEvents::Recorder.record!(
+      event_type: "storage.file_missing", severity: "error", source: "storage",
+      organization: @organization, error: StandardError.new("internal detail"), metadata: { path: "/secret/file" }
+    )
+
+    sign_in @organization_admin
+    get api_v1_organization_admin_system_event_url(@organization, event)
+    assert_response :ok
+    assert_nil response.parsed_body.dig("data", "error_message")
+    assert_equal({}, response.parsed_body.dig("data", "metadata"))
+
+    sign_in @system_admin
+    get api_v1_system_admin_system_event_url(event)
+    assert_response :ok
+    assert_equal "internal detail", response.parsed_body.dig("data", "error_message")
+
+    sign_in @member
+    get api_v1_system_admin_system_events_url
+    assert_response :forbidden
   end
 
   test "system_admin は全般監査イベントを閲覧できる" do
@@ -459,11 +524,11 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_equal [ @other_organization.id ], events.pluck("organization_id").compact.uniq
   end
 
-  test "一般ユーザーは他ユーザーの preview を含む管理者用監査イベントAPIを利用できない" do
+  test "一般ユーザーは管理者用監査イベントAPIを利用できない" do
     AuditEvent.create!(
       organization: @organization,
       actor_user: @organization_admin,
-      action: "drive_item.preview",
+      action: "drive_item.delete",
       target_type: "DriveItem",
       target_id: @drive_item.id,
       outcome: "success",
@@ -507,36 +572,74 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "organization_admin の全般監査イベントには自組織の別ユーザーによる preview が表示される" do
-    preview_event = AuditEvent.create!(
+  test "organization_admin は自組織の別ユーザーによるファイルアクセス履歴だけを閲覧できる" do
+    own_access_log = DriveItemAccessLog.create!(
       organization: @organization,
-      actor_user: @managed_user,
-      action: "drive_item.preview",
-      target_type: "DriveItem",
-      target_id: @drive_item.id,
-      outcome: "success",
-      occurred_at: Time.current
+      user: @managed_user,
+      drive_item: @drive_item,
+      action: "preview",
+      occurred_at: Time.current,
+      ip_address: "203.0.113.20",
+      user_agent: "AdminApiTest/1.0",
+      request_id: "own-preview"
     )
-    other_organization_event = AuditEvent.create!(
+    other_access_log = DriveItemAccessLog.create!(
       organization: @other_organization,
-      actor_user: @other_org_user,
-      action: "drive_item.preview",
-      target_type: "DriveItem",
-      target_id: @other_drive_item.id,
-      outcome: "success",
-      occurred_at: Time.current
+      user: @other_org_user,
+      drive_item: @other_drive_item,
+      action: "preview",
+      occurred_at: Time.current,
+      ip_address: "203.0.113.21",
+      user_agent: "AdminApiTest/1.0",
+      request_id: "other-preview"
     )
 
     sign_in @organization_admin
-    get api_v1_admin_audit_events_url, params: { action: "drive_item.preview", per_page: 100 }
+    get api_v1_organization_admin_file_access_logs_url(@organization), params: { action: "preview", per_page: 100 }
 
     assert_response :ok
-    events = response.parsed_body.fetch("data")
-    ids = events.pluck("id")
-    assert_includes ids, preview_event.id
-    assert_not_includes ids, other_organization_event.id
-    serialized_event = events.find { |event| event.fetch("id") == preview_event.id }
-    assert_equal @managed_user.id, serialized_event.fetch("actor_user_id")
+    access_logs = response.parsed_body.fetch("data")
+    ids = access_logs.pluck("id")
+    assert_includes ids, own_access_log.id
+    assert_not_includes ids, other_access_log.id
+    serialized_log = access_logs.find { |access_log| access_log.fetch("id") == own_access_log.id }
+    assert_equal @managed_user.id, serialized_log.fetch("user_id")
+
+    sign_in @organization_admin
+    get api_v1_organization_admin_file_access_log_url(@organization, other_access_log)
+
+    assert_response :not_found
+  end
+
+  test "system_admin は全Organizationのファイルアクセス履歴を閲覧できる" do
+    own_access_log = create_access_log(
+      organization: @organization,
+      user: @managed_user,
+      drive_item: @drive_item,
+      request_id: "system-own-preview"
+    )
+    other_access_log = create_access_log(
+      organization: @other_organization,
+      user: @other_org_user,
+      drive_item: @other_drive_item,
+      request_id: "system-other-preview"
+    )
+
+    sign_in @system_admin
+    get api_v1_admin_file_access_logs_url, params: { per_page: 100 }
+
+    assert_response :ok
+    ids = response.parsed_body.fetch("data").pluck("id")
+    assert_includes ids, own_access_log.id
+    assert_includes ids, other_access_log.id
+  end
+
+  test "一般ユーザーは管理者用ファイルアクセス履歴APIを利用できない" do
+    sign_in @managed_user
+
+    get api_v1_admin_file_access_logs_url
+
+    assert_response :forbidden
   end
 
   private
@@ -555,5 +658,18 @@ class AdminApiTest < ActionDispatch::IntegrationTest
       status: :active
     )
     user
+  end
+
+  def create_access_log(organization:, user:, drive_item:, request_id:)
+    DriveItemAccessLog.create!(
+      organization: organization,
+      user: user,
+      drive_item: drive_item,
+      action: "preview",
+      occurred_at: Time.current,
+      ip_address: "203.0.113.30",
+      user_agent: "AdminApiTest/1.0",
+      request_id: request_id
+    )
   end
 end

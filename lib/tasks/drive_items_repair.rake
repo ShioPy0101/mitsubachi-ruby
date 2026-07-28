@@ -39,6 +39,16 @@ namespace :mitsubachi do
       "[mitsubachi:repair_trashed_descendants] dry_run=#{dry_run} " \
       "inspected_roots=#{inspected_roots} repairable_items=#{repaired_items}"
     )
+    SystemEvents::Recorder.record!(
+      event_type: "maintenance.drive_items_repair_completed",
+      severity: "info",
+      source: "maintenance",
+      metadata: {
+        dry_run: dry_run,
+        inspected_roots: inspected_roots,
+        repairable_items: repaired_items
+      }
+    )
     puts "dry_run=#{dry_run} inspected_roots=#{inspected_roots} repairable_items=#{repaired_items}"
   end
 end

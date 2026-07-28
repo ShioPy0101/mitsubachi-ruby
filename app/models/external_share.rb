@@ -1,4 +1,5 @@
 class ExternalShare < ApplicationRecord
+  has_many :drive_item_access_logs, dependent: :nullify
   has_secure_password validations: false
 
   belongs_to :organization
