@@ -13,6 +13,7 @@ class FinalizeLogStorage < ActiveRecord::Migration[8.0]
   def up
     add_column :drive_item_access_logs, :batch_id, :string
     add_index :drive_item_access_logs, :batch_id
+    normalize_existing_operation_log_actors!
     add_check_constraint :operation_logs, ACTOR_CHECK, name: "operation_logs_actor_consistency"
     add_check_constraint :drive_item_access_logs, ACCESS_ACTOR_CHECK, name: "drive_item_access_logs_actor_consistency"
     migrate_legacy_admin_logs!
@@ -24,6 +25,28 @@ class FinalizeLogStorage < ActiveRecord::Migration[8.0]
   end
 
   private
+
+  # actor_kind追加前から存在するuser操作ログにはdefaultのanonymousが入るため、制約追加前に正規化する。
+  def normalize_existing_operation_log_actors!
+    ambiguous_count = select_value(<<~SQL.squish).to_i
+      SELECT COUNT(*)
+      FROM operation_logs
+      WHERE actor_user_id IS NOT NULL AND actor_external_share_id IS NOT NULL
+    SQL
+    if ambiguous_count.positive?
+      raise ActiveRecord::MigrationError,
+            "operation_logs contains #{ambiguous_count} rows with both user and external-share actors"
+    end
+
+    execute <<~SQL.squish
+      UPDATE operation_logs
+      SET actor_kind = CASE
+        WHEN actor_user_id IS NOT NULL THEN 'user'
+        WHEN actor_external_share_id IS NOT NULL THEN 'external_share'
+        ELSE 'anonymous'
+      END
+    SQL
+  end
 
   # drop前に全行を既存行または新規行へ対応付け、欠損時はmigration自体を中止する。
   def migrate_legacy_admin_logs!

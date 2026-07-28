@@ -20,21 +20,7 @@ namespace :deployment do
   desc "organization membership移行後の整合性を検証してJSONへ保存する"
   task verify_migration: :environment do
     output = required_output_path!
-    duplicate_memberships = OrganizationMembership.group(:user_id, :organization_id).having("COUNT(*) > 1").count.length
-    users_without_membership = User.where.not(role: User.roles[:system_admin]).where.not(
-      id: OrganizationMembership.active.select(:user_id)
-    ).count
-    organization_mismatches = User.where.not(organization_id: nil).where.not(
-      id: OrganizationMembership.select(:user_id).where("organization_memberships.organization_id = users.organization_id")
-    ).count
-    payload = {
-      valid: users_without_membership.zero? && duplicate_memberships.zero? && organization_mismatches.zero?,
-      users: User.count,
-      memberships: OrganizationMembership.count,
-      users_without_membership:,
-      duplicate_memberships:,
-      organization_mismatches:
-    }
+    payload = Deployment::MigrationVerifier.new.call
     write_private_json!(output, payload)
     abort "migration verification failed" unless payload[:valid]
   end
