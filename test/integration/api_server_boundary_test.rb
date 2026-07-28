@@ -207,7 +207,7 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     get api_health_url
 
     assert_response :ok
-    assert_equal({ "status" => "ok" }, response.parsed_body)
+    assert_equal({ "status" => "ready" }, response.parsed_body)
 
     get api_health_live_url
 
@@ -217,7 +217,7 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     get api_health_ready_url
 
     assert_response :ok
-    assert_equal({ "status" => "ok" }, response.parsed_body)
+    assert_equal({ "status" => "ready" }, response.parsed_body)
   end
 
   private

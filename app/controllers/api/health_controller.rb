@@ -7,7 +7,7 @@ class Api::HealthController < ApplicationController
 
   def ready
     ActiveRecord::Base.connection.execute("SELECT 1")
-    render json: { status: "ok" }
+    render json: { status: "ready" }
   rescue ActiveRecord::ActiveRecordError
     render json: { status: "unavailable" }, status: :service_unavailable
   end
