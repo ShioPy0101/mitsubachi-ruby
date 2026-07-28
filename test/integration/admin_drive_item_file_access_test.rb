@@ -135,7 +135,7 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
     )
 
     assert File.exist?(storage_path)
-    assert_difference "AdminAuditLog.where(action: 'drive_item.purge').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'drive_item.purged').count", 1 do
       assert_no_difference "DriveItemAccessLog.count" do
         delete purge_api_v1_admin_drive_item_url(@deleted_file)
       end

@@ -34,7 +34,7 @@ class GroupsControllerTest < ActionDispatch::IntegrationTest
     @user.active_membership_for(@organization).update!(role: :organization_admin)
     sign_in @user
 
-    assert_difference "AuditEvent.where(action: 'group.update').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'organization.settings_updated').count", 1 do
       patch api_v1_group_url, params: { group: { name: "New group", description: "Updated" } }
     end
 

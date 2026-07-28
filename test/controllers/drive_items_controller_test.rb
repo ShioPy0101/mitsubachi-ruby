@@ -106,7 +106,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "削除済みアイテムを restore できる" do
     sign_in @user
 
-    assert_difference "AuditEvent.where(action: 'drive_item.restore').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'drive_item.restored').count", 1 do
       post restore_api_v1_drive_item_url(@deleted_folder)
     end
 
@@ -859,7 +859,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     storage_path = deleted_file.absolute_storage_path
 
     assert_no_difference "DriveItem.count" do
-      assert_difference "AuditEvent.where(action: 'drive_item.purge').count", 1 do
+      assert_difference "OperationLog.where(operation_type: 'drive_item.purged').count", 1 do
         delete purge_api_v1_drive_item_url(deleted_file)
       end
     end
@@ -929,7 +929,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
   test "update でルート直下へ移動できる" do
     sign_in @user
 
-    assert_difference "AuditEvent.where(action: 'drive_item.update').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'drive_item.updated').count", 1 do
       patch api_v1_drive_item_url(@child_folder), params: { parent_id: "" }
     end
 
@@ -990,7 +990,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
     destination = create_directory(name: "destination")
 
-    assert_difference "AuditEvent.where(action: 'drive_item.move').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'drive_item.moved').count", 1 do
       patch move_api_v1_drive_item_url(@file), params: { parent_id: destination.id }
     end
 
@@ -998,7 +998,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal destination.id, @file.reload.parent_id
     assert_equal @file.id, response.parsed_body.dig("data", "id")
     assert response.parsed_body.fetch("request_id").present?
-    event = AuditEvent.where(action: "drive_item.move").last
+    event = OperationLog.where(operation_type: "drive_item.moved").last
     assert_equal [ @root.id, destination.id ], event.change_set["parent_id"]
   end
 
@@ -1238,7 +1238,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItem.count", 1 do
-      assert_difference "AuditEvent.where(action: 'drive_item.create').count", 1 do
+      assert_difference "OperationLog.where(operation_type: 'drive_item.created').count", 1 do
         post api_v1_drive_items_url, params: {
         name: @deleted_report.name,
         item_type: "file",
