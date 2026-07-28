@@ -33,7 +33,9 @@ class Api::V1::Admin::OperationLogsController < Api::V1::Admin::BaseController
 
   def operation_log_json(log)
     {
-      id: log.id, organization_id: log.organization_id, actor: actor_json(log),
+      id: log.id, organization_id: log.organization_id,
+      organization_name: log.organization&.name || log.metadata["organization_name"],
+      actor: actor_json(log),
       operation_type: log.operation_type, result: log.result, target: target_json(log),
       change_set: log.change_set, metadata: log.metadata,
       ip_address: log.ip_address, user_agent: log.user_agent, request_id: log.request_id,
@@ -47,13 +49,17 @@ class Api::V1::Admin::OperationLogsController < Api::V1::Admin::BaseController
   end
 
   def actor_display_name(log, actor)
-    return log.metadata["actor_display_name"] if actor.nil?
+    return log.metadata["actor_display_name"] || log.metadata["actor_email"] if actor.nil?
     return actor.display_name.presence || actor.email if log.actor_kind == "user"
 
     "外部共有 ##{actor.id}"
   end
 
   def target_json(log)
-    { type: log.target_type, id: log.target_id, display_name: log.metadata["filename"] || log.metadata["name"] }
+    {
+      type: log.target_type || log.metadata["target_type"],
+      id: log.target_id || log.metadata["target_id"],
+      display_name: log.metadata["target_name"] || log.metadata["filename"] || log.metadata["name"]
+    }
   end
 end
