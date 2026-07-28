@@ -1,7 +1,7 @@
 module Deployment
   class MigrationVerifier
-    def call(now: Time.current)
-      pending_user_ids = pending_registration_user_ids(now:)
+    def call
+      pending_user_ids = pending_registration_user_ids
       users_requiring_membership = User.where.not(role: User.roles[:system_admin]).where.not(id: pending_user_ids)
       users_without_membership = users_requiring_membership.where.not(
         id: OrganizationMembership.active.select(:user_id)
@@ -24,14 +24,10 @@ module Deployment
 
     private
 
-    def pending_registration_user_ids(now:)
+    def pending_registration_user_ids
       OrganizationInvite
-        .joins(:email_authentications)
         .where(organization_invites: { used_at: nil })
         .where.not(organization_invites: { stand_by_user_id: nil })
-        .where("organization_invites.stand_by_at > ?", Auth::MagicLinks::REGISTRATION_STAND_BY_WINDOW.ago(now))
-        .where(email_authentications: { purpose: "registration", used_at: nil })
-        .where("email_authentications.expires_at > ?", now)
         .select(:stand_by_user_id)
         .distinct
     end

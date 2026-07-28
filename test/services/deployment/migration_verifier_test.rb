@@ -1,7 +1,7 @@
 require "test_helper"
 
 class Deployment::MigrationVerifierTest < ActiveSupport::TestCase
-  test "有効なメール認証待ちユーザーはmembership不整合として扱わない" do
+  test "未使用inviteのメール認証待ちユーザーはmembership不整合として扱わない" do
     organization = organizations(:one)
     user = User.create!(
       organization:,
@@ -15,7 +15,7 @@ class Deployment::MigrationVerifierTest < ActiveSupport::TestCase
       stand_by_at: Time.current,
       stand_by_user: user
     )
-    authentication = EmailAuthentication.create!(
+    EmailAuthentication.create!(
       organization_invite: invite,
       email: user.email,
       token: SecureRandom.hex(32),
@@ -29,10 +29,10 @@ class Deployment::MigrationVerifierTest < ActiveSupport::TestCase
     assert_equal 0, report[:users_without_membership]
     assert_equal 0, report[:organization_mismatches]
 
-    authentication.update!(expires_at: 1.minute.ago)
-    expired_report = Deployment::MigrationVerifier.new.call
-    refute expired_report[:valid]
-    assert_equal 1, expired_report[:users_without_membership]
-    assert_equal 1, expired_report[:organization_mismatches]
+    invite.update!(stand_by_user: nil, stand_by_at: nil)
+    joined_user_report = Deployment::MigrationVerifier.new.call
+    refute joined_user_report[:valid]
+    assert_equal 1, joined_user_report[:users_without_membership]
+    assert_equal 1, joined_user_report[:organization_mismatches]
   end
 end
