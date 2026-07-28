@@ -1943,6 +1943,68 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Paginated"
+  /api/v1/admin/file_access_logs:
+    get:
+      operationId: getApiV1AdminFileAccessLogs
+      tags: [Admin]
+      summary: List file access history separately from audit events.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: organization_id
+          in: query
+          schema:
+            type: integer
+        - name: drive_item_id
+          in: query
+          schema:
+            type: integer
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [preview, stream, download, bulk_download, download_folder]
+        - name: occurred_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: occurred_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          $ref: "#/components/responses/Paginated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/admin/file_access_logs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1AdminFileAccessLog
+      tags: [Admin]
+      summary: Return one file access history entry.
+      responses:
+        "200":
+          description: File access history entry.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/admin/audit_events/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -2937,6 +2999,35 @@ paths:
       responses:
         "200":
           description: Audit events.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/file_access_logs:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationAdminFileAccessLogs
+      tags: [Admin]
+      summary: List file access history for an explicit organization.
+      responses:
+        "200":
+          description: File access history.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/organizations/{organization_id}/admin/file_access_logs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationAdminFileAccessLog
+      tags: [Admin]
+      summary: Return one file access history entry for an explicit organization.
+      responses:
+        "200":
+          description: File access history entry.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":

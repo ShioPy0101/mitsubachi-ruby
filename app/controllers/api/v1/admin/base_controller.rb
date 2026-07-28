@@ -88,6 +88,19 @@ class Api::V1::Admin::BaseController < ApplicationController
     )
   end
 
+  def scoped_file_access_logs
+    return current_organization.drive_item_access_logs if organization_path_scope?
+    return DriveItemAccessLog.all if system_admin?
+
+    DriveItemAccessLog.where(
+      organization_id: current_user
+        .organization_memberships
+        .active
+        .organization_admin
+        .select(:organization_id)
+    )
+  end
+
   def paginate(scope)
     page = positive_integer(params[:page], 1)
     per_page = [ positive_integer(params[:per_page], DEFAULT_PER_PAGE), MAX_PER_PAGE ].min

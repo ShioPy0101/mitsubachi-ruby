@@ -120,11 +120,6 @@ class Api::V1::Admin::DriveItemsController < Api::V1::Admin::BaseController
       return
     end
 
-    audit_admin_action!(
-      action: "drive_item.#{action}",
-      target: drive_item,
-      organization: drive_item.organization
-    )
     result.headers.each do |key, value|
       response.headers[key] = value
     end

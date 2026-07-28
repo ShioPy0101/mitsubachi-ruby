@@ -71,6 +71,7 @@ Rails.application.routes.draw do
         end
         resources :audit_logs, only: %i[index show]
         resources :audit_events, only: %i[index show]
+        resources :file_access_logs, only: %i[index show]
       end
 
       resources :organizations, only: [] do
@@ -101,6 +102,7 @@ Rails.application.routes.draw do
           end
           resources :audit_logs, only: %i[index show]
           resources :audit_events, only: %i[index show]
+          resources :file_access_logs, only: %i[index show]
         end
 
         resources :drive_items do

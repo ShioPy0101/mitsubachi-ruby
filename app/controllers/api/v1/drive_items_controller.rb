@@ -1128,9 +1128,6 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    # 実ファイルはNginxが配信するため、Rangeごとのstreamではなくpreview開始時に一度だけ記録する。
-    record_drive_item_event!("drive_item.preview", @drive_item) if action.to_sym == :preview
-
     result.headers.each do |key, value|
       response.headers[key] = value
     end

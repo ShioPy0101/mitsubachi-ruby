@@ -14,6 +14,7 @@ class Organization < ApplicationRecord
 
     # 組織に属するドライブアイテムを取得する
     has_many :drive_items, dependent: :restrict_with_error
+    has_many :drive_item_access_logs, dependent: :restrict_with_error
     has_many :admin_audit_logs, dependent: :restrict_with_error
     has_many :audit_events, dependent: :restrict_with_error
     has_many :external_shares, dependent: :restrict_with_error
