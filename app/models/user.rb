@@ -24,7 +24,8 @@ class User < ApplicationRecord
            foreign_key: :used_by_user_id,
            dependent: :restrict_with_error
 
-  has_many :admin_audit_logs,
+  has_many :legacy_admin_audit_logs,
+           class_name: "LegacyAdminAuditLog",
            foreign_key: :actor_user_id,
            dependent: :restrict_with_error
 

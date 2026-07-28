@@ -128,7 +128,7 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     sign_in @system_admin
 
     assert_difference "Organization.count", 1 do
-      assert_difference "AdminAuditLog.where(action: 'organization.create').count", 1 do
+      assert_difference "OperationLog.where(operation_type: 'organization.created').count", 1 do
         post api_v1_admin_organizations_url, params: {
           organization: { name: "Acme Inc." }
         }
@@ -152,8 +152,8 @@ class AdminApiTest < ActionDispatch::IntegrationTest
       data
     )
 
-    audit_log = AdminAuditLog.find_by!(
-      action: "organization.create",
+    audit_log = OperationLog.find_by!(
+      operation_type: "organization.created",
       target_type: "Organization",
       target_id: organization.id
     )
@@ -178,8 +178,8 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     sign_in @system_admin
 
     assert_difference "OrganizationInvite.count", 1 do
-      assert_difference "AdminAuditLog.where(action: 'organization_invite.create').count", 1 do
-        assert_difference "AuditEvent.where(action: 'organization_invite.create').count", 1 do
+      assert_difference "OperationLog.where(operation_type: 'organization.invitation_created').count", 1 do
+        assert_no_difference "LegacyAdminAuditLog.count" do
           post api_v1_admin_organization_invites_url, params: {
             organization_invite: {
               organization_id: @other_organization.id,
@@ -257,8 +257,8 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     create_user(role: :system_admin, organization: @other_organization, email: "second-system@example.com")
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'user.suspend').count", 1 do
-      assert_difference "AuditEvent.where(action: 'user.suspend').count", 1 do
+    assert_no_difference "LegacyAdminAuditLog.count" do
+      assert_difference "OperationLog.where(operation_type: 'user.suspended').count", 1 do
         patch suspend_api_v1_admin_user_url(@managed_user)
       end
     end
@@ -268,8 +268,10 @@ class AdminApiTest < ActionDispatch::IntegrationTest
 
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'user.unsuspend').count", 1 do
-      patch unsuspend_api_v1_admin_user_url(@managed_user)
+    assert_no_difference "LegacyAdminAuditLog.count" do
+      assert_difference "OperationLog.where(operation_type: 'user.unsuspended').count", 1 do
+        patch unsuspend_api_v1_admin_user_url(@managed_user)
+      end
     end
 
     assert_response :ok
@@ -279,8 +281,8 @@ class AdminApiTest < ActionDispatch::IntegrationTest
   test "DriveItemの削除と復元で監査ログが作成される" do
     sign_in @organization_admin
 
-    assert_difference "AdminAuditLog.where(action: 'drive_item.delete').count", 1 do
-      assert_difference "AuditEvent.where(action: 'drive_item.delete').count", 1 do
+    assert_no_difference "LegacyAdminAuditLog.count" do
+      assert_difference "OperationLog.where(operation_type: 'drive_item.deleted').count", 1 do
         delete api_v1_admin_drive_item_url(@drive_item)
       end
     end
@@ -290,8 +292,10 @@ class AdminApiTest < ActionDispatch::IntegrationTest
 
     sign_in @organization_admin
 
-    assert_difference "AdminAuditLog.where(action: 'drive_item.restore').count", 1 do
-      patch restore_api_v1_admin_drive_item_url(@drive_item)
+    assert_no_difference "LegacyAdminAuditLog.count" do
+      assert_difference "OperationLog.where(operation_type: 'drive_item.restored').count", 1 do
+        patch restore_api_v1_admin_drive_item_url(@drive_item)
+      end
     end
 
     assert_response :ok
@@ -342,7 +346,7 @@ class AdminApiTest < ActionDispatch::IntegrationTest
   test "Organization更新で監査ログが作成される" do
     sign_in @system_admin
 
-    assert_difference "AdminAuditLog.where(action: 'organization.update').count", 1 do
+    assert_difference "OperationLog.where(operation_type: 'organization.settings_updated').count", 1 do
       patch api_v1_admin_organization_url(@organization), params: {
         organization: { name: "Updated Organization" }
       }
@@ -353,14 +357,14 @@ class AdminApiTest < ActionDispatch::IntegrationTest
   end
 
   test "organization_admin は自組織の監査ログだけを閲覧できる" do
-    own_log = AdminAuditLog.create!(
+    own_log = LegacyAdminAuditLog.create!(
       actor_user: @organization_admin,
       organization: @organization,
       action: "user.update",
       target_type: "User",
       target_id: @managed_user.id
     )
-    other_log = AdminAuditLog.create!(
+    other_log = LegacyAdminAuditLog.create!(
       actor_user: @system_admin,
       organization: @other_organization,
       action: "user.update",

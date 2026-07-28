@@ -10,27 +10,9 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_092000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_28_093000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
-
-  create_table "admin_audit_logs", force: :cascade do |t|
-    t.string "action", null: false
-    t.bigint "actor_user_id", null: false
-    t.jsonb "change_set", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.string "ip_address"
-    t.bigint "organization_id", null: false
-    t.bigint "target_id", null: false
-    t.string "target_type", null: false
-    t.datetime "updated_at", null: false
-    t.text "user_agent"
-    t.index [ "action" ], name: "index_admin_audit_logs_on_action"
-    t.index [ "actor_user_id" ], name: "index_admin_audit_logs_on_actor_user_id"
-    t.index [ "created_at" ], name: "index_admin_audit_logs_on_created_at"
-    t.index [ "organization_id" ], name: "index_admin_audit_logs_on_organization_id"
-    t.index [ "target_type", "target_id" ], name: "index_admin_audit_logs_on_target_type_and_target_id"
-  end
 
   create_table "drive_item_access_logs", force: :cascade do |t|
     t.string "action"
@@ -189,6 +171,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_092000) do
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'approved'::character varying::text, 'denied'::character varying::text, 'consumed'::character varying::text, 'expired'::character varying::text])", name: "flower_device_authorizations_status_check"
   end
 
+  create_table "legacy_admin_audit_logs", force: :cascade do |t|
+    t.string "action", null: false
+    t.bigint "actor_user_id", null: false
+    t.jsonb "change_set", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "ip_address"
+    t.bigint "organization_id", null: false
+    t.bigint "target_id", null: false
+    t.string "target_type", null: false
+    t.datetime "updated_at", null: false
+    t.text "user_agent"
+    t.index [ "action" ], name: "index_legacy_admin_audit_logs_on_action"
+    t.index [ "actor_user_id" ], name: "index_legacy_admin_audit_logs_on_actor_user_id"
+    t.index [ "created_at" ], name: "index_legacy_admin_audit_logs_on_created_at"
+    t.index [ "organization_id" ], name: "index_legacy_admin_audit_logs_on_organization_id"
+    t.index [ "target_type", "target_id" ], name: "index_legacy_admin_audit_logs_on_target_type_and_target_id"
+  end
+
   create_table "operation_logs", force: :cascade do |t|
     t.bigint "actor_external_share_id"
     t.string "actor_kind", default: "anonymous", null: false
@@ -327,8 +327,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_092000) do
     t.index [ "suspended_at" ], name: "index_users_on_suspended_at"
   end
 
-  add_foreign_key "admin_audit_logs", "organizations"
-  add_foreign_key "admin_audit_logs", "users", column: "actor_user_id"
   add_foreign_key "drive_item_access_logs", "drive_items", on_delete: :nullify
   add_foreign_key "drive_item_access_logs", "external_shares", on_delete: :nullify
   add_foreign_key "drive_item_access_logs", "organizations"
@@ -349,6 +347,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_092000) do
   add_foreign_key "flower_access_tokens", "users"
   add_foreign_key "flower_device_authorizations", "organizations"
   add_foreign_key "flower_device_authorizations", "users"
+  add_foreign_key "legacy_admin_audit_logs", "organizations"
+  add_foreign_key "legacy_admin_audit_logs", "users", column: "actor_user_id"
   add_foreign_key "operation_logs", "external_shares", column: "actor_external_share_id", on_delete: :nullify
   add_foreign_key "operation_logs", "organizations"
   add_foreign_key "operation_logs", "users", column: "actor_user_id"

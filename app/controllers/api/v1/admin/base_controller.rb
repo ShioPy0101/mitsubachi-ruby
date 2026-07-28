@@ -63,10 +63,10 @@ class Api::V1::Admin::BaseController < ApplicationController
   end
 
   def scoped_admin_audit_logs
-    return current_organization.admin_audit_logs if organization_path_scope?
-    return AdminAuditLog.all if system_admin?
+    return current_organization.legacy_admin_audit_logs if organization_path_scope?
+    return LegacyAdminAuditLog.all if system_admin?
 
-    AdminAuditLog.where(
+    LegacyAdminAuditLog.where(
       organization_id: current_user
         .organization_memberships
         .active
@@ -152,16 +152,6 @@ class Api::V1::Admin::BaseController < ApplicationController
   end
 
   def audit_admin_action!(action:, target:, organization:, changes: {})
-    AdminAuditLog.create!(
-      actor_user: current_user,
-      organization: organization,
-      action: action,
-      target_type: target.class.name,
-      target_id: target.id,
-      change_set: sanitize_audit_changes(changes),
-      ip_address: request.remote_ip,
-      user_agent: request.user_agent.to_s
-    )
     record_audit_event!(
       action: action,
       target: target,

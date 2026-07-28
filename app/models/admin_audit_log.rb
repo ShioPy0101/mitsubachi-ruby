@@ -1,4 +1,4 @@
-class AdminAuditLog < ApplicationRecord
+class AdminAuditLog < LegacyAdminAuditLog
   ACTIONS = %w[
     organization.created
     organization.settings_updated
@@ -11,9 +11,6 @@ class AdminAuditLog < ApplicationRecord
     drive_item.restored
     drive_item.purged
   ].freeze
-
-  belongs_to :actor_user, class_name: "User"
-  belongs_to :organization
 
   validates :action, inclusion: { in: ACTIONS }
   validates :target_type, :target_id, presence: true
