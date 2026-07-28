@@ -459,7 +459,16 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_equal [ @other_organization.id ], events.pluck("organization_id").compact.uniq
   end
 
-  test "一般ユーザーはシステム管理者用の全般監査イベントAPIを利用できない" do
+  test "一般ユーザーは他ユーザーの preview を含む管理者用監査イベントAPIを利用できない" do
+    AuditEvent.create!(
+      organization: @organization,
+      actor_user: @organization_admin,
+      action: "drive_item.preview",
+      target_type: "DriveItem",
+      target_id: @drive_item.id,
+      outcome: "success",
+      occurred_at: Time.current
+    )
     sign_in @managed_user
 
     get api_v1_admin_audit_events_url, params: { per_page: 100 }
@@ -496,6 +505,38 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     get api_v1_admin_audit_event_url(other_event)
 
     assert_response :not_found
+  end
+
+  test "organization_admin の全般監査イベントには自組織の別ユーザーによる preview が表示される" do
+    preview_event = AuditEvent.create!(
+      organization: @organization,
+      actor_user: @managed_user,
+      action: "drive_item.preview",
+      target_type: "DriveItem",
+      target_id: @drive_item.id,
+      outcome: "success",
+      occurred_at: Time.current
+    )
+    other_organization_event = AuditEvent.create!(
+      organization: @other_organization,
+      actor_user: @other_org_user,
+      action: "drive_item.preview",
+      target_type: "DriveItem",
+      target_id: @other_drive_item.id,
+      outcome: "success",
+      occurred_at: Time.current
+    )
+
+    sign_in @organization_admin
+    get api_v1_admin_audit_events_url, params: { action: "drive_item.preview", per_page: 100 }
+
+    assert_response :ok
+    events = response.parsed_body.fetch("data")
+    ids = events.pluck("id")
+    assert_includes ids, preview_event.id
+    assert_not_includes ids, other_organization_event.id
+    serialized_event = events.find { |event| event.fetch("id") == preview_event.id }
+    assert_equal @managed_user.id, serialized_event.fetch("actor_user_id")
   end
 
   private
