@@ -150,7 +150,9 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
     FileUtils.rm_f(@drive_item.absolute_storage_path)
 
-    get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+    assert_difference "SystemEvent.where(event_type: 'storage.file_missing').count", 1 do
+      get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+    end
 
     assert_response :not_found
   end

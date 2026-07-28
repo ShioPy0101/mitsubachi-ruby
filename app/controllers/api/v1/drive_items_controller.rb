@@ -355,6 +355,7 @@ class Api::V1::DriveItemsController < ApplicationController
     send_zip_file(result)
   rescue StandardError => error
     result&.cleanup!
+    record_archive_delivery_failure!(error, operation: "bulk_download")
     Rails.logger.error("[drive_items.bulk_download] failed to send zip error=#{error.class}: #{error.message}")
     return if performed?
 
@@ -1179,6 +1180,7 @@ class Api::V1::DriveItemsController < ApplicationController
     send_zip_file(result)
   rescue StandardError => error
     result&.cleanup!
+    record_archive_delivery_failure!(error, operation: "download_folder")
     Rails.logger.error("[drive_items.folder_download] failed request_id=#{request.request_id} error=#{error.class}: #{error.message}")
     return if performed?
 
@@ -1191,6 +1193,20 @@ class Api::V1::DriveItemsController < ApplicationController
       directory_count: result.directory_count,
       total_size: result.total_size
     }
+  end
+
+  def record_archive_delivery_failure!(error, operation:)
+    SystemEvents::Recorder.record!(
+      event_type: "storage.archive_delivery_failed",
+      severity: "error",
+      source: "storage",
+      organization: current_organization,
+      related_user: current_user,
+      target: @drive_item,
+      request: request,
+      error: error,
+      metadata: { operation: operation }
+    )
   end
 
   def send_zip_file(result)

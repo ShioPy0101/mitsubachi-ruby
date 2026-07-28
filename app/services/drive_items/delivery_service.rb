@@ -60,6 +60,17 @@ module DriveItems
         "X-Mitsubachi-Updated-At" => @drive_item.updated_at.iso8601(3)
       )
     rescue StandardError => error
+      SystemEvents::Recorder.record!(
+        event_type: "storage.delivery_preparation_failed",
+        severity: "error",
+        source: "storage",
+        organization: @audit_organization,
+        related_user: @current_user,
+        target: @drive_item,
+        request: @request,
+        error: error,
+        metadata: { action: @action }
+      )
       Rails.logger.error(
         "[drive_items.delivery_service] failed drive_item_id=#{@drive_item.id} action=#{@action} " \
         "request_id=#{@request.request_id} error=#{error.class}: #{error.message}"
@@ -70,6 +81,16 @@ module DriveItems
     private
 
     def invalid_delivery(reason)
+      SystemEvents::Recorder.record!(
+        event_type: reason == "missing_file" ? "storage.file_missing" : "storage.invalid_key_detected",
+        severity: reason == "missing_file" ? "error" : "warning",
+        source: "storage",
+        organization: @audit_organization,
+        related_user: @current_user,
+        target: @drive_item,
+        request: @request,
+        metadata: { action: @action }
+      )
       Rails.logger.warn(
         "[drive_items.delivery_service] denied reason=#{reason} drive_item_id=#{@drive_item.id} " \
         "organization_id=#{@audit_organization.id} user_id=#{@current_user&.id} request_id=#{@request.request_id}"

@@ -100,6 +100,14 @@ module DriveItems
       Result.failure(error.status, error.message)
     rescue StandardError => error
       cleanup_zip(zip_path)
+      SystemEvents::Recorder.record!(
+        event_type: "storage.archive_generation_failed",
+        severity: "error",
+        source: "storage",
+        organization: @organization,
+        error: error,
+        metadata: { requested_count: @drive_item_ids&.size || @drive_items&.size }
+      )
       Rails.logger.error("[drive_items.bulk_download] failed error=#{error.class}: #{error.message}")
       Result.failure(:internal_server_error, "ZIPファイルを作成できませんでした")
     end

@@ -153,6 +153,15 @@ module DriveItems
     end
 
     def log_database_failure(error)
+      SystemEvents::Recorder.record!(
+        event_type: "storage.purge_failed",
+        severity: "error",
+        source: "storage",
+        organization: @drive_item.organization,
+        related_user: @actor_user,
+        target: @drive_item,
+        error: error
+      )
       Rails.logger.error(
         "[drive_items.purge] failed root_drive_item_id=#{@drive_item.id} " \
         "error_class=#{error.class} error_message=#{error.message} " \
@@ -161,6 +170,16 @@ module DriveItems
     end
 
     def log_storage_failure(target, error)
+      SystemEvents::Recorder.record!(
+        event_type: "storage.file_deletion_failed",
+        severity: "error",
+        source: "storage",
+        organization: @drive_item.organization,
+        related_user: @actor_user,
+        target: @drive_item,
+        error: error,
+        metadata: { drive_item_id: target.drive_item_id }
+      )
       Rails.logger.error(
         "[drive_items.purge] storage deletion failed " \
         "root_drive_item_id=#{@drive_item.id} drive_item_id=#{target.drive_item_id} " \

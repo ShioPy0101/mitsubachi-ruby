@@ -28,14 +28,28 @@ module DriveItems
 
       Result.success(message: "ファイルまたはフォルダをゴミ箱に移動しました", deleted_at:, roots: @drive_items)
     rescue DriveItems::TreeCollector::OrganizationBoundaryError, DriveItems::TreeCollector::CycleError => error
+      record_failure(error)
       Rails.logger.error("[drive_items.trash] invalid tree error=#{error.class} root_ids=#{@drive_items.map(&:id).join(",")}")
       Result.failure(:unprocessable_content, "ゴミ箱へ移動できませんでした")
     rescue ActiveRecord::ActiveRecordError => error
+      record_failure(error)
       Rails.logger.error("[drive_items.trash] failed error=#{error.class}: #{error.message}")
       Result.failure(:unprocessable_content, "ゴミ箱へ移動できませんでした")
     end
 
     private
+
+    def record_failure(error)
+      SystemEvents::Recorder.record!(
+        event_type: "storage.trash_failed",
+        severity: "error",
+        source: "storage",
+        organization: @drive_items.first&.organization,
+        target: @drive_items.first,
+        error: error,
+        metadata: { root_ids: @drive_items.map(&:id) }
+      )
+    end
 
     def trash_tree!(drive_item, deleted_at)
       items = DriveItems::TreeCollector.new(root: drive_item).call

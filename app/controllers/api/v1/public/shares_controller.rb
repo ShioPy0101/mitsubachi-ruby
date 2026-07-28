@@ -110,6 +110,16 @@ class Api::V1::Public::SharesController < ApplicationController
     send_zip_file(result)
   rescue StandardError => error
     result&.cleanup!
+    SystemEvents::Recorder.record!(
+      event_type: "storage.archive_delivery_failed",
+      severity: "error",
+      source: "storage",
+      organization: @external_share&.organization,
+      target: @external_share,
+      request: request,
+      error: error,
+      metadata: { operation: "external_share_bulk_download" }
+    )
     Rails.logger.error("[public.external_shares.bulk_download] failed request_id=#{request.request_id} error=#{error.class}: #{error.message}")
     render_public_not_found unless performed?
   end

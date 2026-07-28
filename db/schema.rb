@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_091000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_28_092000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -260,6 +260,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_091000) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "system_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "error_class"
+    t.text "error_message"
+    t.string "event_type", null: false
+    t.string "job_id"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "organization_id"
+    t.bigint "related_user_id"
+    t.string "request_id"
+    t.string "severity", null: false
+    t.string "source", null: false
+    t.bigint "target_id"
+    t.string "target_type"
+    t.string "trace_id"
+    t.datetime "updated_at", null: false
+    t.index [ "event_type", "occurred_at" ], name: "index_system_events_on_event_type_and_occurred_at"
+    t.index [ "job_id" ], name: "index_system_events_on_job_id"
+    t.index [ "organization_id", "occurred_at" ], name: "index_system_events_on_organization_id_and_occurred_at"
+    t.index [ "organization_id" ], name: "index_system_events_on_organization_id"
+    t.index [ "related_user_id" ], name: "index_system_events_on_related_user_id"
+    t.index [ "request_id" ], name: "index_system_events_on_request_id"
+    t.index [ "severity", "occurred_at" ], name: "index_system_events_on_severity_and_occurred_at"
+    t.index [ "source", "occurred_at" ], name: "index_system_events_on_source_and_occurred_at"
+    t.index [ "target_type", "target_id" ], name: "index_system_events_on_target_type_and_target_id"
+    t.index [ "trace_id" ], name: "index_system_events_on_trace_id"
+  end
+
   create_table "user_email_changes", force: :cascade do |t|
     t.datetime "cancelled_at"
     t.datetime "created_at", null: false
@@ -329,6 +358,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_091000) do
   add_foreign_key "organization_invites", "users", column: "used_by_user_id"
   add_foreign_key "organization_memberships", "organizations"
   add_foreign_key "organization_memberships", "users"
+  add_foreign_key "system_events", "organizations"
+  add_foreign_key "system_events", "users", column: "related_user_id"
   add_foreign_key "user_email_changes", "users"
   add_foreign_key "users", "organizations"
 end

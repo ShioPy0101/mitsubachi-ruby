@@ -41,14 +41,28 @@ module DriveItems
       delete_storage_targets(storage_targets)
       result
     rescue DriveItems::PurgeService::OrganizationBoundaryError => error
+      record_purge_failure(error)
       Rails.logger.error("[drive_items.bulk_purge] invalid tree error=#{error.class} root_ids=#{roots&.map(&:id)&.join(",")}")
       Result.failure(:unprocessable_content, "完全削除できませんでした")
     rescue ActiveRecord::ActiveRecordError => error
+      record_purge_failure(error)
       Rails.logger.error("[drive_items.bulk_purge] failed error=#{error.class}: #{error.message}")
       Result.failure(:unprocessable_content, "完全削除できませんでした")
     end
 
     private
+
+    def record_purge_failure(error)
+      SystemEvents::Recorder.record!(
+        event_type: "storage.purge_failed",
+        severity: "error",
+        source: "storage",
+        organization: @organization,
+        related_user: @actor_user,
+        error: error,
+        metadata: { drive_item_ids: @drive_item_ids, bulk: true }
+      )
+    end
 
     def selected_trashed_items
       @selected_trashed_items ||= @organization.drive_items.trashed.where(id: @drive_item_ids).order(:id).to_a
@@ -173,6 +187,17 @@ module DriveItems
     end
 
     def log_storage_failure(target, error)
+      drive_item = @organization.drive_items.find_by(id: target.drive_item_id)
+      SystemEvents::Recorder.record!(
+        event_type: "storage.file_deletion_failed",
+        severity: "error",
+        source: "storage",
+        organization: @organization,
+        related_user: @actor_user,
+        target: drive_item,
+        error: error,
+        metadata: { drive_item_id: target.drive_item_id, bulk: true }
+      )
       Rails.logger.error(
         "[drive_items.bulk_purge] storage deletion failed " \
         "drive_item_id=#{target.drive_item_id} storage_key=#{target.storage_key} " \
