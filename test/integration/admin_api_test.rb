@@ -414,6 +414,30 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "操作履歴の一覧と詳細を繰り返し取得しても操作履歴を作成しない" do
+    log = OperationLogs::Recorder.record!(
+      operation_type: "drive_item.deleted",
+      actor_user: @organization_admin,
+      organization: @organization,
+      target: @drive_item
+    )
+    original_count = OperationLog.count
+
+    2.times do
+      sign_in @organization_admin
+      get api_v1_organization_admin_operation_logs_url(@organization)
+      assert_response :ok
+    end
+    sign_in @organization_admin
+    get api_v1_organization_admin_operation_log_url(@organization, log)
+    assert_response :ok
+
+    assert_equal original_count, OperationLog.count
+    payload = response.parsed_body.fetch("data")
+    assert_equal @organization.name, payload.fetch("organization_name")
+    assert_equal @drive_item.filename, payload.dig("target", "display_name")
+  end
+
   test "新ログAPIはorganization境界と管理権限を維持する" do
     own_operation = OperationLogs::Recorder.record!(
       operation_type: "user.updated", actor_user: @managed_user, organization: @organization
