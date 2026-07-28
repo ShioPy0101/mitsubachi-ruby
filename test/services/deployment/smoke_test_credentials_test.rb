@@ -12,9 +12,9 @@ class Deployment::SmokeTestCredentialsTest < ActiveSupport::TestCase
 
     member = User.find_by!(email: first.dig(:users, :member, :email))
     assert_equal 2, member.organization_memberships.active.count
-    assert Auth::MagicLinks.new.verify(first.dig(:users, :member, :token), expected_purpose: "login").user == member
+    assert Auth::MagicLinks.new.verify(second.dig(:users, :member, :token), expected_purpose: "login").user == member
     assert_raises(Auth::MagicLinks::Failure) do
-      Auth::MagicLinks.new.verify(first.dig(:users, :member, :token), expected_purpose: "login")
+      Auth::MagicLinks.new.verify(second.dig(:users, :member, :token), expected_purpose: "login")
     end
   end
 end
