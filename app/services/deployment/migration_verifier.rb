@@ -27,8 +27,8 @@ module Deployment
     def pending_registration_user_ids(now:)
       OrganizationInvite
         .joins(:email_authentications)
-        .where(used_at: nil)
-        .where.not(stand_by_user_id: nil)
+        .where(organization_invites: { used_at: nil })
+        .where.not(organization_invites: { stand_by_user_id: nil })
         .where("organization_invites.stand_by_at > ?", Auth::MagicLinks::REGISTRATION_STAND_BY_WINDOW.ago(now))
         .where(email_authentications: { purpose: "registration", used_at: nil })
         .where("email_authentications.expires_at > ?", now)
