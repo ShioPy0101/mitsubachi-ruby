@@ -37,7 +37,7 @@ module Flower
           client_metadata: client_metadata
         )
 
-        audit!("flower.device_authorization.created", authorization, "success")
+        audit!("flower.device_authorization_created", authorization, "success")
         Result.success(authorization:, device_code:, user_code:)
       rescue ActiveRecord::RecordNotUnique
         retry

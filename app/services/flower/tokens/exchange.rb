@@ -57,7 +57,7 @@ module Flower
           )
           authorization.update!(status: "consumed", consumed_at: Time.current)
         end
-        audit!("flower.token.issued", authorization, token, "success")
+        audit!("flower.token_issued", authorization, token, "success")
         Result.success(token:, access_token: raw_token)
       rescue ActiveRecord::RecordNotUnique
         retry

@@ -29,7 +29,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
     organization = Organization.new(organization_params)
     if organization.save
       audit_admin_action!(
-        action: "organization.create",
+        action: "organization.created",
         target: organization,
         organization: organization,
         changes: { name: [ nil, organization.name ] }
@@ -47,7 +47,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
     before = organization.slice("name")
     if organization.update(organization_params)
       audit_admin_action!(
-        action: "organization.update",
+        action: "organization.settings_updated",
         target: organization,
         organization: organization,
         changes: changed_values(before, organization.slice("name"))

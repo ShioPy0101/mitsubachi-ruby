@@ -21,7 +21,7 @@ class Api::V1::MeController < ApplicationController
 
     if current_user.save
       record_audit_event!(
-        action: "user.profile.update",
+        action: "user.profile_updated",
         target: current_user,
         changes: { display_name: [ before_display_name, current_user.display_name ] }
       ) if before_display_name != current_user.display_name
@@ -38,7 +38,7 @@ class Api::V1::MeController < ApplicationController
       email: email_change_params.fetch(:email)
     ).call
     record_audit_event!(
-      action: "user.email_change.request",
+      action: "user.email_change_requested",
       target: current_user,
       metadata: { email_domain: email_domain(result.email_change.new_email) }
     )
@@ -64,7 +64,7 @@ class Api::V1::MeController < ApplicationController
   def verify_email_change
     result = UserEmailChanges::ConfirmService.new(token: params[:token]).call
     record_audit_event!(
-      action: "user.email_change.confirm",
+      action: "user.email_changed",
       actor_user: result.user,
       organization: result.user.organization,
       target: result.user,
@@ -90,7 +90,7 @@ class Api::V1::MeController < ApplicationController
     if email_change.present?
       email_change.update!(cancelled_at: Time.current)
       record_audit_event!(
-        action: "user.email_change.cancel",
+        action: "user.email_change_cancelled",
         target: current_user,
         metadata: { email_domain: email_domain(email_change.new_email) }
       )
@@ -193,7 +193,7 @@ class Api::V1::MeController < ApplicationController
     actor = current_user_or_nil
 
     record_audit_event!(
-      action: "user.email_change.failure",
+      action: "user.email_change_failed",
       actor_user: actor,
       organization: actor&.organization,
       target: actor,

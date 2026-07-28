@@ -16,6 +16,7 @@ class Organization < ApplicationRecord
     has_many :drive_items, dependent: :restrict_with_error
     has_many :drive_item_access_logs, dependent: :restrict_with_error
     has_many :admin_audit_logs, dependent: :restrict_with_error
+    has_many :operation_logs, dependent: :restrict_with_error
     has_many :audit_events, dependent: :restrict_with_error
     has_many :external_shares, dependent: :restrict_with_error
     has_many :flower_device_authorizations, dependent: :restrict_with_error

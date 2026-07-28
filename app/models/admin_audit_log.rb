@@ -1,15 +1,15 @@
 class AdminAuditLog < ApplicationRecord
   ACTIONS = %w[
-    organization.create
-    organization.update
-    organization_invite.create
-    user.update
-    user.role_change
-    user.suspend
-    user.unsuspend
-    drive_item.delete
-    drive_item.restore
-    drive_item.purge
+    organization.created
+    organization.settings_updated
+    organization.invitation_created
+    user.updated
+    organization.membership_role_changed
+    user.suspended
+    user.unsuspended
+    drive_item.deleted
+    drive_item.restored
+    drive_item.purged
   ].freeze
 
   belongs_to :actor_user, class_name: "User"

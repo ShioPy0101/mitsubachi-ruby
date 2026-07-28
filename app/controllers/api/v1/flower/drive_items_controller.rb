@@ -4,7 +4,7 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
   def index
     result = Flower::DriveItems::List.new(organization: current_organization, params: params).call
     record_flower_event!(
-      "flower.drive_item.listed",
+      "flower.drive_items_listed",
       metadata: {
         result: "success",
         query_present: params[:query].present?,
@@ -26,7 +26,7 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
     return render_flower_not_found if drive_item.nil?
 
     record_flower_event!(
-      "flower.drive_item.viewed",
+      "flower.drive_item_viewed",
       target: drive_item,
       metadata: { drive_item_id: drive_item.id, result: "success" }
     )
@@ -62,7 +62,7 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
     end
 
     record_flower_event!(
-      "flower.file.downloaded",
+      "flower.file_downloaded",
       target: drive_item,
       metadata: download_metadata(drive_item).merge(result: "success")
     )
@@ -91,7 +91,7 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
 
   def record_download_denied(result, drive_item: nil)
     record_flower_event!(
-      "flower.download.denied",
+      "flower.download_denied",
       target: drive_item,
       outcome: "denied",
       metadata: {
