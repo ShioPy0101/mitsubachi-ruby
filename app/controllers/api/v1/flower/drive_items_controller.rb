@@ -3,16 +3,6 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
 
   def index
     result = Flower::DriveItems::List.new(organization: current_organization, params: params).call
-    record_flower_event!(
-      "flower.drive_items_listed",
-      metadata: {
-        result: "success",
-        query_present: params[:query].present?,
-        returned_count: result.items.size,
-        client_version: current_flower_token.flower_device_authorization&.client_metadata&.fetch("client_version", nil)
-      }
-    )
-
     render json: {
       items: result.items.map { |drive_item| Flower::DriveItems::Serializer.new(drive_item).list_json },
       pagination: {
@@ -61,11 +51,6 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
       return
     end
 
-    record_flower_event!(
-      "flower.file_downloaded",
-      target: drive_item,
-      metadata: download_metadata(drive_item).merge(result: "success")
-    )
     result.headers.each { |key, value| response.headers[key] = value }
     self.status = result.status
     self.response_body = ""

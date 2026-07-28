@@ -247,6 +247,28 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
     assert_equal "private, no-store", response.headers["Cache-Control"]
   end
 
+  test "外部共有のpreviewとdownloadはuserなしのファイルアクセス履歴だけを記録する" do
+    raw_token, _password, share = create_share!(return_share: true)
+
+    assert_difference "DriveItemAccessLog.where(actor_kind: 'external_share').count", 2 do
+      assert_no_difference "OperationLog.where(operation_type: ['external_share.file_previewed', 'external_share.file_downloaded']).count" do
+        get "/api/v1/public/shares/#{raw_token}/items/#{@drive_item.id}/preview"
+        assert_response :ok
+        get "/api/v1/public/shares/#{raw_token}/items/#{@drive_item.id}/download"
+        assert_response :ok
+      end
+    end
+
+    logs = DriveItemAccessLog.where(external_share: share).order(:id)
+    assert_equal %w[preview download], logs.pluck(:action)
+    assert logs.all? { |log| log.user_id.nil? }
+    assert logs.all? { |log| log.metadata["filename"] == @drive_item.filename }
+    assert logs.none? { |log| log.metadata.to_json.include?(raw_token) }
+
+    share.destroy!
+    assert logs.reload.all? { |log| log.external_share_id.nil? }
+  end
+
   test "allow_download=falseでは個別ダウンロードできない" do
     raw_token, = create_share!(allow_download: false)
 

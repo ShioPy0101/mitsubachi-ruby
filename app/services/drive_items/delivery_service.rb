@@ -16,12 +16,13 @@ module DriveItems
       end
     end
 
-    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil, client_type: "web", record_audit: true)
+    def initialize(drive_item:, current_user:, request:, action:, audit_organization: nil, external_share: nil, client_type: "web", record_audit: true)
       @drive_item = drive_item
       @current_user = current_user
       @request = request
       @action = action.to_sym
       @audit_organization = audit_organization || drive_item.organization
+      @external_share = external_share
       @client_type = client_type
       @record_audit = record_audit
     end
@@ -39,6 +40,7 @@ module DriveItems
         audit_result = AuditLogs::Recorder.new(
           organization: @audit_organization,
           user: @current_user,
+          external_share: @external_share,
           drive_item: @drive_item,
           action: @action,
           request: @request,

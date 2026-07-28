@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_28_091000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -34,8 +34,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_090000) do
 
   create_table "drive_item_access_logs", force: :cascade do |t|
     t.string "action"
+    t.string "actor_kind", default: "user", null: false
     t.datetime "created_at", null: false
     t.bigint "drive_item_id"
+    t.bigint "external_share_id"
     t.string "ip_address", null: false
     t.jsonb "metadata", default: {}, null: false
     t.datetime "occurred_at"
@@ -43,11 +45,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_090000) do
     t.string "request_id", null: false
     t.datetime "updated_at", null: false
     t.text "user_agent"
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
+    t.index [ "actor_kind", "occurred_at" ], name: "index_drive_item_access_logs_on_actor_kind_and_occurred_at"
     t.index [ "drive_item_id", "occurred_at" ], name: "index_access_logs_on_item_and_accessed_at"
     t.index [ "drive_item_id" ], name: "index_drive_item_access_logs_on_drive_item_id"
+    t.index [ "external_share_id" ], name: "index_drive_item_access_logs_on_external_share_id"
     t.index [ "organization_id", "user_id", "drive_item_id", "action", "occurred_at" ], name: "index_drive_item_access_logs_on_stream_dedupe_lookup"
     t.index [ "organization_id" ], name: "index_drive_item_access_logs_on_organization_id"
+    t.index [ "request_id", "action" ], name: "index_drive_item_access_logs_on_request_id_and_action"
     t.index [ "user_id", "occurred_at" ], name: "index_access_logs_on_user_and_accessed_at"
     t.index [ "user_id" ], name: "index_drive_item_access_logs_on_user_id"
   end
@@ -296,6 +301,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_090000) do
   add_foreign_key "admin_audit_logs", "organizations"
   add_foreign_key "admin_audit_logs", "users", column: "actor_user_id"
   add_foreign_key "drive_item_access_logs", "drive_items", on_delete: :nullify
+  add_foreign_key "drive_item_access_logs", "external_shares", on_delete: :nullify
   add_foreign_key "drive_item_access_logs", "organizations"
   add_foreign_key "drive_item_access_logs", "users"
   add_foreign_key "drive_items", "drive_items", column: "parent_id"

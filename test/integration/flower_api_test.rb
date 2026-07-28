@@ -197,7 +197,7 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
     token = create_access_token(scopes: FlowerAccessToken::DEFAULT_SCOPES)
 
     assert_difference "DriveItemAccessLog.where(action: 'download').count", 1 do
-      assert_difference "AuditEvent.where(action: 'flower.file.downloaded').count", 1 do
+      assert_no_difference "OperationLog.where(operation_type: 'flower.file_downloaded').count" do
         get download_api_v1_flower_drive_item_url(@file), headers: bearer_headers(token).merge(request_headers)
       end
     end

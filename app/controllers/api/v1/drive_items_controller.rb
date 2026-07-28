@@ -1140,20 +1140,14 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def record_bulk_download_access!(drive_items)
-    now = Time.current
-
-    drive_items.each do |drive_item|
-      DriveItemAccessLog.create!(
-        organization: current_organization,
-        user: current_user,
-        drive_item: drive_item,
-        action: "bulk_download",
-        occurred_at: now,
-        ip_address: request.remote_ip,
-        user_agent: request.user_agent,
-        request_id: request.request_id
-      )
-    end
+    AuditLogs::BulkRecorder.new(
+      organization: current_organization,
+      drive_items: drive_items,
+      action: :bulk_download,
+      request: request,
+      user: current_user,
+      metadata: { client_type: current_client_type }
+    ).call
   end
 
   def download_folder
@@ -1182,7 +1176,6 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    record_drive_item_event!("drive_item.download_folder", @drive_item, metadata: archive_metadata(result))
     send_zip_file(result)
   rescue StandardError => error
     result&.cleanup!

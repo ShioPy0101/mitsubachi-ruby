@@ -1532,7 +1532,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     create_file_item(name: "sample.png", parent: nested, body: "png-content")
 
     assert_difference "DriveItemAccessLog.where(action: 'download_folder').count", 1 do
-      assert_difference "AuditEvent.where(action: 'drive_item.download_folder').count", 1 do
+      assert_no_difference "OperationLog.where(operation_type: 'drive_item.download_folder').count" do
         get download_api_v1_drive_item_url(folder)
       end
     end
