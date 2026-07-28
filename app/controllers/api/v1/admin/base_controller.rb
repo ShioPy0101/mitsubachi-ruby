@@ -62,11 +62,11 @@ class Api::V1::Admin::BaseController < ApplicationController
     )
   end
 
-  def scoped_admin_audit_logs
-    return current_organization.legacy_admin_audit_logs if organization_path_scope?
-    return LegacyAdminAuditLog.all if system_admin?
+  def scoped_operation_logs
+    return current_organization.operation_logs if organization_path_scope?
+    return OperationLog.all if system_admin?
 
-    LegacyAdminAuditLog.where(
+    OperationLog.where(
       organization_id: current_user
         .organization_memberships
         .active
@@ -75,11 +75,14 @@ class Api::V1::Admin::BaseController < ApplicationController
     )
   end
 
-  def scoped_audit_events
-    return current_organization.audit_events if organization_path_scope?
-    return AuditEvent.all if system_admin?
+  alias_method :scoped_admin_audit_logs, :scoped_operation_logs
+  alias_method :scoped_audit_events, :scoped_operation_logs
 
-    AuditEvent.where(
+  def scoped_system_events
+    return current_organization.system_events if organization_path_scope?
+    return SystemEvent.all if system_admin?
+
+    SystemEvent.where(
       organization_id: current_user
         .organization_memberships
         .active

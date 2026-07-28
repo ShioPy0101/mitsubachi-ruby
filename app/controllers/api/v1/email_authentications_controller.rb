@@ -21,7 +21,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       actor_user: result.user,
       organization: result.organization,
       target: result.organization_invite,
-      metadata: { email: result.email }
+      metadata: { email_identifier: OperationLogs::EmailIdentifier.call(result.email) }
     )
 
     render json: { message: "認証リンクを送信しました" }, status: :ok
@@ -38,7 +38,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       actor_user: result.user,
       organization: result.organization,
       target: result.user,
-      metadata: { email: result.email }
+      metadata: { email_identifier: OperationLogs::EmailIdentifier.call(result.email) }
     )
 
     render json: { message: "認証リンクを送信しました" }, status: :ok
@@ -107,7 +107,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       action: action,
       outcome: "failure",
       metadata: {
-        email: email,
+        email_identifier: OperationLogs::EmailIdentifier.call(email),
         code: error.code,
         status: error.status,
         reason: error.message

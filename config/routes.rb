@@ -72,6 +72,8 @@ Rails.application.routes.draw do
         resources :audit_logs, only: %i[index show]
         resources :audit_events, only: %i[index show]
         resources :file_access_logs, only: %i[index show]
+        resources :operation_logs, only: %i[index show]
+        resources :drive_item_access_logs, only: %i[index show]
       end
 
       resources :organizations, only: [] do
@@ -103,6 +105,9 @@ Rails.application.routes.draw do
           resources :audit_logs, only: %i[index show]
           resources :audit_events, only: %i[index show]
           resources :file_access_logs, only: %i[index show]
+          resources :operation_logs, only: %i[index show]
+          resources :drive_item_access_logs, only: %i[index show]
+          resources :system_events, only: %i[index show]
         end
 
         resources :drive_items do
@@ -127,6 +132,10 @@ Rails.application.routes.draw do
             delete :purge
           end
         end
+      end
+
+      namespace :system_admin do
+        resources :system_events, only: %i[index show]
       end
 
       post "auth/create", to: "email_authentications#create"

@@ -357,19 +357,25 @@ class AdminApiTest < ActionDispatch::IntegrationTest
   end
 
   test "organization_admin は自組織の監査ログだけを閲覧できる" do
-    own_log = LegacyAdminAuditLog.create!(
+    own_log = OperationLog.create!(
+      actor_kind: "user",
       actor_user: @organization_admin,
       organization: @organization,
-      action: "user.update",
+      operation_type: "user.updated",
+      result: "success",
       target_type: "User",
-      target_id: @managed_user.id
+      target_id: @managed_user.id,
+      occurred_at: Time.current
     )
-    other_log = LegacyAdminAuditLog.create!(
+    other_log = OperationLog.create!(
+      actor_kind: "user",
       actor_user: @system_admin,
       organization: @other_organization,
-      action: "user.update",
+      operation_type: "user.updated",
+      result: "success",
       target_type: "User",
-      target_id: @other_org_user.id
+      target_id: @other_org_user.id,
+      occurred_at: Time.current
     )
 
     sign_in @organization_admin
@@ -385,6 +391,57 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     get api_v1_admin_audit_log_url(other_log)
 
     assert_response :not_found
+  end
+
+  test "新ログAPIはorganization境界と管理権限を維持する" do
+    own_operation = OperationLogs::Recorder.record!(
+      operation_type: "user.updated", actor_user: @managed_user, organization: @organization
+    )
+    other_operation = OperationLogs::Recorder.record!(
+      operation_type: "user.updated", actor_user: @other_org_user, organization: @other_organization
+    )
+    access = DriveItemAccessLog.create!(
+      actor_kind: "user", user: @managed_user, organization: @organization, drive_item: @drive_item,
+      action: "preview", occurred_at: Time.current, ip_address: "192.0.2.1", request_id: "access-request",
+      metadata: { filename: @drive_item.filename }
+    )
+
+    sign_in @organization_admin
+    get api_v1_organization_admin_operation_logs_url(@organization), params: { per_page: 100 }
+    assert_response :ok
+    assert_includes response.parsed_body.fetch("data").pluck("id"), own_operation.id
+    assert_not_includes response.parsed_body.fetch("data").pluck("id"), other_operation.id
+
+    sign_in @organization_admin
+    get api_v1_organization_admin_drive_item_access_logs_url(@organization), params: { action: "preview" }
+    assert_response :ok
+    assert_includes response.parsed_body.fetch("data").pluck("id"), access.id
+
+    sign_in @member
+    get api_v1_organization_admin_operation_logs_url(@organization)
+    assert_response :forbidden
+  end
+
+  test "system adminだけが全system event詳細を閲覧できる" do
+    event = SystemEvents::Recorder.record!(
+      event_type: "storage.file_missing", severity: "error", source: "storage",
+      organization: @organization, error: StandardError.new("internal detail"), metadata: { path: "/secret/file" }
+    )
+
+    sign_in @organization_admin
+    get api_v1_organization_admin_system_event_url(@organization, event)
+    assert_response :ok
+    assert_nil response.parsed_body.dig("data", "error_message")
+    assert_equal({}, response.parsed_body.dig("data", "metadata"))
+
+    sign_in @system_admin
+    get api_v1_system_admin_system_event_url(event)
+    assert_response :ok
+    assert_equal "internal detail", response.parsed_body.dig("data", "error_message")
+
+    sign_in @member
+    get api_v1_system_admin_system_events_url
+    assert_response :forbidden
   end
 
   test "system_admin は全般監査イベントを閲覧できる" do
