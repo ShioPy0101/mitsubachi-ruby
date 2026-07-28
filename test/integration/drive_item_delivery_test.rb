@@ -37,7 +37,9 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItemAccessLog.count", 1 do
-      get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+      assert_difference "AuditEvent.where(action: 'drive_item.preview').count", 1 do
+        get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+      end
     end
 
     assert_response :ok
@@ -50,6 +52,36 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     assert_equal "203.0.113.10", log.ip_address
     assert_equal "DeliveryTest/1.0", log.user_agent
     assert_equal @user.organization, log.organization
+
+    event = AuditEvent.where(action: "drive_item.preview").order(:id).last
+    assert_equal @user, event.actor_user
+    assert_equal @user.organization, event.organization
+    assert_equal "DriveItem", event.target_type
+    assert_equal @drive_item.id, event.target_id
+  end
+
+  test "同じ organization の別ユーザーによる preview は操作ユーザーを actor として記録する" do
+    viewer = User.create!(
+      organization: @user.organization,
+      email: "preview-viewer@example.com",
+      name: "Preview Viewer",
+      password: "password123"
+    )
+    viewer.organization_memberships.create!(
+      organization: @user.organization,
+      role: :member,
+      status: :active
+    )
+    sign_in viewer
+
+    assert_difference "AuditEvent.where(action: 'drive_item.preview', actor_user: viewer).count", 1 do
+      get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+    end
+
+    event = AuditEvent.where(action: "drive_item.preview", actor_user: viewer).order(:id).last
+    assert_equal @user.organization, event.organization
+    assert_equal "DriveItem", event.target_type
+    assert_equal @drive_item.id, event.target_id
   end
 
   test "download は attachment を返す" do
@@ -74,6 +106,23 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_match(/\Ainline;/, response.headers["Content-Disposition"])
     assert_equal "stream", DriveItemAccessLog.order(:id).last.action
+  end
+
+  test "動画の Range リクエストが複数回発生してもアクセスログを大量作成しない" do
+    sign_in @user
+
+    assert_difference "DriveItemAccessLog.where(action: 'stream').count", 1 do
+      assert_no_difference "AuditEvent.where(action: 'drive_item.preview').count" do
+        get stream_api_v1_drive_item_url(@drive_item), headers: request_headers.merge("Range" => "bytes=0-10")
+        assert_response :ok
+        sign_in @user
+        get stream_api_v1_drive_item_url(@drive_item), headers: request_headers.merge("Range" => "bytes=11-20")
+        assert_response :ok
+        sign_in @user
+        get stream_api_v1_drive_item_url(@drive_item), headers: request_headers.merge("Range" => "bytes=21-30")
+        assert_response :ok
+      end
+    end
   end
 
   test "他 organization のファイルは配信できない" do
