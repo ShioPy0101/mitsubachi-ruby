@@ -19,12 +19,12 @@
 - `Flower::ActivationsController` - ブラウザで user code を承認するための activation entrypoint
 - `Api::V1::CsrfTokensController` - 同一オリジン frontend が状態変更リクエスト前に使う CSRF token を返す
 - `Api::V1::SessionsController` - logout を扱う
-- `Api::V1::Admin::BaseController` - 管理 API 共通の認証、role 認可、テナント scope、ページネーション、エラーレスポンス、管理監査ログ記録を扱う
+- `Api::V1::Admin::BaseController` - 管理 API 共通の認証、role 認可、テナント scope、ページネーション、エラーレスポンス、操作履歴記録を扱う
 - `Api::V1::Admin::DashboardsController` - 管理画面ダッシュボード集計を扱う
 - `Api::V1::Admin::OrganizationsController` - organization 管理を扱う
 - `Api::V1::Admin::UsersController` - user 管理、role 変更、停止・停止解除を扱う
 - `Api::V1::Admin::DriveItemsController` - drive item の管理用一覧、論理削除、復元を扱う
-- `Api::V1::Admin::AuditLogsController` - 管理監査ログ閲覧を扱う
+- `Api::V1::Admin::AuditLogsController` - 管理操作履歴閲覧を扱う
 
 ## API Boundary
 - Rails は API 専用プロセスとして起動し、フロントエンドの view、Importmap、Turbo、Stimulus、asset 配信を担当しない
@@ -42,7 +42,7 @@
 ## Models
 - `Organization` - ユーザー、招待、ドライブ項目を束ねる組織
 - `User` - Devise 認証を持つ組織所属ユーザー
-- `AdminAuditLog` - 管理操作の監査ログ
+- `OperationLog` - 管理操作の操作履歴
 - `DriveItem` - ファイル/ディレクトリを表す階層オブジェクト
 - `DrivePermission` - ユーザーとドライブ項目の権限付与
 - `DriveItemAccessLog` - ドライブ項目アクセスの記録
@@ -85,13 +85,13 @@
 - User 停止は `suspended_at` による論理停止で、Devise 認証時にも停止ユーザーを拒否する
 
 ## Admin Audit Logs
-- 管理操作の監査ログは `admin_audit_logs` に保存する
+- 管理操作の操作履歴は `operation_logs` に保存する
 - 対象操作は organization 更新、user 更新、role 変更、user 停止・停止解除、drive item 削除・復元
 - 保存項目は actor user、organization、action、target type / id、change_set、IP、User-Agent
 - パスワード、認証トークン、Cookie、生ファイル内容は保存しない
 
 ## Services
-- `AuditLogs::Recorder` - preview / download / stream の監査ログ記録を集約する。動画の Range リクエストで `stream` ログが増え続けないよう、同一 organization / user / drive_item は 5 分間重複記録を抑制する
+- `DriveItemAccessLogs::Recorder` - preview / download / stream の操作履歴記録を集約する。動画の Range リクエストで `stream` ログが増え続けないよう、同一 organization / user / drive_item は 5 分間重複記録を抑制する
 - `Auth::MagicLinks` - ブラウザ向け magic link 発行と検証の業務ロジックを集約する
 - `DriveItems::Query` - organization 境界内の DriveItem 一覧、詳細、配信対象取得を集約する
 - `Flower::DeviceAuthorizations::Create` - device code / user code の生成と digest 保存を扱う
@@ -99,7 +99,7 @@
 - `Flower::Tokens::Exchange` / `Authenticate` - device code polling と Bearer token 認証を扱う
 - `Flower::DriveItems::List` / `Show` - flower 用 read-only DriveItem 取得を扱う
 - `Flower::Downloads::Authorize` - flower download scope と対象 DriveItem を検証する
-- `DriveItems::DeliveryService` - 配信対象ファイルの検証、監査ログ記録、`X-Accel-Redirect` 用レスポンスヘッダー生成を担当する
+- `DriveItems::DeliveryService` - 配信対象ファイルの検証、操作履歴記録、`X-Accel-Redirect` 用レスポンスヘッダー生成を担当する
 - `DriveItems::BulkDownloadService` - 複数 drive_item から ZIP を作成し、directory 配下の active file を再帰的に含める
 - `DriveItems::StoredFileInspector` - アップロードファイルを保存しながらサイズ、SHA-256、Content-Type を算出する
 - `DriveItems::IntegrityChecker` - DB に記録されたサイズ、SHA-256、Content-Type と実ファイルの整合性を検査する
@@ -114,7 +114,7 @@
 - ファイルは `storage_key`、`blob_path`、`extension` を必須とする
 
 ## File Delivery
-- Rails は認証、organization 境界での認可、対象ファイル検証、監査ログ、配信レスポンス生成を担当する
+- Rails は認証、organization 境界での認可、対象ファイル検証、操作履歴、配信レスポンス生成を担当する
 - 実ファイル転送は Nginx の `X-Accel-Redirect` に委譲する
 - Caddy 単体では `X-Accel-Redirect` をそのまま使えないため、現構成では Nginx をファイル配信用 reverse proxy として利用する前提にする
 - `preview` と `stream` は `Content-Disposition: inline`、`download` は `attachment` を返す
@@ -129,7 +129,7 @@
 - ZIP エントリ名は改行、NUL、パス区切り、`..` を避ける形に正規化する
 - 同一 file は ZIP 内に重複して含めない
 - 生成した一時 ZIP はレスポンス body の close 時、またはエラー時に削除する
-- 成功時は ZIP に含めた file ごとに `bulk_download` の監査ログを記録する
+- 成功時は ZIP に含めた file ごとに `bulk_download` の操作履歴を記録する
 
 ## Mailers
 - `ApplicationMailer` - 共通メーラーベース

@@ -34,7 +34,7 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 
 - 状況: 招待作成 API で `role` を strong parameters に含めたところ、Brakeman が mass assignment の警告を出した。
 - 困った点: enum の許可値を validation していても、権限に関わる属性は mass assignment として検出される。警告自体は妥当だが、安全な enum 代入パターンを毎回個別に書く必要がある。
-- 改善されるとよい点: 権限属性などの sensitive enum に対して、許可値・代入権限・監査ログをまとめて宣言できる Rails 標準の仕組みがあるとよい。
+- 改善されるとよい点: 権限属性などの sensitive enum に対して、許可値・代入権限・操作履歴をまとめて宣言できる Rails 標準の仕組みがあるとよい。
 - 今回の回避策: `role` は strong parameters から外し、`OrganizationInvite.roles.key?` で明示確認した値だけを controller 内で代入した。
 
 ## 2026-07-27: AIチェック用シェルスクリプトのBashバージョン依存
