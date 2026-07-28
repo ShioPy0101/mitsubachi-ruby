@@ -33,12 +33,27 @@ class Api::V1::Admin::OperationLogsController < Api::V1::Admin::BaseController
 
   def operation_log_json(log)
     {
-      id: log.id, actor_kind: log.actor_kind, actor_user_id: log.actor_user_id,
-      actor_external_share_id: log.actor_external_share_id, organization_id: log.organization_id,
-      operation_type: log.operation_type, result: log.result, target_type: log.target_type,
-      target_id: log.target_id, change_set: log.change_set, metadata: log.metadata,
+      id: log.id, organization_id: log.organization_id, actor: actor_json(log),
+      operation_type: log.operation_type, result: log.result, target: target_json(log),
+      change_set: log.change_set, metadata: log.metadata,
       ip_address: log.ip_address, user_agent: log.user_agent, request_id: log.request_id,
-      occurred_at: log.occurred_at, created_at: log.created_at
+      occurred_at: log.occurred_at
     }
+  end
+
+  def actor_json(log)
+    actor = log.actor_user || log.actor_external_share
+    { kind: log.actor_kind, id: actor&.id, display_name: actor_display_name(log, actor) }
+  end
+
+  def actor_display_name(log, actor)
+    return log.metadata["actor_display_name"] if actor.nil?
+    return actor.display_name.presence || actor.email if log.actor_kind == "user"
+
+    "外部共有 ##{actor.id}"
+  end
+
+  def target_json(log)
+    { type: log.target_type, id: log.target_id, display_name: log.metadata["filename"] || log.metadata["name"] }
   end
 end

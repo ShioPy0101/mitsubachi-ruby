@@ -88,12 +88,12 @@ module Flower
       end
 
       def audit!(action, authorization, token, outcome)
-        AuditEvents::Recorder.record!(
-          action: action,
+        OperationLogs::Recorder.record!(
+          operation_type: action,
           actor_user: authorization.user,
           organization: authorization.organization,
           target: token,
-          outcome: outcome,
+          result: outcome,
           metadata: {
             client_type: "flower",
             device_authorization_id: authorization.id,

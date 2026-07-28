@@ -1141,7 +1141,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def record_bulk_download_access!(drive_items)
-    AuditLogs::BulkRecorder.new(
+    DriveItemAccessLogs::BulkRecorder.new(
       organization: current_organization,
       drive_items: drive_items,
       action: :bulk_download,
@@ -1163,7 +1163,7 @@ class Api::V1::DriveItemsController < ApplicationController
       return
     end
 
-    audit_result = AuditLogs::Recorder.new(
+    audit_result = DriveItemAccessLogs::Recorder.new(
       organization: current_organization,
       user: current_user,
       drive_item: @drive_item,
@@ -1221,8 +1221,8 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def record_drive_item_event!(action, drive_item, changes: {}, metadata: {})
-    record_audit_event!(
-      action: action,
+    record_operation!(
+      operation_type: action,
       target: drive_item,
       organization: current_organization,
       changes: changes,
@@ -1235,8 +1235,8 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def record_bulk_drive_item_event!(action, metadata = {})
-    record_audit_event!(
-      action: action,
+    record_operation!(
+      operation_type: action,
       organization: current_organization,
       metadata: metadata.merge(
         drive_item_ids: bulk_drive_item_ids

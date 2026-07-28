@@ -1,4 +1,4 @@
-module AuditLogs
+module DriveItemAccessLogs
   class BulkRecorder
     def initialize(organization:, drive_items:, action:, request:, user: nil, external_share: nil, metadata: {})
       @organization = organization
@@ -12,6 +12,7 @@ module AuditLogs
 
     def call
       now = Time.current
+      batch_id = @metadata[:batch_id].presence || @request.request_id.to_s
       rows = @drive_items.map do |drive_item|
         {
           actor_kind: actor_kind,
@@ -24,7 +25,8 @@ module AuditLogs
           ip_address: @request.remote_ip,
           user_agent: @request.user_agent.to_s,
           request_id: @request.request_id.to_s,
-          metadata: file_metadata(drive_item).merge(@metadata),
+          batch_id: batch_id,
+          metadata: file_metadata(drive_item).merge(@metadata.except(:batch_id)),
           created_at: now,
           updated_at: now
         }
@@ -33,7 +35,7 @@ module AuditLogs
       true
     rescue StandardError => error
       Rails.logger.error(
-        "[audit_logs.bulk_recorder] failed organization_id=#{@organization.id} action=#{@action} " \
+        "[drive_item_access_logs.bulk_recorder] failed organization_id=#{@organization.id} action=#{@action} " \
         "request_id=#{@request.request_id} error=#{error.class}: #{error.message}"
       )
       false

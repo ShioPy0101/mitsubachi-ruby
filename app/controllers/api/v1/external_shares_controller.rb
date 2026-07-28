@@ -129,8 +129,8 @@ class Api::V1::ExternalSharesController < ApplicationController
   end
 
   def record_external_share_event!(action, external_share, changes: {}, metadata: {})
-    record_audit_event!(
-      action: action,
+    record_operation!(
+      operation_type: action,
       target: external_share,
       organization: external_share.organization,
       changes: changes,

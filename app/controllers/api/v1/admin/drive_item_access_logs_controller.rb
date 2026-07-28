@@ -4,7 +4,7 @@ class Api::V1::Admin::DriveItemAccessLogsController < Api::V1::Admin::BaseContro
   end
 
   def show
-    log = scoped_file_access_logs.includes(:user, :external_share, :organization, :drive_item).find_by(id: params[:id])
+    log = scoped_drive_item_access_logs.includes(:user, :external_share, :organization, :drive_item).find_by(id: params[:id])
     return render_not_found if log.nil?
 
     render json: { data: access_log_json(log) }
@@ -13,7 +13,7 @@ class Api::V1::Admin::DriveItemAccessLogsController < Api::V1::Admin::BaseContro
   private
 
   def filtered_scope
-    scope = scoped_file_access_logs.includes(:user, :external_share, :organization, :drive_item)
+    scope = scoped_drive_item_access_logs.includes(:user, :external_share, :organization, :drive_item)
     scope = scope.where(organization_id: params[:organization_id]) if system_admin? && params[:organization_id].present?
     %i[user_id external_share_id drive_item_id ip_address].each do |key|
       scope = scope.where(key => params[key]) if params[key].present?
@@ -22,6 +22,7 @@ class Api::V1::Admin::DriveItemAccessLogsController < Api::V1::Admin::BaseContro
     scope = scope.where(action: action) if action.present?
     request_id = request.query_parameters["request_id"]
     scope = scope.where(request_id: request_id) if request_id.present?
+    scope = scope.where(batch_id: params[:batch_id]) if params[:batch_id].present?
     scope = scope.where("drive_item_access_logs.metadata ->> 'filename' ILIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(params[:filename])}%") if params[:filename].present?
     scope = scope.where("drive_item_access_logs.occurred_at >= ?", Time.zone.parse(params[:occurred_from])) if params[:occurred_from].present?
     scope = scope.where("drive_item_access_logs.occurred_at <= ?", Time.zone.parse(params[:occurred_to])) if params[:occurred_to].present?
@@ -32,11 +33,22 @@ class Api::V1::Admin::DriveItemAccessLogsController < Api::V1::Admin::BaseContro
 
   def access_log_json(log)
     {
-      id: log.id, actor_kind: log.actor_kind, user_id: log.user_id,
-      external_share_id: log.external_share_id, organization_id: log.organization_id,
-      drive_item_id: log.drive_item_id, action: log.action, occurred_at: log.occurred_at,
+      id: log.id, organization_id: log.organization_id, actor: actor_json(log),
+      action: log.action, drive_item: drive_item_json(log), occurred_at: log.occurred_at,
       ip_address: log.ip_address, user_agent: log.user_agent, request_id: log.request_id,
-      metadata: log.metadata
+      batch_id: log.batch_id, metadata: log.metadata
     }
+  end
+
+  def actor_json(log)
+    actor = log.user || log.external_share
+    display_name = log.user&.display_name.presence || log.user&.email
+    display_name ||= "外部共有 ##{log.external_share_id}" if log.external_share_id
+    display_name ||= log.metadata["actor_display_name"]
+    { kind: log.actor_kind, id: actor&.id, display_name: display_name }
+  end
+
+  def drive_item_json(log)
+    { id: log.drive_item_id, filename: log.drive_item&.filename || log.metadata["filename"] }
   end
 end

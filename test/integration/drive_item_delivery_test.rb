@@ -37,7 +37,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItemAccessLog.count", 1 do
-      assert_no_difference "AuditEvent.count" do
+      assert_no_difference "OperationLog.count" do
         get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
       end
     end
@@ -69,7 +69,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in viewer
 
     assert_difference "DriveItemAccessLog.where(action: 'preview', user: viewer).count", 1 do
-      assert_no_difference "AuditEvent.count" do
+      assert_no_difference "OperationLog.count" do
         get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
       end
     end
@@ -107,7 +107,7 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     sign_in @user
 
     assert_difference "DriveItemAccessLog.where(action: 'stream').count", 1 do
-      assert_no_difference "AuditEvent.count" do
+      assert_no_difference "OperationLog.count" do
         get stream_api_v1_drive_item_url(@drive_item), headers: request_headers.merge("Range" => "bytes=0-10")
         assert_response :ok
         sign_in @user
@@ -167,24 +167,24 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     assert_includes response.headers["Content-Disposition"], "filename*="
   end
 
-  test "監査ログ保存失敗時は配信を拒否する" do
+  test "操作履歴保存失敗時は配信を拒否する" do
     sign_in @user
-    failure = AuditLogs::Recorder::Result.failure("監査ログの保存に失敗しました")
+    failure = DriveItemAccessLogs::Recorder::Result.failure("ファイルアクセス履歴の保存に失敗しました")
     recorder = Struct.new(:result) do
       def call
         result
       end
     end.new(failure)
 
-    original_new = AuditLogs::Recorder.method(:new)
-    AuditLogs::Recorder.define_singleton_method(:new) do |*|
+    original_new = DriveItemAccessLogs::Recorder.method(:new)
+    DriveItemAccessLogs::Recorder.define_singleton_method(:new) do |*|
       recorder
     end
 
     begin
       get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
     ensure
-      AuditLogs::Recorder.define_singleton_method(:new, original_new)
+      DriveItemAccessLogs::Recorder.define_singleton_method(:new, original_new)
     end
 
     assert_response :service_unavailable

@@ -37,7 +37,7 @@ module DriveItems
       return invalid_delivery("missing_file") unless File.exist?(absolute_path)
 
       if @record_audit
-        audit_result = AuditLogs::Recorder.new(
+        audit_result = DriveItemAccessLogs::Recorder.new(
           organization: @audit_organization,
           user: @current_user,
           external_share: @external_share,

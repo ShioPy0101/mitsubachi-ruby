@@ -24,8 +24,8 @@ class Api::V1::GroupsController < ApplicationController
     before = organization.slice("name", "description")
 
     if organization.update(group_params)
-      record_audit_event!(
-        action: "organization.settings_updated",
+      record_operation!(
+        operation_type: "organization.settings_updated",
         target: organization,
         organization: organization,
         changes: changed_values(before, organization.slice("name", "description"))

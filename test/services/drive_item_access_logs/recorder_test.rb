@@ -1,6 +1,6 @@
 require "test_helper"
 
-class AuditLogs::RecorderTest < ActiveSupport::TestCase
+class DriveItemAccessLogs::RecorderTest < ActiveSupport::TestCase
   setup do
     @organization = organizations(:one)
     @user = users(:one)
@@ -30,7 +30,7 @@ class AuditLogs::RecorderTest < ActiveSupport::TestCase
   private
 
   def build_recorder(action)
-    AuditLogs::Recorder.new(
+    DriveItemAccessLogs::Recorder.new(
       organization: @organization,
       user: @user,
       drive_item: @drive_item,

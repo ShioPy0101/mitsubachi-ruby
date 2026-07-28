@@ -29,10 +29,13 @@ class Api::V1::Admin::SystemEventsController < Api::V1::Admin::BaseController
   def system_event_json(event)
     {
       id: event.id, event_type: event.event_type, severity: event.severity, source: event.source,
-      organization_id: event.organization_id, related_user_id: event.related_user_id,
-      target_type: event.target_type, target_id: event.target_id, request_id: event.request_id,
-      job_id: event.job_id, trace_id: event.trace_id, occurred_at: event.occurred_at,
-      metadata: {}
+      organization_id: event.organization_id,
+      target: { type: event.target_type, id: event.target_id }, request_id: event.request_id,
+      occurred_at: event.occurred_at, summary: event_summary(event)
     }
+  end
+
+  def event_summary(event)
+    event.metadata["summary"].presence || "システム処理で#{event.event_type}が発生しました"
   end
 end
