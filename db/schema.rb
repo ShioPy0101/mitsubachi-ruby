@@ -10,13 +10,14 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_093000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_28_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   create_table "drive_item_access_logs", force: :cascade do |t|
     t.string "action"
     t.string "actor_kind", default: "user", null: false
+    t.string "batch_id"
     t.datetime "created_at", null: false
     t.bigint "drive_item_id"
     t.bigint "external_share_id"
@@ -29,6 +30,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_093000) do
     t.text "user_agent"
     t.bigint "user_id"
     t.index [ "actor_kind", "occurred_at" ], name: "index_drive_item_access_logs_on_actor_kind_and_occurred_at"
+    t.index [ "batch_id" ], name: "index_drive_item_access_logs_on_batch_id"
     t.index [ "drive_item_id", "occurred_at" ], name: "index_access_logs_on_item_and_accessed_at"
     t.index [ "drive_item_id" ], name: "index_drive_item_access_logs_on_drive_item_id"
     t.index [ "external_share_id" ], name: "index_drive_item_access_logs_on_external_share_id"
@@ -37,6 +39,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_093000) do
     t.index [ "request_id", "action" ], name: "index_drive_item_access_logs_on_request_id_and_action"
     t.index [ "user_id", "occurred_at" ], name: "index_access_logs_on_user_and_accessed_at"
     t.index [ "user_id" ], name: "index_drive_item_access_logs_on_user_id"
+    t.check_constraint "actor_kind::text = 'user'::text AND user_id IS NOT NULL AND external_share_id IS NULL OR actor_kind::text = 'external_share'::text AND user_id IS NULL AND external_share_id IS NOT NULL OR actor_kind::text = 'anonymous'::text AND user_id IS NULL AND external_share_id IS NULL", name: "drive_item_access_logs_actor_consistency"
   end
 
   create_table "drive_items", force: :cascade do |t|
@@ -171,24 +174,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_093000) do
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'approved'::character varying::text, 'denied'::character varying::text, 'consumed'::character varying::text, 'expired'::character varying::text])", name: "flower_device_authorizations_status_check"
   end
 
-  create_table "legacy_admin_audit_logs", force: :cascade do |t|
-    t.string "action", null: false
-    t.bigint "actor_user_id", null: false
-    t.jsonb "change_set", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.string "ip_address"
-    t.bigint "organization_id", null: false
-    t.bigint "target_id", null: false
-    t.string "target_type", null: false
-    t.datetime "updated_at", null: false
-    t.text "user_agent"
-    t.index [ "action" ], name: "index_legacy_admin_audit_logs_on_action"
-    t.index [ "actor_user_id" ], name: "index_legacy_admin_audit_logs_on_actor_user_id"
-    t.index [ "created_at" ], name: "index_legacy_admin_audit_logs_on_created_at"
-    t.index [ "organization_id" ], name: "index_legacy_admin_audit_logs_on_organization_id"
-    t.index [ "target_type", "target_id" ], name: "index_legacy_admin_audit_logs_on_target_type_and_target_id"
-  end
-
   create_table "operation_logs", force: :cascade do |t|
     t.bigint "actor_external_share_id"
     t.string "actor_kind", default: "anonymous", null: false
@@ -215,6 +200,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_093000) do
     t.index [ "organization_id", "occurred_at" ], name: "index_operation_logs_on_organization_id_and_occurred_at"
     t.index [ "organization_id" ], name: "index_operation_logs_on_organization_id"
     t.index [ "target_type", "target_id" ], name: "index_operation_logs_on_target_type_and_target_id"
+    t.check_constraint "actor_kind::text = 'user'::text AND actor_user_id IS NOT NULL AND actor_external_share_id IS NULL OR actor_kind::text = 'external_share'::text AND actor_user_id IS NULL AND actor_external_share_id IS NOT NULL OR actor_kind::text = 'anonymous'::text AND actor_user_id IS NULL AND actor_external_share_id IS NULL", name: "operation_logs_actor_consistency"
   end
 
   create_table "organization_invites", force: :cascade do |t|
@@ -347,8 +333,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_093000) do
   add_foreign_key "flower_access_tokens", "users"
   add_foreign_key "flower_device_authorizations", "organizations"
   add_foreign_key "flower_device_authorizations", "users"
-  add_foreign_key "legacy_admin_audit_logs", "organizations"
-  add_foreign_key "legacy_admin_audit_logs", "users", column: "actor_user_id"
   add_foreign_key "operation_logs", "external_shares", column: "actor_external_share_id", on_delete: :nullify
   add_foreign_key "operation_logs", "organizations"
   add_foreign_key "operation_logs", "users", column: "actor_user_id"

@@ -13,10 +13,6 @@ class OperationLog < ApplicationRecord
   validates :result, inclusion: { in: RESULTS }
   validate :actor_matches_kind
 
-  # deprecated APIの移行期間中だけ旧属性名を読み書き可能にする。
-  alias_attribute :action, :operation_type
-  alias_attribute :outcome, :result
-
   private
 
   def normalize_actor_kind
