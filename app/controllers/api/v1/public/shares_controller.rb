@@ -13,7 +13,7 @@ class Api::V1::Public::SharesController < ApplicationController
       return
     end
 
-    record_external_access!("external_share.opened", outcome: "success")
+    record_external_access!("external_share.opened", result: "success")
     render json: share_json(items: item_scope.all_visible_items)
   end
 
@@ -25,7 +25,7 @@ class Api::V1::Public::SharesController < ApplicationController
     ).call
 
     unless result.success?
-      record_external_access!("external_share.password_failed", outcome: "denied", metadata: { reason: result.error_code })
+      record_external_access!("external_share.password_failed", result: "denied", metadata: { reason: result.error_code })
       render_unlock_error(result)
       return
     end
@@ -99,7 +99,7 @@ class Api::V1::Public::SharesController < ApplicationController
     ).call
     return render_public_not_found unless result.success?
 
-    AuditLogs::BulkRecorder.new(
+    DriveItemAccessLogs::BulkRecorder.new(
       organization: @external_share.organization,
       drive_items: result.drive_items,
       action: :bulk_download,
@@ -251,13 +251,13 @@ class Api::V1::Public::SharesController < ApplicationController
     }, status: result.status
   end
 
-  def record_external_access!(action, drive_item: nil, outcome: "success", metadata: {})
+  def record_external_access!(operation_type, drive_item: nil, result: "success", metadata: {})
     OperationLogs::Recorder.record!(
-      operation_type: action,
+      operation_type: operation_type,
       actor_external_share: @external_share,
       organization: @external_share.organization,
       target: @external_share,
-      result: outcome,
+      result: result,
       metadata: {
         external_share_id: @external_share.id,
         drive_item_id: drive_item&.id

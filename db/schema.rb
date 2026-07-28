@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_28_100100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -39,7 +39,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_100000) do
     t.index [ "request_id", "action" ], name: "index_drive_item_access_logs_on_request_id_and_action"
     t.index [ "user_id", "occurred_at" ], name: "index_access_logs_on_user_and_accessed_at"
     t.index [ "user_id" ], name: "index_drive_item_access_logs_on_user_id"
-    t.check_constraint "actor_kind::text = 'user'::text AND user_id IS NOT NULL AND external_share_id IS NULL OR actor_kind::text = 'external_share'::text AND user_id IS NULL AND external_share_id IS NOT NULL OR actor_kind::text = 'anonymous'::text AND user_id IS NULL AND external_share_id IS NULL", name: "drive_item_access_logs_actor_consistency"
+    t.check_constraint "actor_kind::text = 'user'::text AND user_id IS NOT NULL AND external_share_id IS NULL OR actor_kind::text = 'external_share'::text AND user_id IS NULL OR actor_kind::text = 'anonymous'::text AND user_id IS NULL AND external_share_id IS NULL", name: "drive_item_access_logs_actor_consistency"
   end
 
   create_table "drive_items", force: :cascade do |t|

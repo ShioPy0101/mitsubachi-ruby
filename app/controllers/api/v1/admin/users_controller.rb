@@ -35,8 +35,8 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
     if update_user_and_membership!(user, membership, attributes)
       after = user.slice("name", "email", "role", "organization_id").merge("membership_role" => membership&.reload&.role)
       action = before["membership_role"] != after["membership_role"] || before["role"] != user.role ? "organization.membership_role_changed" : "user.updated"
-      audit_admin_action!(
-        action: action,
+      record_admin_operation!(
+        operation_type: action,
         target: user,
         organization: membership&.organization || user.organization,
         changes: changed_values(before, after)
@@ -54,7 +54,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
     return render_error(:forbidden, "最後の system_admin は停止できません", :forbidden) if last_active_system_admin?(user)
 
     if user.update(suspended_at: Time.current)
-      audit_admin_action!(action: "user.suspended", target: user, organization: user.organization, changes: { suspended_at: [ nil, user.suspended_at ] })
+      record_admin_operation!(operation_type: "user.suspended", target: user, organization: user.organization, changes: { suspended_at: [ nil, user.suspended_at ] })
       render json: { data: user_json(user) }
     else
       render_validation_error(user)
@@ -68,7 +68,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
 
     before = user.suspended_at
     if user.update(suspended_at: nil)
-      audit_admin_action!(action: "user.unsuspended", target: user, organization: user.organization, changes: { suspended_at: [ before, nil ] })
+      record_admin_operation!(operation_type: "user.unsuspended", target: user, organization: user.organization, changes: { suspended_at: [ before, nil ] })
       render json: { data: user_json(user) }
     else
       render_validation_error(user)

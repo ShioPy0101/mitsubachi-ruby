@@ -1,4 +1,4 @@
-module AuditLogs
+module DriveItemAccessLogs
   class Recorder
     Result = Data.define(:success?, :error_message) do
       def self.success
@@ -36,17 +36,18 @@ module AuditLogs
         ip_address: @request.remote_ip,
         user_agent: @request.user_agent.to_s,
         request_id: @request.request_id.to_s,
-        metadata: metadata
+        batch_id: @metadata[:batch_id],
+        metadata: metadata.except(:batch_id)
       )
 
       Result.success
     rescue StandardError => error
       Rails.logger.error(
-        "[audit_logs.recorder] failed organization_id=#{@organization.id} user_id=#{@user&.id} " \
+        "[drive_item_access_logs.recorder] failed organization_id=#{@organization.id} user_id=#{@user&.id} " \
         "drive_item_id=#{@drive_item.id} action=#{@action} request_id=#{@request.request_id} " \
         "error=#{error.class}: #{error.message}"
       )
-      Result.failure("監査ログの保存に失敗しました")
+      Result.failure("ファイルアクセス履歴の保存に失敗しました")
     end
 
     private

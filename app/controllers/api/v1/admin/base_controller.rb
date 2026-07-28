@@ -75,9 +75,6 @@ class Api::V1::Admin::BaseController < ApplicationController
     )
   end
 
-  alias_method :scoped_admin_audit_logs, :scoped_operation_logs
-  alias_method :scoped_audit_events, :scoped_operation_logs
-
   def scoped_system_events
     return current_organization.system_events if organization_path_scope?
     return SystemEvent.all if system_admin?
@@ -91,7 +88,7 @@ class Api::V1::Admin::BaseController < ApplicationController
     )
   end
 
-  def scoped_file_access_logs
+  def scoped_drive_item_access_logs
     return current_organization.drive_item_access_logs if organization_path_scope?
     return DriveItemAccessLog.all if system_admin?
 
@@ -154,29 +151,29 @@ class Api::V1::Admin::BaseController < ApplicationController
     render_validation_error(error.record)
   end
 
-  def audit_admin_action!(action:, target:, organization:, changes: {})
-    record_audit_event!(
-      action: action,
+  def record_admin_operation!(operation_type:, target:, organization:, changes: {})
+    record_operation!(
+      operation_type: operation_type,
       target: target,
       organization: organization,
       changes: changes
     )
   end
 
-  def record_audit_event!(action:, target: nil, organization: current_organization, outcome: "success", changes: {}, metadata: {})
-    AuditEvents::Recorder.record!(
-      action: action,
+  def record_operation!(operation_type:, target: nil, organization: current_organization, result: "success", changes: {}, metadata: {})
+    OperationLogs::Recorder.record!(
+      operation_type: operation_type,
       actor_user: current_user,
       organization: organization,
       target: target,
-      outcome: outcome,
+      result: result,
       changes: changes,
       metadata: metadata,
       request: request
     )
   end
 
-  def sanitize_audit_changes(changes)
+  def sanitize_operation_changes(changes)
     changes.deep_stringify_keys.except(
       "encrypted_password",
       "password",

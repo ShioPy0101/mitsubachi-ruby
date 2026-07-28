@@ -20,8 +20,8 @@ class Api::V1::MeController < ApplicationController
     end
 
     if current_user.save
-      record_audit_event!(
-        action: "user.profile_updated",
+      record_operation!(
+        operation_type: "user.profile_updated",
         target: current_user,
         changes: { display_name: [ before_display_name, current_user.display_name ] }
       ) if before_display_name != current_user.display_name
@@ -37,8 +37,8 @@ class Api::V1::MeController < ApplicationController
       user: current_user,
       email: email_change_params.fetch(:email)
     ).call
-    record_audit_event!(
-      action: "user.email_change_requested",
+    record_operation!(
+      operation_type: "user.email_change_requested",
       target: current_user,
       metadata: { email_domain: email_domain(result.email_change.new_email) }
     )
@@ -64,8 +64,8 @@ class Api::V1::MeController < ApplicationController
 
   def verify_email_change
     result = UserEmailChanges::ConfirmService.new(token: params[:token]).call
-    record_audit_event!(
-      action: "user.email_changed",
+    record_operation!(
+      operation_type: "user.email_changed",
       actor_user: result.user,
       organization: result.user.organization,
       target: result.user,
@@ -91,8 +91,8 @@ class Api::V1::MeController < ApplicationController
 
     if email_change.present?
       email_change.update!(cancelled_at: Time.current)
-      record_audit_event!(
-        action: "user.email_change_cancelled",
+      record_operation!(
+        operation_type: "user.email_change_cancelled",
         target: current_user,
         metadata: { email_domain: email_domain(email_change.new_email) }
       )
@@ -194,12 +194,12 @@ class Api::V1::MeController < ApplicationController
   def record_email_change_failure!(reason)
     actor = current_user_or_nil
 
-    record_audit_event!(
-      action: "user.email_change_failed",
+    record_operation!(
+      operation_type: "user.email_change_failed",
       actor_user: actor,
       organization: actor&.organization,
       target: actor,
-      outcome: "failure",
+      result: "failure",
       metadata: { reason: reason }
     )
   end

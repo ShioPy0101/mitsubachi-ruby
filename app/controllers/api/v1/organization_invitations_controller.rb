@@ -11,8 +11,8 @@ class Api::V1::OrganizationInvitationsController < ApplicationController
 
   def accept
     result = OrganizationInvitations::AcceptanceService.call(token: params[:token], user: current_user)
-    record_audit_event!(
-      action: "organization.membership_created",
+    record_operation!(
+      operation_type: "organization.membership_created",
       actor_user: current_user,
       organization: result.invite.organization,
       target: result.membership,

@@ -6,7 +6,7 @@ class FinalizeLogStorage < ActiveRecord::Migration[8.0]
   SQL
   ACCESS_ACTOR_CHECK = <<~SQL.squish
     (actor_kind = 'user' AND user_id IS NOT NULL AND external_share_id IS NULL) OR
-    (actor_kind = 'external_share' AND user_id IS NULL AND external_share_id IS NOT NULL) OR
+    (actor_kind = 'external_share' AND user_id IS NULL) OR
     (actor_kind = 'anonymous' AND user_id IS NULL AND external_share_id IS NULL)
   SQL
 

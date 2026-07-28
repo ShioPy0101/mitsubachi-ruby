@@ -16,8 +16,8 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       display_name: params[:display_name]
     )
     deliver_magic_link(result)
-    record_audit_event!(
-      action: "auth.registration_link_requested",
+    record_operation!(
+      operation_type: "auth.registration_link_requested",
       actor_user: result.user,
       organization: result.organization,
       target: result.organization_invite,
@@ -33,8 +33,8 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   def login
     result = auth_magic_links.request_login(email: params[:email])
     deliver_magic_link(result)
-    record_audit_event!(
-      action: "auth.login_link_requested",
+    record_operation!(
+      operation_type: "auth.login_link_requested",
       actor_user: result.user,
       organization: result.organization,
       target: result.user,
@@ -81,8 +81,8 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   def render_verified_user(result)
     create_authenticated_session!(result.user, client_type: "web")
-    record_audit_event!(
-      action: result.purpose == "login" ? "auth.login_succeeded" : "auth.registration_verified",
+    record_operation!(
+      operation_type: result.purpose == "login" ? "auth.login_succeeded" : "auth.registration_verified",
       actor_user: result.user,
       organization: result.organization_invite&.organization || login_organization_for(result.user),
       target: result.user
@@ -103,9 +103,9 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   end
 
   def record_auth_failure!(action, email: nil, error:)
-    record_audit_event!(
-      action: action,
-      outcome: "failure",
+    record_operation!(
+      operation_type: action,
+      result: "failure",
       metadata: {
         email_identifier: OperationLogs::EmailIdentifier.call(email),
         code: error.code,

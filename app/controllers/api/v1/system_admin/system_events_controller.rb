@@ -27,10 +27,13 @@ class Api::V1::SystemAdmin::SystemEventsController < Api::V1::SystemAdmin::BaseC
   end
 
   def system_event_json(event)
-    event.attributes.slice(
-      "id", "event_type", "severity", "source", "organization_id", "related_user_id",
-      "target_type", "target_id", "request_id", "job_id", "trace_id", "error_class",
-      "error_message", "metadata", "occurred_at", "created_at"
-    )
+    {
+      id: event.id, organization_id: event.organization_id, event_type: event.event_type,
+      severity: event.severity, source: event.source,
+      target: { type: event.target_type, id: event.target_id }, related_user_id: event.related_user_id,
+      request_id: event.request_id, job_id: event.job_id, trace_id: event.trace_id,
+      error_class: event.error_class, error_message: event.error_message,
+      metadata: event.metadata, occurred_at: event.occurred_at
+    }
   end
 end

@@ -78,7 +78,7 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
     record_flower_event!(
       "flower.download_denied",
       target: drive_item,
-      outcome: "denied",
+      result: "denied",
       metadata: {
         drive_item_id: drive_item&.id || params[:id],
         result: "denied",
@@ -88,12 +88,12 @@ class Api::V1::Flower::DriveItemsController < Api::V1::Flower::BaseController
     )
   end
 
-  def record_flower_event!(action, target: nil, outcome: "success", metadata: {})
-    record_audit_event!(
-      action: action,
+  def record_flower_event!(operation_type, target: nil, result: "success", metadata: {})
+    record_operation!(
+      operation_type: operation_type,
       target: target,
       organization: current_organization,
-      outcome: outcome,
+      result: result,
       metadata: flower_metadata(metadata).merge(
         flower_access_token_id: current_flower_token&.id,
         device_authorization_id: current_flower_token&.flower_device_authorization_id

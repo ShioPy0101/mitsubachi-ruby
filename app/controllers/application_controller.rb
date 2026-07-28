@@ -15,13 +15,13 @@ class ApplicationController < ActionController::API
     render_api_error(:unauthorized, "ログインが必要です。", status: :unauthorized)
   end
 
-  def record_audit_event!(action:, actor_user: current_user_or_nil, organization: current_organization_for_audit(actor_user), target: nil, outcome: "success", changes: {}, metadata: {})
-    AuditEvents::Recorder.record!(
-      action: action,
+  def record_operation!(operation_type:, actor_user: current_user_or_nil, organization: current_organization_for_operation(actor_user), target: nil, result: "success", changes: {}, metadata: {})
+    OperationLogs::Recorder.record!(
+      operation_type: operation_type,
       actor_user: actor_user,
       organization: organization,
       target: target,
-      outcome: outcome,
+      result: result,
       changes: changes,
       metadata: { client_type: current_client_type }.merge(metadata),
       request: request
@@ -86,7 +86,7 @@ class ApplicationController < ActionController::API
     nil
   end
 
-  def current_organization_for_audit(actor_user)
+  def current_organization_for_operation(actor_user)
     return current_organization if current_organization.present?
 
     actor_user&.organization

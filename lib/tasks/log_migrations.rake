@@ -15,13 +15,4 @@ namespace :logs do
     puts "processed=#{result.processed_count} inserted=#{result.inserted_count} " \
          "deduplicated=#{result.deduplicated_count} removed=#{result.removed_count}"
   end
-
-  desc "Backfill only legacy administrator records missing from OperationLog"
-  task backfill_legacy_admin_logs: :environment do
-    result = LogMigrations::LegacyAdminLogBackfill.new(
-      batch_size: ENV.fetch("BATCH_SIZE", LogMigrations::LegacyAdminLogBackfill::DEFAULT_BATCH_SIZE).to_i
-    ).call
-    puts "processed=#{result.processed_count} inserted=#{result.inserted_count} " \
-         "deduplicated=#{result.deduplicated_count}"
-  end
 end

@@ -986,7 +986,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
-  test "move API は移動後の項目とrequest_idを返し監査ログを記録する" do
+  test "move API は移動後の項目とrequest_idを返し操作履歴を記録する" do
     sign_in @user
     destination = create_directory(name: "destination")
 

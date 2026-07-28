@@ -216,7 +216,7 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
     assert_response :ok
   end
 
-  test "生成パスワードは監査ログに保存しない" do
+  test "生成パスワードは操作履歴に保存しない" do
     sign_in_with_magic_link @user
 
     post api_v1_external_shares_url, params: {
@@ -230,7 +230,7 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
 
     assert_response :created
     generated_password = response.parsed_body.fetch("generated_password")
-    audit_payloads = AuditEvent.where(action: "external_share.created").map { |event| event.metadata.to_json }
+    audit_payloads = OperationLog.where(operation_type: "external_share.created").map { |event| event.metadata.to_json }
     assert audit_payloads.present?
     assert audit_payloads.none? { |payload| payload.include?(generated_password) }
   end

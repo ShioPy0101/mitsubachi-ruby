@@ -28,7 +28,7 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
     sign_in @system_admin
 
     assert_difference "DriveItemAccessLog.where(action: 'preview').count", 1 do
-      assert_no_difference "AuditEvent.count" do
+      assert_no_difference "OperationLog.count" do
         get preview_api_v1_admin_drive_item_url(@other_file), headers: request_headers
       end
     end
@@ -43,7 +43,7 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
     sign_in @system_admin
 
     assert_difference "DriveItemAccessLog.where(action: 'download').count", 1 do
-      assert_no_difference "AuditEvent.count" do
+      assert_no_difference "OperationLog.count" do
         get download_api_v1_admin_drive_item_url(@other_file), headers: request_headers
       end
     end
@@ -56,7 +56,7 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
     sign_in @system_admin
 
     assert_difference "DriveItemAccessLog.where(action: 'stream').count", 1 do
-      assert_no_difference "AuditEvent.count" do
+      assert_no_difference "OperationLog.count" do
         get stream_api_v1_admin_drive_item_url(@other_file), headers: request_headers.merge("Range" => "bytes=0-10")
       end
     end

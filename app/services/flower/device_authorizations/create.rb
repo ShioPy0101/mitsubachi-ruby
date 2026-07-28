@@ -67,10 +67,10 @@ module Flower
       end
 
       def audit!(action, authorization, outcome)
-        AuditEvents::Recorder.record!(
-          action: action,
+        OperationLogs::Recorder.record!(
+          operation_type: action,
           target: authorization,
-          outcome: outcome,
+          result: outcome,
           metadata: {
             client_type: "flower",
             client_name: @client_name.first(100),
