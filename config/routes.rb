@@ -18,6 +18,10 @@ Rails.application.routes.draw do
         delete "email_change", action: :cancel_email_change
       end
       resource :group, only: %i[show update], controller: :groups
+      post "upload_metrics", to: "upload_metrics#create"
+      patch "upload_metrics/:upload_session_id", to: "upload_metrics#update"
+      post "organizations/:organization_id/upload_metrics", to: "upload_metrics#create"
+      patch "organizations/:organization_id/upload_metrics/:upload_session_id", to: "upload_metrics#update"
       resources :external_shares, only: %i[index show create update destroy] do
         member do
           post :regenerate_password
@@ -130,6 +134,9 @@ Rails.application.routes.draw do
 
       namespace :system_admin do
         resources :system_events, only: %i[index show]
+        get "upload_metrics/summary", to: "upload_metrics#summary"
+        get "upload_metrics/timeseries", to: "upload_metrics#timeseries"
+        resources :upload_metrics, only: %i[index show]
       end
 
       post "auth/create", to: "email_authentications#create"

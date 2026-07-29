@@ -2932,6 +2932,81 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/upload_metrics:
+    post:
+      operationId: createUploadMetric
+      tags: [DriveItems]
+      summary: Start an aggregated upload metric session.
+      responses:
+        "200": { description: Idempotent existing metric. }
+        "201": { description: Metric created. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /api/v1/upload_metrics/{upload_session_id}:
+    patch:
+      operationId: updateUploadMetric
+      tags: [DriveItems]
+      summary: Idempotently update an aggregated upload metric.
+      parameters:
+        - { name: upload_session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Metric updated. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /api/v1/organizations/{organization_id}/upload_metrics:
+    post:
+      operationId: createOrganizationUploadMetric
+      tags: [DriveItems]
+      summary: Start an upload metric in the selected organization.
+      parameters:
+        - { name: organization_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "201": { description: Metric created. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/organizations/{organization_id}/upload_metrics/{upload_session_id}:
+    patch:
+      operationId: updateOrganizationUploadMetric
+      tags: [DriveItems]
+      summary: Update an upload metric in the selected organization.
+      parameters:
+        - { name: organization_id, in: path, required: true, schema: { type: integer } }
+        - { name: upload_session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Metric updated. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/system_admin/upload_metrics:
+    get:
+      operationId: listSystemAdminUploadMetrics
+      tags: [Admin]
+      summary: List filtered upload metrics with pagination.
+      responses:
+        "200": { description: Upload metric page. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/system_admin/upload_metrics/summary:
+    get:
+      operationId: summarizeSystemAdminUploadMetrics
+      tags: [Admin]
+      summary: Summarize upload metrics using the same filters as the list.
+      responses:
+        "200": { description: Upload metric summary. }
+  /api/v1/system_admin/upload_metrics/timeseries:
+    get:
+      operationId: timeseriesSystemAdminUploadMetrics
+      tags: [Admin]
+      summary: Return hourly or daily upload metric buckets.
+      responses:
+        "200": { description: Upload metric time series. }
+  /api/v1/system_admin/upload_metrics/{id}:
+    get:
+      operationId: getSystemAdminUploadMetric
+      tags: [Admin]
+      summary: Return one upload metric without filenames or paths.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Upload metric detail. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     cookieSession:
