@@ -100,18 +100,20 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     assert_equal "camera=(), microphone=(), geolocation=()", response.headers["Permissions-Policy"]
   end
 
-  test "cors preflight succeeds for allowed frontend origin" do
+  test "許可されたフロントエンドからupload session header付きpreflightが成功する" do
     process(
       :options,
       api_v1_me_url,
       headers: {
         "Origin" => "http://localhost:5173",
-        "Access-Control-Request-Method" => "GET"
+        "Access-Control-Request-Method" => "POST",
+        "Access-Control-Request-Headers" => "X-CSRF-Token, X-Upload-Session-ID"
       }
     )
 
     assert_response :no_content
     assert_equal "http://localhost:5173", response.headers["Access-Control-Allow-Origin"]
+    assert_includes response.headers["Access-Control-Allow-Headers"], "X-Upload-Session-ID"
   end
 
   test "me endpoint rejects suspended user sessions" do
