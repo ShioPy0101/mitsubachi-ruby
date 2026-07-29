@@ -49,7 +49,7 @@ class ApiCors
       "Access-Control-Allow-Methods" =>
         "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
       "Access-Control-Allow-Headers" =>
-        "Origin, Content-Type, Accept, X-CSRF-Token, X-Requested-With",
+        "Origin, Content-Type, Accept, X-CSRF-Token, X-Requested-With, X-Upload-Session-ID",
       "Vary" => vary_header(existing_vary)
     }
   end
