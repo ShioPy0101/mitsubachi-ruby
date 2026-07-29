@@ -11,6 +11,7 @@ class Api::V1::DriveItemsController < ApplicationController
   before_action :set_active_drive_item, only: %i[show update move destroy]
   before_action :set_deleted_drive_item, only: %i[restore restore_preview purge]
   before_action :set_deliverable_drive_item, only: %i[preview download stream]
+  around_action :observe_upload_request, only: :create
 
   def index
     @drive_items =
@@ -778,12 +779,14 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def save_uploaded_file(uploaded_file, storage_key)
-    DriveItems::StoredFileInspector.copy_upload!(
-      uploaded_file: uploaded_file,
-      storage_path: DriveItem.storage_root.join(DriveItem.storage_relative_path_for(storage_key)),
-      filename: uploaded_file.original_filename,
-      storage_key: storage_key
-    )
+    timed_upload_phase(:storage_duration_ms) do
+      DriveItems::StoredFileInspector.copy_upload!(
+        uploaded_file: uploaded_file,
+        storage_path: DriveItem.storage_root.join(DriveItem.storage_relative_path_for(storage_key)),
+        filename: uploaded_file.original_filename,
+        storage_key: storage_key
+      )
+    end
   end
 
   def replace_target_for_upload(upload_hash)
@@ -889,13 +892,64 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def digest_uploaded_file(uploaded_file)
-    io = uploaded_file.tempfile
-    io.rewind
-    digest = Digest::SHA256.new
-    digest.update(io.read(5.megabytes)) until io.eof?
-    digest.hexdigest
+    io = nil
+    timed_upload_phase(:hash_duration_ms) do
+      io = uploaded_file.tempfile
+      io.rewind
+      digest = Digest::SHA256.new
+      digest.update(io.read(5.megabytes)) until io.eof?
+      digest.hexdigest
+    end
   ensure
     io&.rewind
+  end
+
+  def observe_upload_request
+    unless params[:item_type] == "file"
+      yield
+      return
+    end
+
+    @upload_timings = Hash.new(0.0)
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    upload_session_id = valid_upload_session_id(request.headers["X-Upload-Session-ID"]) || SecureRandom.uuid
+    sql_callback = lambda do |_name, started_at, finished_at, _id, payload|
+      @upload_timings[:database_duration_ms] += (finished_at - started_at) * 1000 unless payload[:name] == "SCHEMA"
+    end
+    ActiveSupport::Notifications.subscribed(sql_callback, "sql.active_record") { yield }
+  ensure
+    if started
+      Rails.logger.info({
+        event: response&.successful? ? "upload_completed" : "upload_failed",
+        upload_session_id: upload_session_id,
+        request_id: request.request_id,
+        organization_id: current_organization&.id,
+        user_id: current_user&.id,
+        drive_item_id: @drive_item&.persisted? ? @drive_item.id : nil,
+        size_bytes: params[:file]&.size,
+        status: response&.status,
+        controller_duration_ms: elapsed_upload_ms(started),
+        database_duration_ms: @upload_timings&.fetch(:database_duration_ms, 0)&.round,
+        storage_duration_ms: @upload_timings&.fetch(:storage_duration_ms, 0)&.round,
+        hash_duration_ms: @upload_timings&.fetch(:hash_duration_ms, 0)&.round,
+        created_at: Time.current.iso8601
+      }.to_json)
+    end
+  end
+
+  def timed_upload_phase(name)
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    yield
+  ensure
+    @upload_timings[name] += elapsed_upload_ms(started) if @upload_timings
+  end
+
+  def elapsed_upload_ms(started)
+    (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000
+  end
+
+  def valid_upload_session_id(value)
+    value.to_s.downcase.presence if value.to_s.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i)
   end
 
   def duplicate_name_details(name, parent_id:, extension:)

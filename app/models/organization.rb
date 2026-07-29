@@ -1,4 +1,5 @@
 class Organization < ApplicationRecord
+  has_many :upload_metrics, dependent: :restrict_with_error
     has_many :organization_memberships,
              dependent: :destroy
 

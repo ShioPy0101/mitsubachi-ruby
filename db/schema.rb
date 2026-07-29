@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_100100) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_29_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -275,6 +275,57 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_100100) do
     t.index [ "trace_id" ], name: "index_system_events_on_trace_id"
   end
 
+  create_table "upload_metrics", force: :cascade do |t|
+    t.bigint "average_file_size_bytes", default: 0, null: false
+    t.string "backend_version"
+    t.bigint "background_duration_ms", default: 0, null: false
+    t.bigint "between_100mb_and_1gb_count", default: 0, null: false
+    t.bigint "between_1mb_and_100mb_count", default: 0, null: false
+    t.bigint "cancelled_files", default: 0, null: false
+    t.datetime "completed_at"
+    t.bigint "completed_bytes", default: 0, null: false
+    t.bigint "completed_files", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.bigint "effective_throughput_bytes_per_second", default: 0, null: false
+    t.bigint "elapsed_ms", default: 0, null: false
+    t.jsonb "error_code_counts", default: {}, null: false
+    t.bigint "failed_files", default: 0, null: false
+    t.string "frontend_version"
+    t.jsonb "http_status_counts", default: {}, null: false
+    t.datetime "last_observed_at", null: false
+    t.bigint "long_task_count", default: 0, null: false
+    t.bigint "long_task_max_duration_ms", default: 0, null: false
+    t.bigint "long_task_total_duration_ms", default: 0, null: false
+    t.integer "max_concurrency", default: 1, null: false
+    t.bigint "max_file_size_bytes", default: 0, null: false
+    t.integer "max_relative_depth", default: 0, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "min_file_size_bytes", default: 0, null: false
+    t.bigint "organization_id", null: false
+    t.bigint "over_1gb_count", default: 0, null: false
+    t.bigint "progress_stall_count", default: 0, null: false
+    t.jsonb "request_ids", default: [], null: false
+    t.bigint "retried_files", default: 0, null: false
+    t.bigint "retry_count", default: 0, null: false
+    t.datetime "started_at", null: false
+    t.string "status", default: "in_progress", null: false
+    t.bigint "total_bytes", default: 0, null: false
+    t.bigint "total_files", default: 0, null: false
+    t.bigint "under_1mb_count", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.string "upload_kind", default: "single", null: false
+    t.uuid "upload_session_id", null: false
+    t.bigint "user_id", null: false
+    t.index [ "organization_id", "started_at" ], name: "index_upload_metrics_on_organization_id_and_started_at"
+    t.index [ "organization_id" ], name: "index_upload_metrics_on_organization_id"
+    t.index [ "started_at" ], name: "index_upload_metrics_on_started_at"
+    t.index [ "status", "last_observed_at" ], name: "index_upload_metrics_on_status_and_last_observed_at"
+    t.index [ "status", "started_at" ], name: "index_upload_metrics_on_status_and_started_at"
+    t.index [ "upload_session_id" ], name: "index_upload_metrics_on_upload_session_id", unique: true
+    t.index [ "user_id", "started_at" ], name: "index_upload_metrics_on_user_id_and_started_at"
+    t.index [ "user_id" ], name: "index_upload_metrics_on_user_id"
+  end
+
   create_table "user_email_changes", force: :cascade do |t|
     t.datetime "cancelled_at"
     t.datetime "created_at", null: false
@@ -344,6 +395,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_100100) do
   add_foreign_key "organization_memberships", "users"
   add_foreign_key "system_events", "organizations"
   add_foreign_key "system_events", "users", column: "related_user_id"
+  add_foreign_key "upload_metrics", "organizations"
+  add_foreign_key "upload_metrics", "users"
   add_foreign_key "user_email_changes", "users"
   add_foreign_key "users", "organizations"
 end
