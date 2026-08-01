@@ -86,6 +86,43 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "organization IDなしでも所属先の共有ドライブアイテムを外部公開できる" do
+    @user.organization_memberships.create!(
+      organization: organizations(:two),
+      role: :member,
+      status: :active
+    )
+    sign_in_with_magic_link @user
+
+    post api_v1_external_shares_url, params: {
+      external_share: {
+        name: "共有ドライブ公開",
+        drive_item_ids: [ drive_items(:two).id ],
+        folder_share_mode: "snapshot"
+      }
+    }
+
+    assert_response :created
+    share = ExternalShare.find(response.parsed_body.fetch("id"))
+    assert_equal organizations(:two), share.organization
+    assert_equal [ drive_items(:two).id ], share.drive_items.pluck(:id)
+  end
+
+  test "organization IDなしの外部公開でも未所属organizationのアイテムは公開できない" do
+    sign_in_with_magic_link @user
+
+    post api_v1_external_shares_url, params: {
+      external_share: {
+        name: "未所属アイテム公開",
+        drive_item_ids: [ drive_items(:two).id ],
+        folder_share_mode: "snapshot"
+      }
+    }
+
+    assert_response :not_found
+    assert_equal "not_found", response.parsed_body.dig("error", "code")
+  end
+
   test "未所属organizationの外部公開一覧は404" do
     sign_in_with_magic_link @user
 

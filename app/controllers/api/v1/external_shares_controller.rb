@@ -13,7 +13,8 @@ class Api::V1::ExternalSharesController < ApplicationController
   end
 
   def create
-    result = ExternalShares::CreateService.new(user: current_user, organization: current_organization, params: external_share_params.to_h.symbolize_keys).call
+    attributes = external_share_params.to_h.symbolize_keys
+    result = ExternalShares::CreateService.new(user: current_user, organization: organization_for_create(attributes), params: attributes).call
     unless result.success?
       render_api_error(error_code_for_status(result.status), result.error_message, status: result.status)
       return
@@ -79,6 +80,24 @@ class Api::V1::ExternalSharesController < ApplicationController
       :folder_share_mode,
       drive_item_ids: []
     )
+  end
+
+  def organization_for_create(attributes)
+    return current_organization if organization_path_scope?
+
+    drive_item_ids = Array(attributes[:drive_item_ids]).reject(&:blank?).map(&:to_i).uniq
+    return current_organization if drive_item_ids.empty?
+
+    scope = DriveItem.active.where(id: drive_item_ids)
+    unless current_user.system_admin?
+      scope = scope.where(organization_id: current_user.organization_memberships.active.select(:organization_id))
+    end
+
+    matched_items = scope.select(:id, :organization_id).to_a
+    organization_ids = matched_items.map(&:organization_id).uniq
+    return current_organization unless matched_items.size == drive_item_ids.size && organization_ids.one?
+
+    Organization.find(organization_ids.first)
   end
 
   def external_share_json(external_share, include_items: false)
