@@ -5,7 +5,7 @@ class ApiCors
   ].freeze
 
   PRODUCTION_ORIGINS = %w[
-    https://drive.shiosalt.com
+    https://mitsubachi.shiosalt.com
   ].freeze
 
   def initialize(app)
@@ -50,6 +50,7 @@ class ApiCors
         "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
       "Access-Control-Allow-Headers" =>
         "Origin, Content-Type, Accept, X-CSRF-Token, X-Requested-With, X-Upload-Session-ID",
+      "Access-Control-Expose-Headers" => "Content-Disposition",
       "Vary" => vary_header(existing_vary)
     }
   end

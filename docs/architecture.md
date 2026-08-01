@@ -31,7 +31,7 @@
 - 公開 API は `/api/v1` 配下、health check は `/api/health` 配下に置く
 - 管理 API は通常ユーザー API と分離し、`/api/v1/admin` 配下に置く
 - flower API は `/api/v1/flower` 配下に置き、After Effects 側は Bearer token のみで認証する。ブラウザ Cookie session への fallback はしない
-- 本番は frontend の `https://drive.shiosalt.com/` から API の `https://mitsubachi-api.shiosalt.com/` を呼び出す別オリジン構成を前提とする
+- 本番は frontend の `https://mitsubachi.shiosalt.com/` から API の `https://mitsubachi-api.shiosalt.com/` を呼び出す別オリジン構成を前提とする
 - API CORS は `FRONTEND_ORIGIN` の allowlist に一致する `Origin` のみ許可し、404 や認証エラーにも CORS ヘッダーを付与する
 - Rails の内部ポートは `127.0.0.1:3001` などに bind し、インターネットへ直接公開しない
 - ブラウザ API は Devise の Cookie セッションを使い、flower API は device authorization と短命 Bearer token を使う

@@ -87,7 +87,12 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert_equal "http://localhost:5173", response.headers["Access-Control-Allow-Origin"]
     assert_equal "true", response.headers["Access-Control-Allow-Credentials"]
+    assert_equal "Content-Disposition", response.headers["Access-Control-Expose-Headers"]
     assert_equal "Origin", response.headers["Vary"]
+  end
+
+  test "production の既定 CORS origin は公開 frontend と一致する" do
+    assert_includes ApiCors::PRODUCTION_ORIGINS, "https://mitsubachi.shiosalt.com"
   end
 
   test "security headers are added to api responses" do
