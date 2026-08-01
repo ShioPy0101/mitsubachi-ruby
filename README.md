@@ -8,7 +8,7 @@ Rails backend for the drive API. This repository is deployed as an API-only serv
 - Bundler: use the version bundled with the project lockfile
 - Database: PostgreSQL
 - Web server: Puma behind Caddy or Nginx
-- Public frontend origin: `https://drive.shiosalt.com/`
+- Public frontend origin: `https://mitsubachi.shiosalt.com/`
 - Public API origin: `https://mitsubachi-api.shiosalt.com/`
 - API base path: `/api/v1`
 - Flower API base path: `/api/v1/flower`
@@ -21,7 +21,7 @@ Rails should bind only to a private interface such as `127.0.0.1:3001`. Do not e
 ```text
 APP_HOST=mitsubachi-api.shiosalt.com
 APP_HOSTS=mitsubachi-api.shiosalt.com
-FRONTEND_ORIGIN=https://drive.shiosalt.com
+FRONTEND_ORIGIN=https://mitsubachi.shiosalt.com
 RAILS_MASTER_KEY=...
 DATABASE_URL=postgres://...
 FILE_STORAGE_ROOT=/srv/mitsubachi/files
@@ -30,7 +30,7 @@ RAILS_LOG_LEVEL=info
 SECRET_KEY_BASE=...
 RESEND_API_KEY=...
 MAIL_FROM=...
-FRONTEND_URL=https://drive.shiosalt.com
+FRONTEND_URL=https://mitsubachi.shiosalt.com
 ```
 
 `FRONTEND_ORIGIN` is a comma-separated allowlist used by API CORS in every environment. Set it to the browser-visible frontend origin, not the API origin.
@@ -96,7 +96,7 @@ server {
     alias /srv/mitsubachi/files/;
   }
 
-  # The frontend is served separately from https://drive.shiosalt.com.
+  # The frontend is served separately from https://mitsubachi.shiosalt.com.
 }
 ```
 
