@@ -17,8 +17,8 @@ class Api::V1::Flower::DeviceAuthorizationsController < ApplicationController
     render json: {
       device_code: result.device_code,
       user_code: result.user_code,
-      verification_uri: flower_activate_url,
-      verification_uri_complete: flower_activate_url(user_code: result.user_code),
+      verification_uri: flower_activation_url,
+      verification_uri_complete: flower_activation_url(user_code: result.user_code),
       expires_in: (result.authorization.expires_at - Time.current).to_i,
       interval: result.authorization.interval_seconds
     }, status: :ok
@@ -38,6 +38,22 @@ class Api::V1::Flower::DeviceAuthorizationsController < ApplicationController
   end
 
   private
+
+  def flower_activation_url(user_code: nil)
+    url = "#{flower_frontend_url}#{Flower::DeviceAuthorizations::Create::VERIFICATION_PATH}"
+    return url if user_code.blank?
+
+    "#{url}?#{ { user_code: user_code }.to_query }"
+  end
+
+  def flower_frontend_url
+    origin = ENV.fetch("FLOWER_FRONTEND_URL") do
+      ENV.fetch("FRONTEND_URL") do
+        Rails.env.development? || Rails.env.test? ? "http://localhost:5173" : request.base_url
+      end
+    end
+    origin.to_s.delete_suffix("/")
+  end
 
   def render_flower_error(code, message, status:)
     render json: {
