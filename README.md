@@ -1,3 +1,11 @@
+# 関係リポジトリ
+
+インフラ
+https://github.com/ShioPy0101/mitsubachi-infra
+
+フロントエンド
+https://github.com/ShioPy0101/mitsubachi-front
+
 # Mitsubachi Rails API
 
 Rails backend for the drive API. This repository is deployed as an API-only server; the frontend lives in a separate repository and process.
