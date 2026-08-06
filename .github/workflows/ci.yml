@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   scan_ruby:
@@ -20,10 +20,10 @@ jobs:
 
       - name: Scan for common Rails security vulnerabilities using static analysis
         run: bin/brakeman --no-pager
-      
+
       - name: Scan for known security vulnerabilities in gems used
         run: bin/bundler-audit
-      
+
   lint:
     runs-on: ubuntu-latest
     env:
@@ -49,6 +49,39 @@ jobs:
 
       - name: Lint code for consistent style
         run: bin/rubocop -f github
+
+  tenant_lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Check tenant-scoped DriveItem queries
+        shell: bash
+        run: |
+          mapfile -d '' files < <(
+            find app/controllers app/services \
+              -type f \
+              -name '*.rb' \
+              -print0
+          )
+
+          if (( ${#files[@]} == 0 )); then
+            echo "No Ruby files found"
+            exit 0
+          fi
+
+          for file in "${files[@]}"; do
+            bundle exec ruby \
+              script/lint_tenant_input.rb \
+              "$file"
+          done
 
   test:
     runs-on: ubuntu-latest
