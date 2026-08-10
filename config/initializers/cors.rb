@@ -50,7 +50,9 @@ class ApiCors
         "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
       "Access-Control-Allow-Headers" =>
         "Origin, Content-Type, Accept, X-CSRF-Token, X-Requested-With, X-Upload-Session-ID",
-      "Access-Control-Expose-Headers" => "Content-Disposition",
+      # フロントエンドのXHRがApiErrorへrequest_idを載せられるよう、
+      # ブラウザから読み取るレスポンスヘッダーを明示的に公開する。
+      "Access-Control-Expose-Headers" => "Content-Disposition, X-Request-ID",
       "Vary" => vary_header(existing_vary)
     }
   end

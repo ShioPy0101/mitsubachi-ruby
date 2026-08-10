@@ -87,7 +87,7 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert_equal "http://localhost:5173", response.headers["Access-Control-Allow-Origin"]
     assert_equal "true", response.headers["Access-Control-Allow-Credentials"]
-    assert_equal "Content-Disposition", response.headers["Access-Control-Expose-Headers"]
+    assert_equal "Content-Disposition, X-Request-ID", response.headers["Access-Control-Expose-Headers"]
     assert_equal "Origin", response.headers["Vary"]
   end
 
