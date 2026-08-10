@@ -4,9 +4,14 @@ require "securerandom"
 module DriveItems
   class StoredFileInspector
     DEFAULT_CHUNK_SIZE = 5.megabytes
+    PUBLISHED_FILE_MODE = 0o644
     Result = Data.define(:storage_key, :byte_size, :sha256, :content_type, :temporary_path, :storage_path) do
       def publish!
         FileUtils.mkdir_p(storage_path.dirname)
+        # 本番では Rails と X-Accel-Redirect を処理する Nginx が別ユーザー/別コンテナになる。
+        # staging 中は 0600 で未公開に保ち、公開直前に Nginx が読める mode へ変更してから
+        # rename することで、final path に読めないファイルを出さない。
+        File.chmod(DriveItems::StoredFileInspector::PUBLISHED_FILE_MODE, temporary_path)
         File.rename(temporary_path, storage_path)
       end
 

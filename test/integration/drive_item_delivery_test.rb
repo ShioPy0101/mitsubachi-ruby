@@ -54,6 +54,18 @@ class DriveItemDeliveryTest < ActionDispatch::IntegrationTest
     assert_equal @user.organization, log.organization
   end
 
+  test "preview は既存の 0600 ファイルを X-Accel 用に補正してから委譲する" do
+    File.chmod(0o600, @drive_item.absolute_storage_path)
+    sign_in @user
+
+    get preview_api_v1_drive_item_url(@drive_item), headers: request_headers
+
+    assert_response :ok
+    assert_equal "/internal/storage/drive_items/#{@drive_item.storage_key}", response.headers["X-Accel-Redirect"]
+    assert_equal 0o644, File.stat(@drive_item.absolute_storage_path).mode & 0o777
+    assert_equal pdf_payload, File.binread(@drive_item.absolute_storage_path)
+  end
+
   test "同じ organization の別ユーザーによる preview は操作ユーザーのアクセスログを記録する" do
     viewer = User.create!(
       organization: @user.organization,

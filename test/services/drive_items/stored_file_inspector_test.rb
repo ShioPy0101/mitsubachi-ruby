@@ -34,6 +34,7 @@ class DriveItems::StoredFileInspectorTest < ActiveSupport::TestCase
     assert File.exist?(@storage_path)
     assert_not File.exist?(result.temporary_path)
     assert_equal "atomic upload body", File.binread(@storage_path)
+    assert_equal 0o644, File.stat(@storage_path).mode & 0o777
   end
 
   test "copy_upload removes temporary file when streaming fails" do
