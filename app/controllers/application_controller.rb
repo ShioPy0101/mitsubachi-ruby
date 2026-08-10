@@ -41,11 +41,16 @@ class ApplicationController < ActionController::API
 
   def set_current_organization
     if current_user.system_admin?
+      # system_admin は任意の organization を管理できるが、後続の監査ログや scope は
+      # URL で選択された organization を current_organization として扱う。
       @current_organization = Organization.find(request.path_parameters[:organization_id])
       @current_membership = current_user.active_membership_for(@current_organization)
       return
     end
 
+    # 一般ユーザーは active membership 経由で organization を解決する。
+    # Organization.find 後に membership を比較すると、未所属 organization の存在有無を
+    # レスポンス差から推測できるため、membership relation を入口にする。
     @current_membership =
       current_user
         .organization_memberships
@@ -94,6 +99,8 @@ class ApplicationController < ActionController::API
 
   def reject_suspended_user!
     return unless current_user&.suspended?
+    # 停止ユーザーは通常 API から即時排除する一方、ログアウトと CSRF token 再取得は
+    # セッション復旧に必要なため許可する。
     return if devise_controller?
     return if controller_path == "api/v1/sessions"
     return if controller_path == "api/v1/csrf_tokens"
