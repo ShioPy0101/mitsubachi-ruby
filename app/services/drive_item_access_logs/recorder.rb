@@ -1,4 +1,8 @@
 module DriveItemAccessLogs
+  # 単一ファイル配信の監査ログを保存する。
+  #
+  # 配信 Controller から直接 DriveItemAccessLog を作らずここに集約することで、
+  # user / external_share / anonymous の actor 判定と stream の重複抑止を入口間で揃える。
   class Recorder
     Result = Data.define(:success?, :error_message) do
       def self.success
@@ -55,6 +59,9 @@ module DriveItemAccessLogs
     def skip_stream_log?
       return false unless @action == "stream"
 
+      # ブラウザや動画プレイヤーは同じ動画に対して短時間に複数の Range request を送る。
+      # それぞれを成功アクセスとして保存すると監査ログが転送チャンク数に比例して増えるため、
+      # 同一 organization / user / drive_item の stream は短い時間窓で代表ログだけを残す。
       DriveItemAccessLog.recent_stream_for(
         organization: @organization,
         user: @user,

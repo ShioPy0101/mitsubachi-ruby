@@ -1,4 +1,9 @@
 module DriveItems
+  # DriveItem の実ファイル配信に必要な認可後処理をまとめる。
+  #
+  # Controller は入口ごとの authentication / authorization だけを担当し、この Service は
+  # 監査ログの記録、保存先の安全性確認、Nginx へ委譲するレスポンスヘッダー生成を担う。
+  # 実ファイルの転送は Rails で行わず、Puma worker を占有しないよう X-Accel-Redirect に委譲する。
   class DeliveryService
     ACTION_CONFIG = {
       preview: { disposition: "inline" },
@@ -27,6 +32,10 @@ module DriveItems
       @record_audit = record_audit
     end
 
+    # 認可済み DriveItem を配信可能なレスポンスヘッダーへ変換する。
+    #
+    # @return [Result] 成功時は Nginx 内部 URI と安全な配信ヘッダー、失敗時は API 用 status/message を返す。
+    # @raise [StandardError] 想定外の storage / audit / MIME 判定エラーは捕捉して SystemEvent に記録する。
     def call
       return Result.failure(:unprocessable_content, "この操作はファイルに対してのみ可能です") unless @drive_item.file?
 
@@ -36,29 +45,10 @@ module DriveItems
       absolute_path = @drive_item.absolute_storage_path
       return invalid_delivery("missing_file") unless File.exist?(absolute_path)
 
-      if @record_audit
-        audit_result = DriveItemAccessLogs::Recorder.new(
-          organization: @audit_organization,
-          user: @current_user,
-          external_share: @external_share,
-          drive_item: @drive_item,
-          action: @action,
-          request: @request,
-          metadata: { client_type: @client_type }
-        ).call
-        return Result.failure(:service_unavailable, audit_result.error_message) unless audit_result.success?
-      end
+      audit_result = record_access_log
+      return Result.failure(:service_unavailable, audit_result.error_message) unless audit_result.success?
 
-      Result.success(
-        "X-Accel-Redirect" => x_accel_redirect(storage_key),
-        "Content-Type" => content_type(absolute_path),
-        "Content-Disposition" => content_disposition,
-        "ETag" => etag,
-        "Accept-Ranges" => "bytes",
-        "X-Mitsubachi-Drive-Item-Id" => @drive_item.id.to_s,
-        "X-Mitsubachi-File-Sha256" => normalized_sha256.to_s,
-        "X-Mitsubachi-Updated-At" => @drive_item.updated_at.iso8601(3)
-      )
+      Result.success(delivery_headers(storage_key:, absolute_path:))
     rescue StandardError => error
       SystemEvents::Recorder.record!(
         event_type: "storage.delivery_preparation_failed",
@@ -80,6 +70,35 @@ module DriveItems
 
     private
 
+    def record_access_log
+      return DriveItemAccessLogs::Recorder::Result.success unless @record_audit
+
+      # authorization 成功後かつ Nginx へ配信を許可する直前に記録することで、
+      # 拒否されたアクセスを成功ログとして残さず、実配信された操作だけを追跡する。
+      DriveItemAccessLogs::Recorder.new(
+        organization: @audit_organization,
+        user: @current_user,
+        external_share: @external_share,
+        drive_item: @drive_item,
+        action: @action,
+        request: @request,
+        metadata: { client_type: @client_type }
+      ).call
+    end
+
+    def delivery_headers(storage_key:, absolute_path:)
+      {
+        "X-Accel-Redirect" => x_accel_redirect(storage_key),
+        "Content-Type" => content_type(absolute_path),
+        "Content-Disposition" => content_disposition,
+        "ETag" => etag,
+        "Accept-Ranges" => "bytes",
+        "X-Mitsubachi-Drive-Item-Id" => @drive_item.id.to_s,
+        "X-Mitsubachi-File-Sha256" => normalized_sha256.to_s,
+        "X-Mitsubachi-Updated-At" => @drive_item.updated_at.iso8601(3)
+      }
+    end
+
     def invalid_delivery(reason)
       SystemEvents::Recorder.record!(
         event_type: reason == "missing_file" ? "storage.file_missing" : "storage.invalid_key_detected",
@@ -99,6 +118,9 @@ module DriveItems
     end
 
     def x_accel_redirect(storage_key)
+      # storage_key は valid_storage_key? でファイル名相当の値に限定済み。
+      # ユーザー入力をそのまま内部 URI へ連結すると path traversal が X-Accel-Redirect へ届くため、
+      # DriveItem の保存規約に沿った相対パス生成だけを入口にする。
       "/internal/storage/#{DriveItem.storage_relative_path_for(storage_key)}"
     end
 

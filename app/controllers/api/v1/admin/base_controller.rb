@@ -25,13 +25,7 @@ class Api::V1::Admin::BaseController < ApplicationController
     return Organization.where(id: current_organization.id) if organization_path_scope?
     return Organization.all if system_admin?
 
-    Organization.where(
-      id: current_user
-        .organization_memberships
-        .active
-        .organization_admin
-        .select(:organization_id)
-    )
+    Organization.where(id: administrable_organization_ids)
   end
 
   def scoped_users
@@ -39,13 +33,7 @@ class Api::V1::Admin::BaseController < ApplicationController
     return User.all if system_admin?
 
     User.joins(:organization_memberships).merge(
-      OrganizationMembership.active.where(
-        organization_id: current_user
-          .organization_memberships
-          .active
-          .organization_admin
-          .select(:organization_id)
-      )
+      OrganizationMembership.active.where(organization_id: administrable_organization_ids)
     ).distinct
   end
 
@@ -53,52 +41,39 @@ class Api::V1::Admin::BaseController < ApplicationController
     return current_organization.drive_items if organization_path_scope?
     return DriveItem.all if system_admin?
 
-    DriveItem.where(
-      organization_id: current_user
-        .organization_memberships
-        .active
-        .organization_admin
-        .select(:organization_id)
-    )
+    DriveItem.where(organization_id: administrable_organization_ids)
   end
 
   def scoped_operation_logs
     return current_organization.operation_logs if organization_path_scope?
     return OperationLog.all if system_admin?
 
-    OperationLog.where(
-      organization_id: current_user
-        .organization_memberships
-        .active
-        .organization_admin
-        .select(:organization_id)
-    )
+    OperationLog.where(organization_id: administrable_organization_ids)
   end
 
   def scoped_system_events
     return current_organization.system_events if organization_path_scope?
     return SystemEvent.all if system_admin?
 
-    SystemEvent.where(
-      organization_id: current_user
-        .organization_memberships
-        .active
-        .organization_admin
-        .select(:organization_id)
-    )
+    SystemEvent.where(organization_id: administrable_organization_ids)
   end
 
   def scoped_drive_item_access_logs
     return current_organization.drive_item_access_logs if organization_path_scope?
     return DriveItemAccessLog.all if system_admin?
 
-    DriveItemAccessLog.where(
-      organization_id: current_user
-        .organization_memberships
-        .active
-        .organization_admin
-        .select(:organization_id)
-    )
+    DriveItemAccessLog.where(organization_id: administrable_organization_ids)
+  end
+
+  def administrable_organization_ids
+    # system_admin ではない管理者は、現在の URL で指定された organization ではなく
+    # active な organization_admin membership を持つ organization だけを横断管理できる。
+    # subquery のまま渡すことで ID 配列を Ruby 側へ展開せず、各 scope で同じ tenant 境界を使う。
+    current_user
+      .organization_memberships
+      .active
+      .organization_admin
+      .select(:organization_id)
   end
 
   def paginate(scope)
