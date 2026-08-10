@@ -24,11 +24,13 @@ module DriveItems
     def call
       storage_targets = []
       result = ActiveRecord::Base.transaction do
-        @drive_item.lock!
-        next Result.failure(:unprocessable_content, "先にゴミ箱へ移動してください") if @drive_item.deleted_at.blank?
-
         items = collect_items
-        items.each(&:lock!)
+        lock_plan.lock_items_by_id!(items)
+        @drive_item.reload
+        next Result.failure(:unprocessable_content, "先にゴミ箱へ移動してください") if @drive_item.deleted_at.blank? || @drive_item.purged_at.present?
+
+        items.each(&:reload)
+        items.each { |item| raise ActiveRecord::RecordNotFound if item.purged_at.present? }
         storage_targets = collect_storage_targets(items)
         mark_as_purged!(items)
 
@@ -66,6 +68,10 @@ module DriveItems
       end
 
       items
+    end
+
+    def lock_plan
+      @lock_plan ||= DriveItems::LockPlan.new(organization: @drive_item.organization)
     end
 
     def children_scope(parent_ids)

@@ -26,11 +26,15 @@ module DriveItems
       restore_target = self.restore_target
 
       ActiveRecord::Base.transaction do
-        restore_target.lock!
         items = restore_items
-        items.each(&:lock!)
+        lock_plan.lock_items_by_id!([ restore_target, *items ])
+        restore_target.reload
+        raise ActiveRecord::RecordNotFound if restore_target.purged_at.present? || restore_target.deleted_at.blank?
+
         items.each do |item|
+          item.reload
           next if item.purged_at.present?
+          raise ActiveRecord::RecordInvalid, item if item.deleted_at.blank?
 
           item.update!(
             deleted_at: nil,
@@ -41,7 +45,19 @@ module DriveItems
 
         Result.success(message: "ファイルまたはフォルダを復元しました", restore_target:, items:)
       end
+    rescue ActiveRecord::RecordNotUnique => error
+      record_failure(error)
+      Rails.logger.error("[drive_items.restore] conflict error=#{error.class}: #{error.message}")
+      Result.failure(:conflict, "復元先に競合する項目があります", restore_target: @drive_item)
     rescue ActiveRecord::ActiveRecordError => error
+      record_failure(error)
+      Rails.logger.error("[drive_items.restore] failed error=#{error.class}: #{error.message}")
+      Result.failure(:unprocessable_content, "復元できませんでした", restore_target: @drive_item)
+    end
+
+    private
+
+    def record_failure(error)
       SystemEvents::Recorder.record!(
         event_type: "storage.restore_failed",
         severity: "error",
@@ -50,11 +66,11 @@ module DriveItems
         target: @drive_item,
         error: error
       )
-      Rails.logger.error("[drive_items.restore] failed error=#{error.class}: #{error.message}")
-      Result.failure(:unprocessable_content, "復元できませんでした", restore_target: @drive_item)
     end
 
-    private
+    def lock_plan
+      @lock_plan ||= DriveItems::LockPlan.new(organization: @drive_item.organization)
+    end
 
     def restore_target_for(drive_item)
       if drive_item.trashed_by_ancestor_id.present?

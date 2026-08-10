@@ -41,6 +41,12 @@ module DriveItems
 
       restored_items = []
       ActiveRecord::Base.transaction do
+        lock_plan.lock_items_by_id!(preview_items.flat_map { |preview_item| [ preview_item.item, preview_item.existing_item ] })
+        preview_items.each do |preview_item|
+          preview_item.item.reload
+          preview_item.existing_item&.reload
+        end
+
         preview_items.each do |preview_item|
           next if preview_item.after[:resolution] == "skip"
 
@@ -50,7 +56,19 @@ module DriveItems
       end
 
       Result.success(items: restored_items)
+    rescue ActiveRecord::RecordNotUnique => error
+      record_failure(error)
+      Rails.logger.error("[drive_items.restore_resolution] conflict error=#{error.class}: #{error.message}")
+      Result.failure(:conflict, "復元先に競合する項目があります")
     rescue ActiveRecord::ActiveRecordError => error
+      record_failure(error)
+      Rails.logger.error("[drive_items.restore_resolution] failed error=#{error.class}: #{error.message}")
+      Result.failure(:unprocessable_content, "復元できませんでした")
+    end
+
+    private
+
+    def record_failure(error)
       SystemEvents::Recorder.record!(
         event_type: "application.restore_resolution_failed",
         severity: "error",
@@ -60,11 +78,7 @@ module DriveItems
         error: error,
         metadata: { drive_item_ids: @items.map { |item| item[:item_id] } }
       )
-      Rails.logger.error("[drive_items.restore_resolution] failed error=#{error.class}: #{error.message}")
-      Result.failure(:unprocessable_content, "復元できませんでした")
     end
-
-    private
 
     def confirmation_token_matches?(preview, preview_items)
       return true if @confirmation_token.blank?
@@ -138,8 +152,9 @@ module DriveItems
     end
 
     def restore_item!(preview_item)
-      preview_item.item.lock!
       trash_existing_item!(preview_item.existing_item) if preview_item.after[:existing_item_will_be_trashed]
+
+      raise ActiveRecord::RecordNotFound if preview_item.item.purged_at.present? || preview_item.item.deleted_at.blank?
 
       preview_item.item.update!(
         name: restored_name_without_extension(preview_item),
@@ -166,6 +181,10 @@ module DriveItems
       return after_name if extension.blank?
 
       after_name.delete_suffix(".#{extension}")
+    end
+
+    def lock_plan
+      @lock_plan ||= DriveItems::LockPlan.new(organization: @organization)
     end
   end
 end
