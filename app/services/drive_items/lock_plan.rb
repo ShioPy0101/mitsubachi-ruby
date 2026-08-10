@@ -34,5 +34,23 @@ module DriveItems
     def lock_items_by_id!(items)
       Array(items).compact.uniq(&:id).sort_by(&:id).each(&:lock!)
     end
+
+    def lock_tree_stably!(root)
+      locked_ids = {}
+
+      loop do
+        items = DriveItems::TreeCollector.new(root: root).call
+        new_items = items.reject { |item| locked_ids.key?(item.id) }
+        lock_items_by_id!(new_items)
+        new_items.each { |item| locked_ids[item.id] = true }
+
+        # directory を trash する request が parent lock を待っている間に、upload 側は
+        # その parent 配下へ child を commit し得る。parent lock 取得後に再収集し、
+        # 新しく見えた子孫も lock するまで繰り返すことで、deleted parent 配下に
+        # active child が残る状態を防ぐ。
+        latest_items = DriveItems::TreeCollector.new(root: root).call
+        return latest_items if latest_items.all? { |item| locked_ids.key?(item.id) }
+      end
+    end
   end
 end
