@@ -51,10 +51,10 @@ module DriveItems
     end
 
     def trash_tree!(drive_item, deleted_at)
-      items = DriveItems::TreeCollector.new(root: drive_item).call
-      # 複数 request が重なる場合でも lock 順を id 昇順に固定し、
-      # upload 側が親 directory を lock する経路との待ち合わせを単純化する。
-      DriveItems::LockPlan.new(organization: drive_item.organization).lock_items_by_id!(items)
+      # subtree 収集を lock 前の一度きりにすると、parent lock 待ち中に commit された
+      # child が trash 対象から漏れる。LockPlan 側で再収集まで含めて扱い、
+      # active tree invariant を trash 操作側からも守る。
+      items = DriveItems::LockPlan.new(organization: drive_item.organization).lock_tree_stably!(drive_item)
 
       batch_id = SecureRandom.uuid
       items.each do |item|
