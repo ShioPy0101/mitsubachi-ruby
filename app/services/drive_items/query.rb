@@ -1,4 +1,8 @@
 module DriveItems
+  # 通常ユーザー向け DriveItem 取得を organization scope に閉じ込める query object。
+  #
+  # Controller ごとに DriveItem.find を使うと ID 指定で別 organization の存在が漏れるため、
+  # 一覧・詳細・配信前取得はこの object を通して current organization の relation から始める。
   class Query
     def initialize(organization:)
       @organization = organization
@@ -19,6 +23,8 @@ module DriveItems
     end
 
     def find_deliverable(id)
+      # 配信可否は「active な同一 organization の record が存在するか」でまず絞る。
+      # storage_key や実ファイルの検証は認可後に DeliveryService へ委譲する。
       active.find_by(id: id)
     end
 
