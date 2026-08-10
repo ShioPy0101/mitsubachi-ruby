@@ -22,8 +22,10 @@ module DriveItems
 
       FileUtils.mkdir_p(storage_path.dirname)
       uploaded_file.tempfile.rewind
+      uploaded_file.tempfile.binmode
 
       File.open(temporary_path, File::WRONLY | File::CREAT | File::EXCL | File::BINARY, 0o600) do |destination|
+        destination.binmode
         while (chunk = uploaded_file.tempfile.read(DEFAULT_CHUNK_SIZE))
           destination.write(chunk)
           digest.update(chunk)

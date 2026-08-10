@@ -57,6 +57,27 @@ class DriveItems::StoredFileInspectorTest < ActiveSupport::TestCase
     failing_tempfile.unlink
   end
 
+  test "copy_upload preserves binary bytes without UTF-8 conversion" do
+    binary_body = "\xFF\xD8\x00\xE1binary".b
+    binary_tempfile = tempfile_with(binary_body)
+    result = DriveItems::StoredFileInspector.copy_upload!(
+      uploaded_file: upload_wrapper(binary_tempfile, content_type: "audio/mpeg"),
+      storage_path: @storage_path,
+      filename: "sample.mp3",
+      storage_key: @storage_key
+    )
+
+    assert_equal Digest::SHA256.hexdigest(binary_body), result.sha256
+    assert_equal binary_body.bytesize, result.byte_size
+
+    result.publish!
+
+    assert_equal binary_body, File.binread(@storage_path)
+  ensure
+    binary_tempfile&.close
+    binary_tempfile&.unlink
+  end
+
   private
 
   def tempfile_with(body)
@@ -67,7 +88,7 @@ class DriveItems::StoredFileInspectorTest < ActiveSupport::TestCase
     tempfile
   end
 
-  def upload_wrapper(tempfile)
-    Struct.new(:tempfile, :content_type).new(tempfile, "text/plain")
+  def upload_wrapper(tempfile, content_type: "text/plain")
+    Struct.new(:tempfile, :content_type).new(tempfile, content_type)
   end
 end
