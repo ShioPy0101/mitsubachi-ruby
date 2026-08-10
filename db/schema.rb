@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_29_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_10_214056) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -61,10 +61,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_130000) do
     t.string "trash_batch_id"
     t.bigint "trashed_by_ancestor_id"
     t.datetime "updated_at", null: false
+    t.string "upload_id"
     t.string "upload_ip_address"
     t.index [ "deleted_at" ], name: "index_drive_items_on_deleted_at"
     t.index [ "organization_id", "file_hash" ], name: "index_non_purged_drive_items_on_org_and_hash", where: "(purged_at IS NULL)"
     t.index [ "organization_id", "parent_id", "name", "extension" ], name: "index_active_drive_items_on_org_parent_name_extension", unique: true, where: "((deleted_at IS NULL) AND (purged_at IS NULL))"
+    t.index [ "organization_id", "upload_id" ], name: "index_drive_items_on_org_and_upload_id", unique: true, where: "(upload_id IS NOT NULL)"
     t.index [ "organization_id" ], name: "index_drive_items_on_organization_id"
     t.index [ "owner_user_id" ], name: "index_drive_items_on_owner_user_id"
     t.index [ "parent_id" ], name: "index_drive_items_on_parent_id"
@@ -275,6 +277,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_130000) do
     t.index [ "trace_id" ], name: "index_system_events_on_trace_id"
   end
 
+  create_table "upload_attempts", force: :cascade do |t|
+    t.string "block_reason"
+    t.string "client_upload_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "drive_item_id"
+    t.string "error_code"
+    t.string "file_hash"
+    t.datetime "last_transition_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "organization_id", null: false
+    t.bigint "retry_count", default: 0, null: false
+    t.string "staging_path"
+    t.string "state", null: false
+    t.string "storage_key"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index [ "drive_item_id" ], name: "index_upload_attempts_on_drive_item_id"
+    t.index [ "file_hash" ], name: "index_upload_attempts_on_file_hash"
+    t.index [ "organization_id", "client_upload_id" ], name: "index_upload_attempts_on_org_and_client_upload_id", unique: true
+    t.index [ "organization_id" ], name: "index_upload_attempts_on_organization_id"
+    t.index [ "state", "updated_at" ], name: "index_upload_attempts_on_state_and_updated_at"
+    t.index [ "user_id" ], name: "index_upload_attempts_on_user_id"
+  end
+
   create_table "upload_metrics", force: :cascade do |t|
     t.bigint "average_file_size_bytes", default: 0, null: false
     t.string "backend_version"
@@ -395,6 +421,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_130000) do
   add_foreign_key "organization_memberships", "users"
   add_foreign_key "system_events", "organizations"
   add_foreign_key "system_events", "users", column: "related_user_id"
+  add_foreign_key "upload_attempts", "drive_items"
+  add_foreign_key "upload_attempts", "organizations"
+  add_foreign_key "upload_attempts", "users"
   add_foreign_key "upload_metrics", "organizations"
   add_foreign_key "upload_metrics", "users"
   add_foreign_key "user_email_changes", "users"

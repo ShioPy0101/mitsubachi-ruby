@@ -13,7 +13,7 @@ module DriveItems
     end
 
     def initialize(drive_items:)
-      @drive_items = Array(drive_items).uniq(&:id)
+      @drive_items = Array(drive_items).uniq(&:id).sort_by(&:id)
     end
 
     def call
@@ -21,7 +21,6 @@ module DriveItems
 
       ActiveRecord::Base.transaction do
         @drive_items.each do |drive_item|
-          drive_item.lock!
           trash_tree!(drive_item, deleted_at)
         end
       end
@@ -53,10 +52,13 @@ module DriveItems
 
     def trash_tree!(drive_item, deleted_at)
       items = DriveItems::TreeCollector.new(root: drive_item).call
-      items.each(&:lock!)
+      # 複数 request が重なる場合でも lock 順を id 昇順に固定し、
+      # upload 側が親 directory を lock する経路との待ち合わせを単純化する。
+      DriveItems::LockPlan.new(organization: drive_item.organization).lock_items_by_id!(items)
 
       batch_id = SecureRandom.uuid
       items.each do |item|
+        item.reload
         next if item.deleted_at.present? || item.purged_at.present?
 
         item.update!(

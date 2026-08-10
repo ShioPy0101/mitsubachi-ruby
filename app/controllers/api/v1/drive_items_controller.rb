@@ -1,9 +1,12 @@
-require "digest"
 require "fileutils"
 require "securerandom"
 require "set"
 
 class Api::V1::DriveItemsController < ApplicationController
+  DuplicateActiveContentError = Class.new(StandardError)
+  DuplicateNameError = Class.new(StandardError)
+  ReplaceTargetPurgedError = Class.new(StandardError)
+
   rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
 
   before_action :authenticate_user!
@@ -67,6 +70,10 @@ class Api::V1::DriveItemsController < ApplicationController
     return unless validate_parent_id(parent_id, not_found_message: "指定された親フォルダが見つかりません", invalid_message: "親にはディレクトリを指定してください")
 
     extension = item_type == "file" ? get_extension_from_filename(params[:file].original_filename) : nil
+    upload_id = normalized_upload_id
+    unless valid_upload_resolution_policy?(upload_id)
+      return
+    end
 
     @drive_item = current_organization.drive_items.new(
       name: name,
@@ -75,6 +82,7 @@ class Api::V1::DriveItemsController < ApplicationController
       owner_user: current_user,
       upload_ip_address: request.remote_ip
     )
+    upload_attempt = upload_attempt_for(upload_id)
 
     if item_type == "file"
       uploaded_file = params[:file]
@@ -83,69 +91,119 @@ class Api::V1::DriveItemsController < ApplicationController
         return
       end
 
-      upload_hash = digest_uploaded_file(uploaded_file)
-      replace_target = nil
-      if replace_trashed_drive_item_id.present?
-        replace_target = replace_target_for_upload(upload_hash)
-        return if performed?
-      end
+      generated_storage_key = build_storage_key(extension)
+      stored_file = nil
 
-      if (active_duplicate = active_content_duplicate_item(upload_hash)) && !allow_duplicate_content?
-        render_active_content_duplicate(active_duplicate)
+      begin
+        upload_attempt.lock!
+        return if render_completed_upload_attempt(upload_attempt)
+
+        retry_upload_attempt!(upload_attempt) if upload_attempt.retryable?
+        return if render_processing_upload_attempt(upload_attempt)
+        return unless transition_upload_attempt_or_processing(upload_attempt, :start_staging)
+        stored_file = save_uploaded_file(uploaded_file, generated_storage_key)
+        upload_attempt.update!(
+          file_hash: stored_file.sha256,
+          staging_path: stored_file.temporary_path.to_s,
+          storage_key: stored_file.storage_key
+        )
+        upload_attempt.transition!(:staging_succeeded)
+      rescue DriveItems::StoredFileInspector::UploadTooLargeError
+        transition_if_allowed(upload_attempt, :staging_failed)
+        render_api_error(:payload_too_large, "ファイルサイズが上限を超えています", status: :content_too_large)
         return
       end
 
+      upload_hash = stored_file.sha256
+      upload_attempt.transition!(:start_validation)
+      replace_target = nil
+      if replace_trashed_drive_item_id.present?
+        replace_target = replace_target_for_upload(upload_hash)
+        stored_file.cleanup_temporary! if performed?
+        return if performed?
+      end
+
+      if (active_duplicate = active_content_duplicate_item(upload_hash))
+        if active_content_upload_anyway?
+          record_upload_warning!(upload_attempt, :active_content_duplicate, active_duplicate.id)
+        else
+          upload_attempt.transition!(:validation_blocked, reason: :active_content_duplicate)
+          stored_file.cleanup_temporary!
+          render_active_content_duplicate(active_duplicate)
+          return
+        end
+      end
+
       trash_duplicate = trash_content_duplicate_item(upload_hash)
-      if trash_duplicate.present? && replace_target.blank? && !allow_duplicate_content?
+      if trash_duplicate.present? && replace_target.blank?
+        upload_attempt.transition!(:validation_blocked, reason: :trash_content_duplicate)
+        stored_file.cleanup_temporary!
         render_trash_content_duplicate(trash_duplicate)
         return
       end
 
       if duplicate_active_item?(parent_id:, name:, extension:)
+        upload_attempt.transition!(:validation_blocked, reason: :duplicate_name)
+        stored_file.cleanup_temporary!
         render_name_conflict(name, parent_id:, extension:)
         return
       end
+      upload_attempt.transition!(:validation_succeeded)
 
       if replace_target.present?
-        replace_trashed_upload!(uploaded_file:, upload_hash:, extension:, replace_target:)
+        replace_trashed_upload!(stored_file:, upload_hash:, extension:, replace_target:, upload_attempt:)
         return
       end
-
-      generated_storage_key = build_storage_key(extension)
-      file_saved = false
-      saved = false
 
       begin
-        file_saved = true
-        stored_file = save_uploaded_file(uploaded_file, generated_storage_key)
+        ActiveRecord::Base.transaction do
+          upload_attempt.transition!(:start_commit)
+          lock_active_parent!(parent_id)
+          raise_unresolved_active_content_duplicate!(upload_hash)
+          record_active_content_warning_if_needed!(upload_attempt, upload_hash)
+          raise DuplicateNameError if duplicate_active_item?(parent_id:, name:, extension:)
 
-        @drive_item.storage_key = stored_file.storage_key
-        @drive_item.extension = extension
-        @drive_item.file_hash = stored_file.sha256
-        @drive_item.file_size = stored_file.byte_size
-        @drive_item.content_type = stored_file.content_type
-
-        saved = @drive_item.save
-        if saved
-          record_drive_item_event!("drive_item.created", @drive_item)
-          render json: drive_item_json(@drive_item), status: :created
-        else
-          render_validation_failed(@drive_item)
+          @drive_item.storage_key = stored_file.storage_key
+          @drive_item.extension = extension
+          @drive_item.file_hash = stored_file.sha256
+          @drive_item.file_size = stored_file.byte_size
+          @drive_item.content_type = stored_file.content_type
+          @drive_item.save!
+          upload_attempt.update!(drive_item: @drive_item)
+          upload_attempt.transition!(:commit_succeeded)
         end
+        upload_attempt.transition!(:start_publish)
+        stored_file.publish!
+        upload_attempt.transition!(:publish_succeeded)
+        record_drive_item_event!("drive_item.created", @drive_item)
+        render json: drive_item_json(@drive_item), status: :created
+      rescue DuplicateActiveContentError
+        transition_if_allowed(upload_attempt, :commit_blocked, reason: :active_content_duplicate)
+        render_active_content_duplicate(active_content_duplicate_item(upload_hash))
+      rescue DuplicateNameError
+        transition_if_allowed(upload_attempt, :commit_blocked, reason: :duplicate_name)
+        render_name_conflict(name, parent_id:, extension:)
+      rescue ActiveRecord::RecordNotFound
+        transition_if_allowed(upload_attempt, :commit_blocked, reason: :invalid_parent)
+        render_api_error(:invalid_parent, "指定された親フォルダが見つかりません", status: :not_found)
+      rescue ActiveRecord::RecordNotUnique => error
+        render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_hash:, upload_attempt:)
+      rescue ActiveRecord::RecordInvalid => error
+        transition_if_allowed(upload_attempt, :commit_failed)
+        render_validation_failed(error.record)
       rescue ActiveRecord::ActiveRecordError => error
+        transition_if_allowed(upload_attempt, :commit_failed)
         Rails.logger.error("[drive_items.create] failed to save drive_item error=#{error.class}: #{error.message}")
         render_api_error(:validation_failed, "ファイルを保存できませんでした", status: :unprocessable_content)
-      rescue DriveItems::StoredFileInspector::UploadTooLargeError
-        render_api_error(:payload_too_large, "ファイルサイズが上限を超えています", status: :content_too_large)
+      rescue SystemCallError => error
+        transition_if_allowed(upload_attempt, :publish_failed)
+        compensate_unpublished_drive_item!(@drive_item)
+        Rails.logger.error("[drive_items.create] failed to publish storage error=#{error.class}: #{error.message}")
+        render_api_error(:storage_publish_failed, "ファイルを確定できませんでした", status: :internal_server_error)
       ensure
-        cleanup_uploaded_file!(generated_storage_key) if file_saved && !saved
+        stored_file&.cleanup_temporary!
       end
     else
-      if duplicate_active_item?(parent_id:, name:, extension:)
-        render_name_conflict(name, parent_id:, extension:)
-        return
-      end
-
       @drive_item.extension = nil
       @drive_item.storage_key = nil
       @drive_item.blob_path = nil
@@ -153,11 +211,43 @@ class Api::V1::DriveItemsController < ApplicationController
       @drive_item.file_size = nil
       @drive_item.content_type = nil
 
-      if @drive_item.save
+      begin
+        upload_attempt.lock!
+        return if render_completed_upload_attempt(upload_attempt)
+        retry_upload_attempt!(upload_attempt) if upload_attempt.retryable?
+        return if render_processing_upload_attempt(upload_attempt)
+        return unless transition_upload_attempt_or_processing(upload_attempt, :start_staging)
+        upload_attempt.transition!(:staging_succeeded)
+        upload_attempt.transition!(:start_validation)
+        if duplicate_active_item?(parent_id:, name:, extension:)
+          upload_attempt.transition!(:validation_blocked, reason: :duplicate_name)
+          render_name_conflict(name, parent_id:, extension:)
+          return
+        end
+        ActiveRecord::Base.transaction do
+          upload_attempt.transition!(:validation_succeeded)
+          upload_attempt.transition!(:start_commit)
+          lock_active_parent!(parent_id)
+          raise DuplicateNameError if duplicate_active_item?(parent_id:, name:, extension:)
+          @drive_item.save!
+          upload_attempt.update!(drive_item: @drive_item)
+          upload_attempt.transition!(:commit_succeeded)
+        end
+        upload_attempt.transition!(:start_publish)
+        upload_attempt.transition!(:publish_succeeded)
         record_drive_item_event!("drive_item.created", @drive_item)
         render json: drive_item_json(@drive_item), status: :created
-      else
-        render_validation_failed(@drive_item)
+      rescue DuplicateNameError
+        transition_if_allowed(upload_attempt, :commit_blocked, reason: :duplicate_name)
+        render_name_conflict(name, parent_id:, extension:)
+      rescue ActiveRecord::RecordNotFound
+        transition_if_allowed(upload_attempt, :commit_blocked, reason: :invalid_parent)
+        render_api_error(:invalid_parent, "指定された親フォルダが見つかりません", status: :not_found)
+      rescue ActiveRecord::RecordNotUnique => error
+        render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_hash: nil, upload_attempt:)
+      rescue ActiveRecord::RecordInvalid => error
+        transition_if_allowed(upload_attempt, :commit_failed)
+        render_validation_failed(error.record)
       end
     end
   end
@@ -468,6 +558,13 @@ class Api::V1::DriveItemsController < ApplicationController
     params[:replace_trashed_drive_item_id].presence
   end
 
+  def normalized_upload_id
+    value = request.headers["X-Upload-ID"].presence || params[:upload_id].presence
+    return if value.blank?
+
+    valid_upload_session_id(value)
+  end
+
   def valid_item_type?(item_type)
     item_type == "file" || item_type == "directory"
   end
@@ -494,6 +591,115 @@ class Api::V1::DriveItemsController < ApplicationController
       return false
     end
 
+    true
+  end
+
+  def lock_active_parent!(parent_id)
+    DriveItems::LockPlan.new(organization: current_organization).lock_active_parent!(parent_id)
+  end
+
+  def lock_active_parent_with_items!(parent_id, items)
+    DriveItems::LockPlan.new(organization: current_organization).lock_active_parent_with_items!(parent_id, items)
+  end
+
+  def upload_attempt_for(upload_id)
+    client_upload_id = upload_id.presence || request.request_id || SecureRandom.uuid
+    attempt = UploadAttempt.find_or_create_by!(organization: current_organization, client_upload_id: client_upload_id) do |new_attempt|
+      new_attempt.user = current_user
+    end
+    merge_upload_attempt_metadata!(attempt, resolution_policy: upload_resolution_policy.as_json)
+    attempt
+  end
+
+  def upload_resolution_policy
+    @upload_resolution_policy ||= UploadResolutionPolicy.from_params(params, default_item_key: normalized_upload_id)
+  end
+
+  def active_content_upload_anyway?
+    upload_resolution_policy.resolution_for(:active_content_duplicate, item_key: normalized_upload_id) == :upload_anyway
+  end
+
+  def valid_upload_resolution_policy?(upload_id)
+    @upload_resolution_policy = UploadResolutionPolicy.from_params(params, default_item_key: upload_id)
+    true
+  rescue UploadResolutionPolicy::InvalidPolicy => error
+    render_api_error(:invalid_upload_policy, error.message, status: :unprocessable_content)
+    false
+  end
+
+  def merge_upload_attempt_metadata!(attempt, patch)
+    metadata = (attempt.metadata || {}).deep_dup
+    metadata.deep_merge!(patch.stringify_keys)
+    attempt.update!(metadata:)
+  end
+
+  def record_upload_warning!(attempt, category, drive_item_id)
+    warnings = Array(attempt.metadata&.fetch("warnings", []))
+    warning = {
+      "category" => category.to_s,
+      "resolution" => "upload_anyway",
+      "drive_item_id" => drive_item_id
+    }
+    warnings << warning unless warnings.any? { |entry| entry == warning }
+    merge_upload_attempt_metadata!(attempt, warnings: warnings)
+  end
+
+  def record_active_content_warning_if_needed!(upload_attempt, upload_hash)
+    return unless active_content_upload_anyway?
+
+    active_duplicate = active_content_duplicate_item(upload_hash)
+    record_upload_warning!(upload_attempt, :active_content_duplicate, active_duplicate.id) if active_duplicate
+  end
+
+  def unresolved_active_content_duplicate?(upload_hash)
+    active_content_duplicate_item(upload_hash).present? && !active_content_upload_anyway?
+  end
+
+  def raise_unresolved_active_content_duplicate!(upload_hash)
+    raise DuplicateActiveContentError, upload_hash if unresolved_active_content_duplicate?(upload_hash)
+  end
+
+  def render_completed_upload_attempt(upload_attempt)
+    return false unless upload_attempt.state_name == :completed && upload_attempt.drive_item.present?
+
+    @drive_item = upload_attempt.drive_item
+    render json: drive_item_json(@drive_item), status: :ok
+    true
+  end
+
+  def retry_upload_attempt!(upload_attempt)
+    if %i[committed publishing].include?(upload_attempt.state_name)
+      UploadAttempts::RecoveryService.new(upload_attempt:).call
+    elsif UploadAttempt.allowed_transition?(upload_attempt.state_name, :restart_upload)
+      upload_attempt.transition!(:restart_upload)
+    end
+  end
+
+  def transition_if_allowed(upload_attempt, event, reason: nil)
+    upload_attempt.reload if upload_attempt.persisted? && upload_attempt.changed?
+    return unless UploadAttempt.allowed_transition?(upload_attempt.state_name, event)
+
+    upload_attempt.transition!(event, reason:)
+  end
+
+  def transition_upload_attempt_or_processing(upload_attempt, event)
+    upload_attempt.transition!(event)
+    true
+  rescue UploadAttempt::InvalidTransition
+    upload_attempt.reload
+    render_processing_upload_attempt(upload_attempt)
+    false
+  end
+
+  def render_processing_upload_attempt(upload_attempt)
+    return false if upload_attempt.state_name == :received
+
+    render_api_error(
+      :upload_in_progress,
+      "同じアップロードを処理中です",
+      status: :conflict,
+      details: { upload_state: upload_attempt.state }
+    )
     true
   end
 
@@ -731,7 +937,7 @@ class Api::V1::DriveItemsController < ApplicationController
       details: {
         duplicate_kind: "same_content",
         duplicate_files: [ duplicate_content_file_json(drive_item) ],
-        allowed_actions: [ "open_existing", "cancel" ]
+        allowed_actions: [ "upload_anyway", "skip", "open_existing", "cancel" ]
       }
     )
   end
@@ -749,11 +955,41 @@ class Api::V1::DriveItemsController < ApplicationController
     )
   end
 
+  def render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_hash:, upload_attempt:)
+    conflict = UploadAttempt.conflict_for_constraint(unique_constraint_name(error))
+    case conflict
+    when :active_name
+      transition_if_allowed(upload_attempt, :commit_blocked, reason: :duplicate_name)
+      render_name_conflict(name, parent_id:, extension:)
+    else
+      raise error
+    end
+  end
+
+  def unique_constraint_name(error)
+    error.cause&.result&.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
+  end
+
+  def compensate_unpublished_drive_item!(drive_item)
+    return unless drive_item&.persisted?
+
+    drive_item.update_columns(
+      deleted_at: Time.current,
+      purged_at: Time.current,
+      storage_key: nil,
+      blob_path: nil,
+      updated_at: Time.current
+    )
+  rescue ActiveRecord::ActiveRecordError => error
+    Rails.logger.error("[drive_items.create] failed to compensate unpublished record drive_item_id=#{drive_item.id} error=#{error.class}: #{error.message}")
+  end
+
   def error_code_for_status(status)
     case Rack::Utils.status_code(status)
     when 401 then :unauthorized
     when 403 then :forbidden
     when 404 then :not_found
+    when 409 then :conflict
     when 413 then :payload_too_large
     when 422 then :validation_failed
     when 500..599 then :internal_error
@@ -792,11 +1028,12 @@ class Api::V1::DriveItemsController < ApplicationController
   def replace_target_for_upload(upload_hash)
     replace_target = current_organization.drive_items.find_by(id: replace_trashed_drive_item_id)
     unless replace_target
-      render_not_found
+      if DriveItem.where(id: replace_trashed_drive_item_id).where.not(organization_id: current_organization.id).exists?
+        render_not_found
+      end
       return nil
     end
     if replace_target.purged_at.present?
-      render_api_error(:replace_target_already_purged, "置換対象はすでに完全削除済みです", status: :conflict)
       return nil
     end
     if replace_target.deleted_at.blank?
@@ -815,19 +1052,18 @@ class Api::V1::DriveItemsController < ApplicationController
     replace_target
   end
 
-  def replace_trashed_upload!(uploaded_file:, upload_hash:, extension:, replace_target:)
-    generated_storage_key = build_storage_key(extension)
+  def replace_trashed_upload!(stored_file:, upload_hash:, extension:, replace_target:, upload_attempt:)
     old_storage_key = replace_target.effective_storage_key
-    file_saved = false
     committed = false
 
     begin
-      stored_file = save_uploaded_file(uploaded_file, generated_storage_key)
-      file_saved = true
-
       ActiveRecord::Base.transaction do
-        replace_target.lock!
+        upload_attempt.transition!(:start_commit)
+        lock_active_parent_with_items!(@drive_item.parent_id, [ replace_target ])
         validate_replace_target_state!(replace_target, upload_hash)
+        raise DuplicateNameError if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension:)
+        raise_unresolved_active_content_duplicate!(upload_hash)
+        record_active_content_warning_if_needed!(upload_attempt, upload_hash)
 
         @drive_item.storage_key = stored_file.storage_key
         @drive_item.extension = extension
@@ -844,9 +1080,14 @@ class Api::V1::DriveItemsController < ApplicationController
           storage_key: nil,
           blob_path: nil
         )
+        upload_attempt.update!(drive_item: @drive_item)
+        upload_attempt.transition!(:commit_succeeded)
       end
       committed = true
 
+      upload_attempt.transition!(:start_publish)
+      stored_file.publish!
+      upload_attempt.transition!(:publish_succeeded)
       record_drive_item_event!("drive_item.replaced_from_trash", @drive_item, metadata: {
         source: "trash_duplicate_invalid_parent_resolution",
         old_drive_item_id: replace_target.id,
@@ -855,22 +1096,40 @@ class Api::V1::DriveItemsController < ApplicationController
       })
       cleanup_replaced_storage!(old_storage_key, replace_target.id)
       render json: drive_item_json(@drive_item), status: :created
+    rescue DuplicateNameError
+      transition_if_allowed(upload_attempt, :commit_blocked, reason: :duplicate_name)
+      render_name_conflict(@drive_item.name, parent_id: @drive_item.parent_id, extension:)
+    rescue DuplicateActiveContentError
+      transition_if_allowed(upload_attempt, :commit_blocked, reason: :active_content_duplicate)
+      render_active_content_duplicate(active_content_duplicate_item(upload_hash))
+    rescue ActiveRecord::RecordNotFound
+      transition_if_allowed(upload_attempt, :commit_blocked, reason: :invalid_parent)
+      render_api_error(:invalid_parent, "指定された親フォルダが見つかりません", status: :not_found)
+    rescue ActiveRecord::RecordNotUnique => error
+      render_upload_unique_conflict(error, name: @drive_item.name, parent_id: @drive_item.parent_id, extension:, upload_hash:, upload_attempt:)
+    rescue ReplaceTargetPurgedError
+      commit_new_upload_after_replace_target_gone!(stored_file:, upload_hash:, extension:, upload_attempt:)
     rescue ActiveRecord::RecordInvalid => error
+      transition_if_allowed(upload_attempt, :commit_failed)
       render_validation_failed(error.record)
     rescue ActiveRecord::ActiveRecordError => error
+      transition_if_allowed(upload_attempt, :commit_failed)
       Rails.logger.error("[drive_items.replace_trashed] failed error=#{error.class}: #{error.message}")
       render_api_error(:validation_failed, "ファイルを保存できませんでした", status: :unprocessable_content)
-    rescue DriveItems::StoredFileInspector::UploadTooLargeError
-      render_api_error(:payload_too_large, "ファイルサイズが上限を超えています", status: :content_too_large)
+    rescue SystemCallError => error
+      transition_if_allowed(upload_attempt, :publish_failed)
+      compensate_unpublished_drive_item!(@drive_item) if committed
+      Rails.logger.error("[drive_items.replace_trashed] failed to publish storage error=#{error.class}: #{error.message}")
+      render_api_error(:storage_publish_failed, "ファイルを確定できませんでした", status: :internal_server_error)
     ensure
-      cleanup_uploaded_file!(generated_storage_key) if file_saved && !committed
+      stored_file.cleanup_temporary!
     end
   end
 
   def validate_replace_target_state!(replace_target, upload_hash)
     raise ActiveRecord::RecordNotFound unless replace_target.organization_id == current_organization.id
     if replace_target.purged_at.present?
-      raise ActiveRecord::RecordInvalid.new(replace_target.tap { |item| item.errors.add(:base, "置換対象はすでに完全削除済みです") })
+      raise ReplaceTargetPurgedError
     end
     if replace_target.deleted_at.blank?
       raise ActiveRecord::RecordInvalid.new(replace_target.tap { |item| item.errors.add(:base, "置換対象はゴミ箱内にありません") })
@@ -878,6 +1137,53 @@ class Api::V1::DriveItemsController < ApplicationController
     if !replace_target.file? || replace_target.file_hash != upload_hash
       raise ActiveRecord::RecordInvalid.new(replace_target.tap { |item| item.errors.add(:base, "置換対象とアップロードファイルの内容が一致しません") })
     end
+  end
+
+  def commit_new_upload_after_replace_target_gone!(stored_file:, upload_hash:, extension:, upload_attempt:)
+    ActiveRecord::Base.transaction do
+      upload_attempt.transition!(:start_commit)
+      lock_active_parent!(@drive_item.parent_id)
+      raise DuplicateNameError if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension:)
+      raise_unresolved_active_content_duplicate!(upload_hash)
+      record_active_content_warning_if_needed!(upload_attempt, upload_hash)
+
+      @drive_item.storage_key = stored_file.storage_key
+      @drive_item.extension = extension
+      @drive_item.file_hash = stored_file.sha256
+      @drive_item.file_size = stored_file.byte_size
+      @drive_item.content_type = stored_file.content_type
+      @drive_item.save!
+      upload_attempt.update!(drive_item: @drive_item)
+      upload_attempt.transition!(:commit_succeeded)
+    end
+
+    upload_attempt.transition!(:start_publish)
+    stored_file.publish!
+    upload_attempt.transition!(:publish_succeeded)
+    record_drive_item_event!("drive_item.created", @drive_item, metadata: {
+      source: "replace_target_purged_upload_as_new",
+      requested_replace_trashed_drive_item_id: replace_trashed_drive_item_id
+    })
+    render json: drive_item_json(@drive_item), status: :created
+  rescue DuplicateNameError
+    transition_if_allowed(upload_attempt, :commit_blocked, reason: :duplicate_name)
+    render_name_conflict(@drive_item.name, parent_id: @drive_item.parent_id, extension:)
+  rescue DuplicateActiveContentError
+    transition_if_allowed(upload_attempt, :commit_blocked, reason: :active_content_duplicate)
+    render_active_content_duplicate(active_content_duplicate_item(upload_hash))
+  rescue ActiveRecord::RecordNotFound
+    transition_if_allowed(upload_attempt, :commit_blocked, reason: :invalid_parent)
+    render_api_error(:invalid_parent, "指定された親フォルダが見つかりません", status: :not_found)
+  rescue ActiveRecord::RecordNotUnique => error
+    render_upload_unique_conflict(error, name: @drive_item.name, parent_id: @drive_item.parent_id, extension:, upload_hash:, upload_attempt:)
+  rescue ActiveRecord::RecordInvalid => error
+    transition_if_allowed(upload_attempt, :commit_failed)
+    render_validation_failed(error.record)
+  rescue SystemCallError => error
+    transition_if_allowed(upload_attempt, :publish_failed)
+    compensate_unpublished_drive_item!(@drive_item)
+    Rails.logger.error("[drive_items.replace_trashed] fallback publish failed error=#{error.class}: #{error.message}")
+    render_api_error(:storage_publish_failed, "ファイルを確定できませんでした", status: :internal_server_error)
   end
 
   def cleanup_replaced_storage!(storage_key, purged_drive_item_id)
@@ -889,19 +1195,6 @@ class Api::V1::DriveItemsController < ApplicationController
     cleanup_uploaded_file!(storage_key)
   rescue StandardError => error
     Rails.logger.error("[drive_items.replace_trashed] cleanup failed drive_item_id=#{purged_drive_item_id} error=#{error.class}: #{error.message}")
-  end
-
-  def digest_uploaded_file(uploaded_file)
-    io = nil
-    timed_upload_phase(:hash_duration_ms) do
-      io = uploaded_file.tempfile
-      io.rewind
-      digest = Digest::SHA256.new
-      digest.update(io.read(5.megabytes)) until io.eof?
-      digest.hexdigest
-    end
-  ensure
-    io&.rewind
   end
 
   def observe_upload_request
@@ -1090,14 +1383,6 @@ class Api::V1::DriveItemsController < ApplicationController
       visited_ids << current.id
       current = current.parent
     end
-  end
-
-  def allow_trash_duplicate?
-    ActiveModel::Type::Boolean.new.cast(params[:allow_trash_duplicate])
-  end
-
-  def allow_duplicate_content?
-    ActiveModel::Type::Boolean.new.cast(params[:allow_duplicate_content])
   end
 
   def restore_drive_item!(drive_item)

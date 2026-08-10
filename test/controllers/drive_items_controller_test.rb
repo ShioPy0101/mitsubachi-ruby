@@ -220,7 +220,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "directory", duplicate.dig("restore_target", "type")
   end
 
-  test "allow_trash_duplicate でもゴミ箱配下ファイルと同一内容は新規作成しない" do
+  test "ゴミ箱配下ファイルと同一内容はpolicyなしでは新規作成しない" do
     sign_in @user
     root = create_directory(name: "trash-upload-anyway-root")
     child_file = create_named_file(name: "child", extension: "txt", body: "upload-anyway-content", parent: root)
@@ -234,7 +234,6 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
         name: "new-file",
         item_type: "file",
         parent_id: @root.id,
-        allow_trash_duplicate: "true",
         file: uploaded_file("new-file.txt", "upload-anyway-content")
       }
     end
@@ -261,7 +260,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_nil trashed_file.purged_at
   end
 
-  test "復元先フォルダが存在しないゴミ箱重複もallow_trash_duplicateでは新規作成しない" do
+  test "復元先フォルダが存在しないゴミ箱重複もpolicyなしでは新規作成しない" do
     sign_in @user
     missing_parent = create_directory(name: "missing-parent-upload", deleted_at: 2.hours.ago, purged_at: 1.hour.ago)
     trashed_file = create_named_file(name: "orphan-trash", extension: "txt", body: "orphan-upload", parent: missing_parent, deleted_at: 30.minutes.ago)
@@ -271,7 +270,6 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
         name: "new-orphan",
         item_type: "file",
         parent_id: @root.id,
-        allow_trash_duplicate: "true",
         file: uploaded_file("new-orphan.txt", "orphan-upload")
       }
     end
@@ -353,11 +351,11 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_nil active_file.reload.purged_at
   end
 
-  test "replace対象が完全削除済みなら新規作成しない" do
+  test "replace対象が完全削除済みならstaging済みデータを新規uploadとして作成する" do
     sign_in @user
     purged_file = create_named_file(name: "purged-replace", extension: "txt", body: "purged-replace", parent: @root, deleted_at: 1.hour.ago, purged_at: 30.minutes.ago)
 
-    assert_no_difference "DriveItem.count" do
+    assert_difference "DriveItem.count", 1 do
       post api_v1_drive_items_url, params: {
         name: "new-orphan",
         item_type: "file",
@@ -367,8 +365,14 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_response :conflict
-    assert_equal "replace_target_already_purged", response.parsed_body.dig("error", "code")
+    assert_response :created
+    created = DriveItem.find(response.parsed_body.fetch("id"))
+    assert_nil created.deleted_at
+    assert_nil created.purged_at
+    assert_equal Digest::SHA256.hexdigest("purged-replace"), created.file_hash
+    assert purged_file.reload.purged_at.present?
+  ensure
+    cleanup_created_file(created) if defined?(created) && created&.persisted?
   end
 
   test "replace対象とアップロード内容が異なる場合はpurgeせず409を返す" do
@@ -450,9 +454,10 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     root = create_directory(name: "restore-same-hash-subtree")
     child_file = create_named_file(name: "child-a", extension: "txt", body: "same-restore-hash", parent: root)
     child_dir = create_directory(name: "child-dir", parent: root)
-    grandchild_file = create_named_file(name: "child-b", extension: "txt", body: "same-restore-hash", parent: child_dir)
+    grandchild_file = create_named_file(name: "child-b", extension: "txt", body: "same-restore-hash-later", parent: child_dir)
     delete api_v1_drive_item_url(root)
     assert_response :ok
+    grandchild_file.update_column(:file_hash, child_file.file_hash)
 
     sign_in @user
     post restore_api_v1_drive_item_url(root)
@@ -737,9 +742,10 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
     root = create_directory(name: "preview-content-root")
     child = create_named_file(name: "nested", extension: "txt", body: "preview-content", parent: root)
-    create_named_file(name: "same-in-subtree", extension: "txt", body: "preview-content", parent: root)
+    same_in_subtree = create_named_file(name: "same-in-subtree", extension: "txt", body: "preview-content-later", parent: root)
     delete api_v1_drive_item_url(root)
     assert_response :ok
+    same_in_subtree.update_column(:file_hash, child.file_hash)
     active_duplicate = create_named_file(name: "active-content", extension: "txt", body: "preview-content", parent: @root)
 
     sign_in @user
@@ -1208,30 +1214,21 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
 
   test "DB保存失敗時にアップロード済みファイルが削除される" do
     sign_in @user
-    original_save = DriveItem.instance_method(:save)
-    original_build_storage_key = Api::V1::DriveItemsController.instance_method(:build_storage_key)
-    storage_key = "#{SecureRandom.uuid}.txt"
-    storage_path = DriveItem.storage_root.join(DriveItem.storage_relative_path_for(storage_key))
-
-    DriveItem.define_method(:save) do |*args, **kwargs|
-      false
-    end
-    Api::V1::DriveItemsController.define_method(:build_storage_key) do |_extension|
-      storage_key
-    end
+    upload_id = SecureRandom.uuid
 
     post api_v1_drive_items_url, params: {
-      name: "orphan",
+      name: "",
       item_type: "file",
       parent_id: @root.id,
       file: uploaded_file("orphan.txt", "orphan")
-    }
+    }, headers: { "X-Upload-ID" => upload_id }
 
     assert_response :unprocessable_entity
-    assert_not File.exist?(storage_path)
+    attempt = UploadAttempt.find_by!(organization: @organization, client_upload_id: upload_id)
+    assert_equal "failed", attempt.state
+    assert_not File.exist?(DriveItem.storage_root.join(DriveItem.storage_relative_path_for(attempt.storage_key)))
   ensure
-    DriveItem.define_method(:save, original_save)
-    Api::V1::DriveItemsController.define_method(:build_storage_key, original_build_storage_key)
+    cleanup_uploaded_file_by_key(attempt.storage_key) if defined?(attempt) && attempt&.storage_key.present?
   end
 
   test "ゴミ箱内に同名アイテムがあっても新規作成できる" do
@@ -1376,9 +1373,41 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal false, duplicate_files.first.fetch("deleted")
   end
 
-  test "allow_duplicate_content が true の場合は同一内容でも新規作成できる" do
+  test "同一upload idのretryは作成済みDriveItemを返し二重作成しない" do
     sign_in @user
-    create_named_file(name: "既存", extension: "txt", body: "same-content", parent: @root)
+    upload_id = SecureRandom.uuid
+
+    assert_difference "DriveItem.count", 1 do
+      post api_v1_drive_items_url, params: {
+        name: "retry-once",
+        item_type: "file",
+        parent_id: @root.id,
+        file: uploaded_file("retry-once.txt", "retry-once")
+      }, headers: { "X-Upload-ID" => upload_id }
+    end
+    assert_response :created
+    created_id = response.parsed_body.fetch("id")
+
+    sign_in @user
+    assert_no_difference "DriveItem.count" do
+      post api_v1_drive_items_url, params: {
+        name: "retry-once",
+        item_type: "file",
+        parent_id: @root.id,
+        file: uploaded_file("retry-once.txt", "retry-once")
+      }, headers: { "X-Upload-ID" => upload_id }
+    end
+
+    assert_response :ok
+    assert_equal created_id, response.parsed_body.fetch("id")
+  ensure
+    created = DriveItem.find_by(id: created_id) if defined?(created_id)
+    cleanup_created_file(created) if created
+  end
+
+  test "allow_duplicate_content が true の場合はactive同一内容を新規作成できる" do
+    sign_in @user
+    existing = create_named_file(name: "既存", extension: "txt", body: "same-content", parent: @root)
 
     assert_difference "DriveItem.count", 1 do
       post api_v1_drive_items_url, params: {
@@ -1391,10 +1420,83 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :created
-    assert_equal "新規", response.parsed_body.fetch("name")
+    created = DriveItem.find(response.parsed_body.fetch("id"))
+    assert_equal existing.file_hash, created.file_hash
+    attempt = UploadAttempt.find_by!(drive_item: created)
+    assert_equal [
+      {
+        "category" => "active_content_duplicate",
+        "resolution" => "upload_anyway",
+        "drive_item_id" => existing.id
+      }
+    ], attempt.metadata.fetch("warnings")
+  ensure
+    cleanup_created_file(created) if defined?(created) && created
   end
 
-  test "allow_duplicate_content が false の場合は同一内容を拒否する" do
+  test "batch policy が active同一内容を一括許可する" do
+    sign_in @user
+    create_named_file(name: "既存", extension: "txt", body: "same-content", parent: @root)
+    policy = { category: "active_content_duplicate", resolution: "upload_anyway", scope: "batch" }.to_json
+    created_ids = []
+
+    assert_difference "DriveItem.count", 3 do
+      3.times do |index|
+        sign_in @user
+        post api_v1_drive_items_url, params: {
+          name: "新規#{index}",
+          item_type: "file",
+          parent_id: @root.id,
+          upload_policy: policy,
+          file: uploaded_file("新規#{index}.txt", "same-content")
+        }, headers: { "X-Upload-ID" => SecureRandom.uuid }
+        assert_response :created
+        created_ids << response.parsed_body.fetch("id")
+      end
+    end
+
+    assert_equal 3, UploadAttempt.where(drive_item_id: created_ids).count
+    assert_equal 3, DriveItem.where(id: created_ids).active.file.count
+  ensure
+    DriveItem.where(id: created_ids).find_each { |item| cleanup_created_file(item) } if defined?(created_ids)
+  end
+
+  test "active同一内容を許可しても同名競合は未解決のまま残る" do
+    sign_in @user
+    create_named_file(name: "レポート", extension: "txt", body: "same-content", parent: @root)
+
+    assert_no_difference "DriveItem.count" do
+      post api_v1_drive_items_url, params: {
+        name: "レポート",
+        item_type: "file",
+        parent_id: @root.id,
+        upload_policy: { active_content_duplicate: "upload_anyway" }.to_json,
+        file: uploaded_file("レポート.txt", "same-content")
+      }
+    end
+
+    assert_response :conflict
+    assert_equal "duplicate_name", response.parsed_body.dig("error", "code")
+  end
+
+  test "明示upload_policyが不正な場合は保存前に422を返す" do
+    sign_in @user
+
+    assert_no_difference "DriveItem.count" do
+      post api_v1_drive_items_url, params: {
+        name: "invalid-policy",
+        item_type: "file",
+        parent_id: @root.id,
+        upload_policy: { category: "duplicate_name", resolution: "restore", scope: "batch" }.to_json,
+        file: uploaded_file("invalid-policy.txt", "invalid-policy")
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_equal "invalid_upload_policy", response.parsed_body.dig("error", "code")
+  end
+
+  test "allow_duplicate_content が false の場合は同一内容を確認待ちにする" do
     sign_in @user
     create_named_file(name: "既存", extension: "txt", body: "same-content", parent: @root)
 
@@ -1430,7 +1532,7 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal trashed.id, response.parsed_body.dig("error", "details", "duplicate", "id")
   end
 
-  test "同一内容がごみ箱だけにあり allow_trash_duplicate が true でも新規作成しない" do
+  test "同一内容がごみ箱だけにある場合はpolicyなしでは新規作成しない" do
     sign_in @user
     create_named_file(name: "ファイルA", extension: "txt", body: "trash-content", parent: @root, deleted_at: Time.current)
 
@@ -1439,13 +1541,52 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
         name: "ファイルB",
         item_type: "file",
         parent_id: @root.id,
-        allow_trash_duplicate: "true",
         file: uploaded_file("ファイルB.txt", "trash-content")
       }
     end
 
     assert_response :conflict
     assert_equal "trash_content_duplicate", response.parsed_body.dig("error", "code")
+  ensure
+    cleanup_created_file(created) if defined?(created) && created&.persisted?
+  end
+
+  test "完全削除済みの同一内容はupload競合として扱わない" do
+    sign_in @user
+    create_named_file(name: "完全削除済み", extension: "txt", body: "purged-content", parent: @root, deleted_at: 1.hour.ago, purged_at: 30.minutes.ago)
+
+    assert_difference "DriveItem.active.file.count", 1 do
+      post api_v1_drive_items_url, params: {
+        name: "新規完全削除後",
+        item_type: "file",
+        parent_id: @root.id,
+        file: uploaded_file("新規完全削除後.txt", "purged-content")
+      }
+    end
+
+    assert_response :created
+    created = DriveItem.find(response.parsed_body.fetch("id"))
+    assert_equal Digest::SHA256.hexdigest("purged-content"), created.file_hash
+  ensure
+    cleanup_created_file(created) if defined?(created) && created&.persisted?
+  end
+
+  test "完全削除済みの同名はactive namespaceを占有しない" do
+    sign_in @user
+    create_named_file(name: "purged-name", extension: "txt", body: "old-purged-name", parent: @root, deleted_at: 1.hour.ago, purged_at: 30.minutes.ago)
+
+    assert_difference "DriveItem.active.file.count", 1 do
+      post api_v1_drive_items_url, params: {
+        name: "purged-name",
+        item_type: "file",
+        parent_id: @root.id,
+        file: uploaded_file("purged-name.txt", "new-purged-name")
+      }
+    end
+
+    assert_response :created
+    created = DriveItem.find(response.parsed_body.fetch("id"))
+    assert_equal "purged-name", created.name
   ensure
     cleanup_created_file(created) if defined?(created) && created&.persisted?
   end
@@ -1749,6 +1890,12 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     return unless drive_item.file? && drive_item.storage_key.present?
 
     FileUtils.rm_f(drive_item.absolute_storage_path)
+  end
+
+  def cleanup_uploaded_file_by_key(storage_key)
+    return unless DriveItem.valid_storage_key?(storage_key)
+
+    FileUtils.rm_f(DriveItem.storage_root.join(DriveItem.storage_relative_path_for(storage_key)))
   end
 
   def create_directory(name:, parent: nil, deleted_at: nil, purged_at: nil)

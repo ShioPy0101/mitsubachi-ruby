@@ -30,9 +30,10 @@ module DriveItems
       result = nil
 
       ActiveRecord::Base.transaction do
-        roots.each(&:lock!)
         items = roots.flat_map { |root| collect_items(root) }.uniq(&:id).sort_by(&:id)
-        items.each(&:lock!)
+        lock_plan.lock_items_by_id!(items)
+        items.each(&:reload)
+        items.each { |item| raise ActiveRecord::RecordNotFound if item.purged_at.present? }
         storage_targets = collect_storage_targets(items)
         mark_as_purged!(items)
         result = Result.success(roots.size)
@@ -77,6 +78,10 @@ module DriveItems
         .where("trashed_by_ancestor_id IS NULL OR trashed_by_ancestor_id = drive_items.id")
         .order(:id)
         .to_a
+    end
+
+    def lock_plan
+      @lock_plan ||= DriveItems::LockPlan.new(organization: @organization)
     end
 
     def collect_items(root)
