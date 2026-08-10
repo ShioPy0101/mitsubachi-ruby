@@ -45,6 +45,8 @@ module DriveItems
       absolute_path = @drive_item.absolute_storage_path
       return invalid_delivery("missing_file") unless File.exist?(absolute_path)
 
+      ensure_proxy_readable!(absolute_path)
+
       audit_result = record_access_log
       return Result.failure(:service_unavailable, audit_result.error_message) unless audit_result.success?
 
@@ -97,6 +99,15 @@ module DriveItems
         "X-Mitsubachi-File-Sha256" => normalized_sha256.to_s,
         "X-Mitsubachi-Updated-At" => @drive_item.updated_at.iso8601(3)
       }
+    end
+
+    def ensure_proxy_readable!(absolute_path)
+      return if (File.stat(absolute_path).mode & DriveItems::StoredFileInspector::PUBLISHED_FILE_MODE) == DriveItems::StoredFileInspector::PUBLISHED_FILE_MODE
+
+      # atomic publish 導入直後に作成されたファイルは staging 時の 0600 を引き継ぐ可能性がある。
+      # Rails が本文を直配信するのではなく、X-Accel-Redirect 先の Nginx が読める mode へ
+      # 認可済みリクエストの直前に補正して、既存ファイルも同じ配信境界で自己修復する。
+      File.chmod(DriveItems::StoredFileInspector::PUBLISHED_FILE_MODE, absolute_path)
     end
 
     def invalid_delivery(reason)
