@@ -53,4 +53,8 @@ gem "dotenv-rails", groups: [ :development, :test ]
 
 gem "devise"
 
+# Rails は Active Support 経由で json を利用するが、security advisory 対応では
+# transitive dependency の解決結果だけに任せると脆弱版へ戻り得るため下限を明示する。
+gem "json", ">= 2.21.2"
+
 gem "rubyzip", require: "zip"
