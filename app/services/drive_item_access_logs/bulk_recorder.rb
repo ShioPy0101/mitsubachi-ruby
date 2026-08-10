@@ -1,4 +1,9 @@
 module DriveItemAccessLogs
+  # ZIP など複数ファイルを 1 回のレスポンスで配信する操作の監査ログを一括保存する。
+  #
+  # 1 操作で複数 DriveItem が含まれるため、同じ batch_id を付けて後から「どの配信に含まれたか」を
+  # 追跡できるようにする。insert_all! を使うのは、監査対象が多い共有フォルダでもレスポンス直前の
+  # ログ保存で過度に待たせないため。
   class BulkRecorder
     def initialize(organization:, drive_items:, action:, request:, user: nil, external_share: nil, metadata: {})
       @organization = organization
