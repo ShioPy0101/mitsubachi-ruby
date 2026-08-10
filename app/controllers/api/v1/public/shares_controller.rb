@@ -1,4 +1,5 @@
 require "digest"
+require "set"
 
 class Api::V1::Public::SharesController < ApplicationController
   skip_before_action :verify_authenticity_token
@@ -35,7 +36,17 @@ class Api::V1::Public::SharesController < ApplicationController
   end
 
   def items
-    render json: { items: item_scope.visible_items(parent_id: params[:parent_id]).map { |item| public_item_json(item) } }
+    parent = requested_parent
+    return render_public_not_found if params[:parent_id].present? && parent.blank?
+
+    if parent.present?
+      record_external_access!("external_share.folder_opened", drive_item: parent, result: "success")
+    end
+    render json: {
+      current_folder: parent.present? ? public_item_json(parent) : nil,
+      breadcrumbs: public_breadcrumbs(parent),
+      items: public_items_json(item_scope.visible_items(parent_id: parent&.id))
+    }
   end
 
   def item
@@ -169,27 +180,71 @@ class Api::V1::Public::SharesController < ApplicationController
       allow_download: @external_share.allow_download,
       allow_bulk_download: @external_share.allow_bulk_download,
       password_required: @external_share.password_required?,
-      items: items.map { |item| public_item_json(item) }
+      items: public_items_json(items)
     }
+  end
+
+  def public_items_json(items)
+    root_ids = item_scope.shared_root_ids.to_set
+    items.map { |item| public_item_json_with_roots(item, root_ids:) }
   end
 
   def public_item_json(drive_item)
+    root_ids = item_scope.shared_root_ids.to_set
+    public_item_json_with_roots(drive_item, root_ids:)
+  end
+
+  def public_item_json_with_roots(drive_item, root_ids:)
     {
       id: drive_item.id,
-      parent_id: shared_parent_id(drive_item),
+      parent_id: shared_parent_id(drive_item, root_ids:),
       name: drive_item.filename,
+      kind: drive_item.directory? ? "folder" : "file",
       item_type: drive_item.item_type,
       extension: drive_item.extension,
       content_type: drive_item.content_type,
-      file_size: drive_item.file_size
+      file_size: drive_item.file_size,
+      size: drive_item.file_size,
+      previewable: public_share_policy.can_preview?(drive_item),
+      downloadable: public_share_policy.can_download?(drive_item)
     }
   end
 
-  def shared_parent_id(drive_item)
-    return nil if @external_share.external_share_items.exists?(drive_item_id: drive_item.id)
+  def shared_parent_id(drive_item, root_ids:)
+    return nil if root_ids.include?(drive_item.id)
     return drive_item.parent_id if item_scope.include?(drive_item.parent)
 
     nil
+  end
+
+  def public_breadcrumbs(parent)
+    return [] if parent.blank?
+
+    root_ids = item_scope.shared_root_ids.to_set
+    current = parent
+    breadcrumbs = []
+
+    while current.present? && item_scope.include?(current)
+      breadcrumbs.unshift(public_item_json_with_roots(current, root_ids:))
+      break if root_ids.include?(current.id)
+
+      current = current.parent
+    end
+
+    breadcrumbs
+  end
+
+  def requested_parent
+    return nil if params[:parent_id].blank?
+
+    # 外部共有では、クライアント指定 ID を global DriveItem.find で解決しない。
+    # shared root 自身または descendant の directory だけを ItemScope 経由で取得し、
+    # shared root の親や sibling folder を parent_id に指定されても境界外として扱う。
+    item_scope.find_directory(params[:parent_id])
+  end
+
+  def public_share_policy
+    @public_share_policy ||= ExternalShares::AccessPolicy.new(external_share: @external_share)
   end
 
   def set_no_store_headers

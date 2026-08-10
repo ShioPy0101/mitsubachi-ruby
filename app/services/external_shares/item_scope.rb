@@ -9,11 +9,20 @@ module ExternalShares
       valid_items(@external_share.drive_items.order(:id))
     end
 
+    def shared_root_ids
+      root_items.pluck(:id)
+    end
+
     def visible_items(parent_id: nil)
-      if @external_share.snapshot?
-        snapshot_items(parent_id:)
+      if parent_id.present?
+        parent = find_directory(parent_id)
+        return DriveItem.none if parent.blank?
+
+        children_of(parent.id)
+      elsif @external_share.snapshot?
+        snapshot_root_items
       else
-        dynamic_items(parent_id:)
+        dynamic_root_items
       end
     end
 
@@ -23,6 +32,10 @@ module ExternalShares
 
     def find_item(id)
       visible_file_or_directory_scope.find_by(id: id)
+    end
+
+    def find_directory(id)
+      visible_file_or_directory_scope.directory.find_by(id: id)
     end
 
     def downloadable_files
@@ -54,31 +67,44 @@ module ExternalShares
       @organization.drive_items.active.where(id: ids)
     end
 
-    def snapshot_items(parent_id:)
+    def snapshot_root_items
       scope = visible_file_or_directory_scope.includes(:parent)
-      root_ids = @external_share.external_share_items.select(:drive_item_id)
-      if parent_id.present?
-        scope.where(parent_id: parent_id)
-      else
-        scope.where(parent_id: nil).or(scope.where.not(parent_id: root_ids))
-      end.order(:item_type, :name, :id)
+      roots = root_items
+      file_root_ids = roots.file.select(:id)
+      directory_root_ids = roots.directory.select(:id)
+
+      scope.where(id: file_root_ids)
+        .or(scope.where(parent_id: directory_root_ids))
+        .order(:item_type, :name, :id)
     end
 
-    def dynamic_items(parent_id:)
-      resolver = DynamicTreeResolver.new(external_share: @external_share)
-      scope = @organization.drive_items.active.where(id: resolver.item_ids)
+    def dynamic_root_items
+      scope = visible_file_or_directory_scope
+      roots = root_items
+      file_root_ids = roots.file.select(:id)
+      directory_root_ids = roots.directory.select(:id)
 
-      if parent_id.present?
-        return DriveItem.none unless resolver.item_ids.include?(parent_id.to_i)
+      scope.where(id: file_root_ids)
+        .or(scope.where(parent_id: directory_root_ids))
+        .order(:item_type, :name, :id)
+    end
 
-        scope.where(parent_id: parent_id)
-      else
-        scope.where(id: @external_share.external_share_items.select(:drive_item_id))
-      end.order(:item_type, :name, :id)
+    def children_of(parent_id)
+      visible_file_or_directory_scope.where(parent_id: parent_id).order(:item_type, :name, :id)
     end
 
     def valid_items(scope)
       scope.where(organization_id: @organization.id, deleted_at: nil, purged_at: nil)
+    end
+
+    def root_items
+      if @external_share.snapshot?
+        scope = visible_file_or_directory_scope
+        shared_ids = scope.select(:id)
+        scope.where(parent_id: nil).or(scope.where.not(parent_id: shared_ids))
+      else
+        valid_items(@external_share.drive_items)
+      end
     end
 
     def under_dynamic_root?(drive_item)

@@ -334,6 +334,103 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
     assert_nil response.headers["X-Accel-Redirect"]
   end
 
+  test "フォルダ共有は共有ルート直下とサブフォルダ配下だけを一覧できる" do
+    raw_token, _share, tree = create_folder_share!
+
+    get "/api/v1/public/shares/#{raw_token}/items"
+    assert_response :ok
+    assert_equal(
+      [ tree.fetch(:allowed).filename, tree.fetch(:child).filename ],
+      response.parsed_body.fetch("items").map { |item| item.fetch("name") }
+    )
+
+    get "/api/v1/public/shares/#{raw_token}/items", params: { parent_id: tree.fetch(:child).id }
+    assert_response :ok
+    assert_equal(
+      [ tree.fetch(:nested).filename ],
+      response.parsed_body.fetch("items").map { |item| item.fetch("name") }
+    )
+  end
+
+  test "フォルダ共有一覧は共有ルートより上と共有範囲外のparent_idを拒否する" do
+    raw_token, _share, tree = create_folder_share!
+
+    [ tree.fetch(:root), tree.fetch(:private_folder), drive_items(:two) ].each do |forbidden_parent|
+      get "/api/v1/public/shares/#{raw_token}/items", params: { parent_id: forbidden_parent.id }
+      assert_response :not_found
+      assert_equal "not_found", response.parsed_body.dig("error", "code")
+    end
+  end
+
+  test "フォルダ共有の個別取得preview downloadは共有範囲外IDを拒否する" do
+    raw_token, _share, tree = create_folder_share!
+
+    [
+      tree.fetch(:root),
+      tree.fetch(:private_folder),
+      tree.fetch(:secret),
+      drive_items(:two)
+    ].each do |forbidden_item|
+      get "/api/v1/public/shares/#{raw_token}/items/#{forbidden_item.id}"
+      assert_response :not_found
+
+      get "/api/v1/public/shares/#{raw_token}/items/#{forbidden_item.id}/preview"
+      assert_response :not_found
+
+      get "/api/v1/public/shares/#{raw_token}/items/#{forbidden_item.id}/download"
+      assert_response :not_found
+    end
+  end
+
+  test "フォルダ共有DTOは外部公開に必要な情報だけを返す" do
+    raw_token, _share, tree = create_folder_share!
+
+    get "/api/v1/public/shares/#{raw_token}/items"
+
+    assert_response :ok
+    file_json = response.parsed_body.fetch("items").find do |item|
+      item.fetch("id") == tree.fetch(:allowed).id
+    end
+    assert_equal "file", file_json.fetch("kind")
+    assert_equal true, file_json.fetch("previewable")
+    assert_equal true, file_json.fetch("downloadable")
+    assert_equal tree.fetch(:allowed).file_size, file_json.fetch("size")
+    refute_includes file_json.keys, "organization_id"
+    refute_includes file_json.keys, "owner_user_id"
+    refute_includes file_json.keys, "storage_key"
+
+    folder_json = response.parsed_body.fetch("items").find do |item|
+      item.fetch("id") == tree.fetch(:child).id
+    end
+    assert_equal "folder", folder_json.fetch("kind")
+    assert_equal false, folder_json.fetch("previewable")
+    assert_equal false, folder_json.fetch("downloadable")
+  end
+
+  test "パスワード未解除ではフォルダ一覧を取得できない" do
+    raw_token, _generated_password = create_share!(password_protected: true)
+
+    get "/api/v1/public/shares/#{raw_token}/items"
+
+    assert_response :unauthorized
+    assert_equal({ "password_required" => true }, response.parsed_body)
+  end
+
+  test "download禁止フォルダ共有ではdownload APIとDTOのdownloadableが無効になる" do
+    raw_token, _share, tree = create_folder_share!(allow_download: false)
+
+    get "/api/v1/public/shares/#{raw_token}/items"
+    assert_response :ok
+    file_json = response.parsed_body.fetch("items").find do |item|
+      item.fetch("id") == tree.fetch(:allowed).id
+    end
+    assert_equal false, file_json.fetch("downloadable")
+
+    get "/api/v1/public/shares/#{raw_token}/items/#{tree.fetch(:allowed).id}/download"
+    assert_response :not_found
+    assert_nil response.headers["X-Accel-Redirect"]
+  end
+
   private
 
   def create_share!(password_protected: false, allow_download: true, return_share: false)
@@ -356,5 +453,93 @@ class ExternalSharesApiTest < ActionDispatch::IntegrationTest
 
   def pdf_payload
     "%PDF-1.4 external share"
+  end
+
+  def create_folder_share!(allow_download: true)
+    root = @user.organization.drive_items.create!(
+      owner_user: @user,
+      name: "root",
+      item_type: :directory
+    )
+    shared_folder = @user.organization.drive_items.create!(
+      owner_user: @user,
+      parent: root,
+      name: "shared-folder",
+      item_type: :directory
+    )
+    allowed = create_test_file!(
+      parent: shared_folder,
+      name: "allowed",
+      extension: "txt",
+      payload: "allowed"
+    )
+    child = @user.organization.drive_items.create!(
+      owner_user: @user,
+      parent: shared_folder,
+      name: "child",
+      item_type: :directory
+    )
+    nested = create_test_file!(
+      parent: child,
+      name: "nested",
+      extension: "txt",
+      payload: "nested"
+    )
+    private_folder = @user.organization.drive_items.create!(
+      owner_user: @user,
+      parent: root,
+      name: "private-folder",
+      item_type: :directory
+    )
+    secret = create_test_file!(
+      parent: private_folder,
+      name: "secret",
+      extension: "txt",
+      payload: "secret"
+    )
+
+    result = ExternalShares::CreateService.new(
+      user: @user,
+      params: {
+        name: "フォルダ公開",
+        drive_item_ids: [ shared_folder.id ],
+        folder_share_mode: "snapshot",
+        allow_download: allow_download,
+        allow_bulk_download: false
+      }
+    ).call
+    assert result.success?, result.error_message
+
+    [
+      result.raw_token,
+      result.external_share,
+      {
+        root: root,
+        shared_folder: shared_folder,
+        allowed: allowed,
+        child: child,
+        nested: nested,
+        private_folder: private_folder,
+        secret: secret
+      }
+    ]
+  end
+
+  def create_test_file!(parent:, name:, extension:, payload:)
+    storage_key = "external-share-#{SecureRandom.uuid}.#{extension}"
+    item = @user.organization.drive_items.create!(
+      owner_user: @user,
+      parent: parent,
+      name: name,
+      item_type: :file,
+      extension: extension,
+      storage_key: storage_key,
+      blob_path: DriveItem.storage_relative_path_for(storage_key),
+      content_type: "text/plain",
+      file_hash: Digest::SHA256.hexdigest(payload),
+      file_size: payload.bytesize
+    )
+    File.binwrite(item.absolute_storage_path, payload)
+    item
   end
 end
