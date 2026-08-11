@@ -31,7 +31,8 @@ class FlowerApiTest < ActionDispatch::IntegrationTest
     assert_match(/\A[A-Za-z0-9_-]{64,}\z/, body.fetch("device_code"))
     assert_match(/\A[A-Z2-9]{4}-[A-Z2-9]{4}\z/, body.fetch("user_code"))
     assert_equal 5, body.fetch("interval")
-    assert_includes body.fetch("verification_uri_complete"), body.fetch("user_code")
+    assert_equal "http://localhost:5173/flower/activate", body.fetch("verification_uri")
+    assert_equal "http://localhost:5173/flower/activate?user_code=#{body.fetch("user_code")}", body.fetch("verification_uri_complete")
 
     authorization = FlowerDeviceAuthorization.last
     assert_equal Flower::DeviceAuthorizations::Code.device_code_digest(body.fetch("device_code")), authorization.device_code_digest
