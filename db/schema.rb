@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_10_214056) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -129,51 +129,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_214056) do
     t.index [ "organization_id" ], name: "index_external_shares_on_organization_id"
     t.index [ "token_digest" ], name: "index_external_shares_on_token_digest", unique: true
     t.check_constraint "folder_share_mode::text = ANY (ARRAY['snapshot'::character varying::text, 'dynamic'::character varying::text])", name: "external_shares_folder_share_mode_check"
-  end
-
-  create_table "flower_access_tokens", force: :cascade do |t|
-    t.string "access_token_digest", null: false
-    t.datetime "created_at", null: false
-    t.datetime "expires_at", null: false
-    t.bigint "flower_device_authorization_id"
-    t.datetime "last_used_at"
-    t.bigint "organization_id", null: false
-    t.datetime "refresh_expires_at"
-    t.string "refresh_token_digest"
-    t.datetime "revoked_at"
-    t.string "scopes", default: [], null: false, array: true
-    t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
-    t.index [ "access_token_digest" ], name: "index_flower_access_tokens_on_access_token_digest", unique: true
-    t.index [ "expires_at" ], name: "index_flower_access_tokens_on_expires_at"
-    t.index [ "flower_device_authorization_id" ], name: "index_flower_access_tokens_on_flower_device_authorization_id"
-    t.index [ "organization_id" ], name: "index_flower_access_tokens_on_organization_id"
-    t.index [ "refresh_token_digest" ], name: "index_flower_access_tokens_on_refresh_token_digest", unique: true
-    t.index [ "user_id", "organization_id" ], name: "index_flower_access_tokens_on_user_id_and_organization_id"
-    t.index [ "user_id" ], name: "index_flower_access_tokens_on_user_id"
-  end
-
-  create_table "flower_device_authorizations", force: :cascade do |t|
-    t.datetime "approved_at"
-    t.jsonb "client_metadata", default: {}, null: false
-    t.datetime "consumed_at"
-    t.datetime "created_at", null: false
-    t.datetime "denied_at"
-    t.string "device_code_digest", null: false
-    t.datetime "expires_at", null: false
-    t.integer "interval_seconds", default: 5, null: false
-    t.datetime "last_polled_at"
-    t.bigint "organization_id"
-    t.string "status", default: "pending", null: false
-    t.datetime "updated_at", null: false
-    t.string "user_code_digest", null: false
-    t.bigint "user_id"
-    t.index [ "device_code_digest" ], name: "index_flower_device_authorizations_on_device_code_digest", unique: true
-    t.index [ "organization_id" ], name: "index_flower_device_authorizations_on_organization_id"
-    t.index [ "status", "expires_at" ], name: "index_flower_device_authorizations_on_status_and_expires_at"
-    t.index [ "user_code_digest" ], name: "index_flower_device_authorizations_on_user_code_digest", unique: true
-    t.index [ "user_id" ], name: "index_flower_device_authorizations_on_user_id"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'approved'::character varying::text, 'denied'::character varying::text, 'consumed'::character varying::text, 'expired'::character varying::text])", name: "flower_device_authorizations_status_check"
   end
 
   create_table "operation_logs", force: :cascade do |t|
@@ -405,11 +360,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_214056) do
   add_foreign_key "external_share_items", "external_shares"
   add_foreign_key "external_shares", "organizations"
   add_foreign_key "external_shares", "users", column: "created_by_user_id"
-  add_foreign_key "flower_access_tokens", "flower_device_authorizations"
-  add_foreign_key "flower_access_tokens", "organizations"
-  add_foreign_key "flower_access_tokens", "users"
-  add_foreign_key "flower_device_authorizations", "organizations"
-  add_foreign_key "flower_device_authorizations", "users"
   add_foreign_key "operation_logs", "external_shares", column: "actor_external_share_id", on_delete: :nullify
   add_foreign_key "operation_logs", "organizations"
   add_foreign_key "operation_logs", "users", column: "actor_user_id"
