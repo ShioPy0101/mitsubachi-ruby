@@ -80,7 +80,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   end
 
   def render_verified_user(result)
-    create_authenticated_session!(result.user, client_type: "web")
+    create_authenticated_session!(result.user)
     record_operation!(
       operation_type: result.purpose == "login" ? "auth.login_succeeded" : "auth.registration_verified",
       actor_user: result.user,

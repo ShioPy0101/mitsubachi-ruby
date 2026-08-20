@@ -23,7 +23,7 @@ class ApplicationController < ActionController::API
       target: target,
       result: result,
       changes: changes,
-      metadata: { client_type: current_client_type }.merge(metadata),
+      metadata: { client_type: "web" }.merge(metadata),
       request: request
     )
   end
@@ -70,14 +70,9 @@ class ApplicationController < ActionController::API
     raise ActiveRecord::RecordNotFound unless current_membership&.organization_admin?
   end
 
-  def current_client_type
-    session[:client_type].presence_in(%w[web flower]) || "web"
-  end
-
-  def create_authenticated_session!(user, client_type:)
+  def create_authenticated_session!(user)
     reset_session
     sign_in(user)
-    session[:client_type] = client_type.presence_in(%w[web flower]) || "web"
   end
 
   def destroy_authenticated_session!

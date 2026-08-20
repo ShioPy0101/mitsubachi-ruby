@@ -1486,7 +1486,7 @@ class Api::V1::DriveItemsController < ApplicationController
       action: :bulk_download,
       request: request,
       user: current_user,
-      metadata: { client_type: current_client_type }
+      metadata: { client_type: "web" }
     ).call
   end
 
