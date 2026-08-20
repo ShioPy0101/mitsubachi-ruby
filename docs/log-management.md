@@ -4,7 +4,7 @@
 
 ## 分類と命名
 
-- `OperationLog`: 認証、設定変更、メンバー・権限変更、DriveItemの状態変更、外部共有設定、Flower認可、拒否操作。`operation_type` は `対象.過去形`（例 `drive_item.deleted`）、成否は `result` で表す。
+- `OperationLog`: 認証、設定変更、メンバー・権限変更、DriveItemの状態変更、外部共有設定、拒否操作。`operation_type` は `対象.過去形`（例 `drive_item.deleted`）、成否は `result` で表す。
 - `DriveItemAccessLog`: `preview`、`stream`、`download`、`bulk_download`、`download_folder`。ファイル名・hash・size・content type・client typeは `metadata` にスナップショット保存する。Rangeごとには作成せず、streamは5分間重複抑止する。
 - `SystemEvent`: mail、storage、worker、maintenance等の構造化された内部イベント。`event_type` は `source.事象`、重要度は `severity` で表す。ユーザー操作は保存しない。
 
