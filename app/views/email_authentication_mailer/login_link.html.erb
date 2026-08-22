@@ -12,7 +12,14 @@
 <p>ボタンが利用できない場合は、以下のURLをブラウザへ貼り付けてください。</p>
 <p><%= @auth_url %></p>
 
-<p>対象組織: <%= @organization.name %></p>
+<% if @organizations.any? %>
+<p>対象組織:</p>
+<ul>
+  <% @organizations.each do |organization| %>
+    <li><%= organization.name %></li>
+  <% end %>
+</ul>
+<% end %>
 <p>発行日時: <%= @issued_at %></p>
 <p>有効期限: <%= @expires_at %></p>
 

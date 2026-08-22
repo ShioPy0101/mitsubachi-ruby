@@ -78,6 +78,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
     EmailAuthentications::MagicLinkDelivery.call(
       email: result.email,
       organization: result.organization,
+      organizations: result.organizations,
       authentication: result.authentication
     )
   end
