@@ -63,6 +63,7 @@
 - `organization_admin` は `current_user.organization_id` を起点にした scope だけを扱える
 - テナント境界外の管理リソースは存在推測を避けるため `404 Not Found` を返す
 - `organization_admin` による `system_admin` 変更、別 organization への user 移動は禁止する
+- `users.email` は複数 organization で共有する login identity のため、organization_admin には変更させず system_admin のみ更新できる
 - 最後の active な `system_admin` の降格・停止は禁止する
 - User 停止は `suspended_at` による論理停止で、Devise 認証時にも停止ユーザーを拒否する
 

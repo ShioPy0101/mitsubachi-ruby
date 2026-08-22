@@ -265,6 +265,25 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_equal @organization.id, @managed_user.reload.organization_id
   end
 
+  test "organization_admin は複数組織ユーザーのログインメールを変更できない" do
+    @managed_user.organization_memberships.create!(
+      organization: @other_organization,
+      role: :member,
+      status: :active
+    )
+    original_email = @managed_user.email
+    sign_in @organization_admin
+
+    patch api_v1_organization_admin_user_url(@organization, @managed_user), params: {
+      user: { email: "attacker-controlled@example.com" }
+    }
+
+    assert_response :forbidden
+    assert_equal "forbidden", response.parsed_body.dig("error", "code")
+    assert_equal original_email, @managed_user.reload.email
+    assert @managed_user.active_membership_for(@other_organization).present?
+  end
+
   test "最後のsystem_adminは停止できない" do
     sign_in @system_admin
 
