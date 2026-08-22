@@ -33,7 +33,7 @@
 - flower API は `/api/v1/flower` 配下に置き、After Effects 側は Bearer token のみで認証する。ブラウザ Cookie session への fallback はしない
 - 本番は frontend の `https://mitsubachi.shiosalt.com/` から API の `https://mitsubachi-api.shiosalt.com/` を呼び出す別オリジン構成を前提とする
 - API CORS は `FRONTEND_ORIGIN` の allowlist に一致する `Origin` のみ許可し、404 や認証エラーにも CORS ヘッダーを付与する
-- Rails の内部ポートは `127.0.0.1:3001` などに bind し、インターネットへ直接公開しない
+- Rails の内部ポートは `127.0.0.1:3000` などに bind し、インターネットへ直接公開しない
 - ブラウザ API は Devise の Cookie セッションを使い、flower API は device authorization と短命 Bearer token を使う
 - 本番 Cookie は `Secure`、`HttpOnly`、`SameSite=Lax` とする
 - 停止済み User の既存 Cookie セッションは、認証必須 API の共通 before action で拒否する。logout は停止後も利用できるように除外する

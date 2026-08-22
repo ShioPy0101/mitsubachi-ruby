@@ -22,7 +22,7 @@ Rails backend for the drive API. This repository is deployed as an API-only serv
 - Flower API base path: `/api/v1/flower`
 - Health checks: `/api/health/live`, `/api/health/ready`
 
-Rails should bind only to a private interface such as `127.0.0.1:3001`. Do not expose the Rails port directly to the internet.
+Rails should bind only to a private interface such as `127.0.0.1:3000`. Do not expose the Rails port directly to the internet.
 
 ## Required Environment
 
@@ -46,6 +46,8 @@ FRONTEND_URL=https://mitsubachi.shiosalt.com
 ## Setup
 
 ```bash
+sudo service postgresql start
+pg_isready
 bin/setup
 bin/rails db:prepare
 ```
@@ -65,13 +67,13 @@ Use the actual service user instead of `rails` if it differs.
 Development:
 
 ```bash
-bin/rails server -b 127.0.0.1 -p 3001
+bin/rails server -b 127.0.0.1 -p 3000
 ```
 
 Production example:
 
 ```bash
-RAILS_ENV=production bin/rails server -b 127.0.0.1 -p 3001
+RAILS_ENV=production bin/rails server -b 127.0.0.1 -p 3000
 ```
 
 ## Reverse Proxy Contract
@@ -92,7 +94,7 @@ server {
   server_name mitsubachi-api.shiosalt.com;
 
   location /api/ {
-    proxy_pass http://127.0.0.1:3001;
+    proxy_pass http://127.0.0.1:3000;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
