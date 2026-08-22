@@ -43,3 +43,10 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: Ruby/Railsコードの検証結果ではなく開発端末のBashバージョンでチェック可否が変わり、通常の実行方法だけでは失敗原因を判別しにくい。
 - 改善されるとよい点: Rails周辺の検証スクリプトがPOSIX shell互換の構文を使うか、必要なBashバージョンを起動時に検査して具体的な導入・再実行方法を表示するとよい。
 - 今回の回避策: Homebrew Bashを明示して `bin/ai-check` と `bin/check` を実行する。
+
+## 2026-08-22: Action Mailerの推移依存に対する脆弱性検出
+
+- 状況: `bin/bundler-audit` が、Action Mailer経由で導入される `mail 2.9.0` のGHSA-mvxr-6m87-mv2qを検出し、CIが失敗した。
+- 困った点: アプリケーションが直接指定していない推移依存であり、Rails本体のバージョンを変えなくても個別gemの更新が必要か、lockfileだけからは判断しにくかった。
+- 改善されるとよい点: BundlerやRailsの依存更新支援が、脆弱な推移依存について互換性を保った最小更新候補と、その依存元を一度に提示できるとよい。
+- 今回の回避策: `bundle update mail --conservative` で `mail` のみを修正版の2.9.1へ更新し、`bin/bundler-audit` とリポジトリ全体のチェックで互換性を確認する。
