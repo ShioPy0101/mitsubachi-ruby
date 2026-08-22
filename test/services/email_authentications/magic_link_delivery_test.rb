@@ -27,6 +27,7 @@ class EmailAuthentications::MagicLinkDeliveryTest < ActiveSupport::TestCase
       EmailAuthentications::MagicLinkDelivery.call(
         email: authentication.email,
         organization: organizations(:one),
+        organizations: [ organizations(:one) ],
         authentication: authentication
       )
     end
@@ -44,6 +45,7 @@ class EmailAuthentications::MagicLinkDeliveryTest < ActiveSupport::TestCase
       EmailAuthentications::MagicLinkDelivery.call(
         email: authentication.email,
         organization: organizations(:one),
+        organizations: [ organizations(:one) ],
         authentication: authentication
       )
     end
@@ -61,6 +63,7 @@ class EmailAuthentications::MagicLinkDeliveryTest < ActiveSupport::TestCase
       EmailAuthentications::MagicLinkDelivery.call(
         email: authentication.email,
         organization: organizations(:one),
+        organizations: [ organizations(:one) ],
         authentication: authentication
       )
     end
@@ -77,6 +80,7 @@ class EmailAuthentications::MagicLinkDeliveryTest < ActiveSupport::TestCase
         EmailAuthentications::MagicLinkDelivery.call(
           email: authentication.email,
           organization: organizations(:one),
+          organizations: [ organizations(:one) ],
           authentication: authentication
         )
       end

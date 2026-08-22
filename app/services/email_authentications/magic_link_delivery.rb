@@ -1,12 +1,13 @@
 module EmailAuthentications
   class MagicLinkDelivery
-    def self.call(email:, organization:, authentication:)
-      new(email:, organization:, authentication:).call
+    def self.call(email:, organization:, organizations:, authentication:)
+      new(email:, organization:, organizations:, authentication:).call
     end
 
-    def initialize(email:, organization:, authentication:)
+    def initialize(email:, organization:, organizations:, authentication:)
       @email = email
       @organization = organization
+      @organizations = organizations
       @authentication = authentication
     end
 
@@ -15,6 +16,7 @@ module EmailAuthentications
       when "login"
         EmailAuthenticationMailer.with(
           email: email,
+          organizations: organizations,
           authentication: authentication
         ).login_link.deliver_later
       when "registration"
@@ -30,6 +32,6 @@ module EmailAuthentications
 
     private
 
-    attr_reader :email, :organization, :authentication
+    attr_reader :email, :organization, :organizations, :authentication
   end
 end

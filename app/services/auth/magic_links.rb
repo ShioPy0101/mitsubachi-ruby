@@ -15,7 +15,7 @@ module Auth
     end
 
     VerificationResult = Data.define(:user, :organization_invite, :purpose)
-    RequestResult = Data.define(:email, :token, :user, :organization, :organization_invite, :authentication)
+    RequestResult = Data.define(:email, :token, :user, :organization, :organizations, :organization_invite, :authentication)
 
     def self.normalize_email(email)
       email.to_s.strip.downcase
@@ -85,7 +85,15 @@ module Auth
         )
       end
 
-      RequestResult.new(email, raw_token, stand_by_user, invite.organization, invite, authentication)
+      RequestResult.new(
+        email:,
+        token: raw_token,
+        user: stand_by_user,
+        organization: invite.organization,
+        organizations: [ invite.organization ],
+        organization_invite: invite,
+        authentication:
+      )
     end
 
     def build_login_request!(email:)
@@ -112,7 +120,16 @@ module Auth
         )
       end
 
-      RequestResult.new(email, raw_token, user, login_organization_for(user), nil, authentication)
+      organizations = login_organizations_for(user)
+      RequestResult.new(
+        email:,
+        token: raw_token,
+        user:,
+        organization: organizations.first,
+        organizations:,
+        organization_invite: nil,
+        authentication:
+      )
     end
 
     def verify_token!(raw_token, expected_purpose:)
@@ -284,8 +301,8 @@ module Auth
                          .exists?
     end
 
-    def login_organization_for(user)
-      user.organization_memberships.active.includes(:organization).order(:organization_id).first&.organization
+    def login_organizations_for(user)
+      user.organization_memberships.active.includes(:organization).order(:organization_id).map(&:organization)
     end
 
     def active_stand_by_invite_for(user)
