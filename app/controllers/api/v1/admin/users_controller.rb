@@ -112,7 +112,8 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   end
 
   def permitted_user_attributes(user)
-    permitted = params.require(:user).permit(:name, :email, :role, :organization_id).to_h
+    permitted_keys = system_admin? ? %i[name email role organization_id] : %i[name role]
+    permitted = params.require(:user).permit(*permitted_keys).to_h
 
     permitted["organization_id"] = user.organization_id unless system_admin?
     permitted
@@ -122,6 +123,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
     return fail_user_update!(:validation_error, "role が不正です", :unprocessable_content) if attributes["role"].present? && !valid_update_role?(attributes["role"])
     return fail_user_update!(:forbidden, "system_admin を変更する権限がありません", :forbidden) if !system_admin? && user.system_admin?
     return fail_user_update!(:forbidden, "system_admin へ変更する権限がありません", :forbidden) if !system_admin? && attributes["role"] == "system_admin"
+    return fail_user_update!(:forbidden, "メールアドレスを変更する権限がありません", :forbidden) if forbidden_email_change?
     return fail_user_update!(:forbidden, "別organizationへ移動する権限がありません", :forbidden) if forbidden_organization_change?(user)
     return fail_user_update!(:forbidden, "最後の system_admin は変更できません", :forbidden) if demotes_last_system_admin?(user, attributes)
     return fail_user_update!(:forbidden, "組織の管理者が不在になるため変更できません", :forbidden) if removes_last_organization_admin?(user, attributes)
@@ -147,6 +149,14 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
     return false unless params.dig(:user, :organization_id).present?
 
     params.dig(:user, :organization_id).to_i != user.organization_id
+  end
+
+  def forbidden_email_change?
+    return false if system_admin?
+
+    # email は複数organizationで共有するlogin identityであり、tenant管理者が変更すると
+    # 対象Userの他organization membershipまでmagic link経由で奪取できるため許可しない。
+    params.require(:user).key?(:email)
   end
 
   def demotes_last_system_admin?(user, attributes)

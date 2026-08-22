@@ -24,8 +24,6 @@ class User < ApplicationRecord
            foreign_key: :used_by_user_id,
            dependent: :restrict_with_error
 
-  has_many :flower_device_authorizations, dependent: :restrict_with_error
-  has_many :flower_access_tokens, dependent: :restrict_with_error
   has_many :user_email_changes, dependent: :restrict_with_error
   has_many :created_external_shares,
            class_name: "ExternalShare",

@@ -19,8 +19,5 @@ class Organization < ApplicationRecord
     has_many :operation_logs, dependent: :restrict_with_error
     has_many :system_events, dependent: :restrict_with_error
     has_many :external_shares, dependent: :restrict_with_error
-    has_many :flower_device_authorizations, dependent: :restrict_with_error
-    has_many :flower_access_tokens, dependent: :restrict_with_error
-
     validates :name, presence: true
 end

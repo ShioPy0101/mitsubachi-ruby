@@ -1,10 +1,6 @@
 Rails.application.routes.draw do
   devise_for :users, skip: :all
 
-  namespace :flower do
-    resource :activate, only: :show, controller: :activations
-  end
-
   namespace :api do
     get "health", to: "health#ready"
     get "health/live", to: "health#live"
@@ -36,22 +32,6 @@ Rails.application.routes.draw do
         get "shares/:token/items/:drive_item_id/preview", to: "shares#preview"
         get "shares/:token/items/:drive_item_id/download", to: "shares#download"
         post "shares/:token/bulk_download", to: "shares#bulk_download"
-      end
-
-      namespace :flower do
-        resources :device_authorizations, only: %i[create show], param: :device_code do
-          collection do
-            post :approve, to: "device_authorization_approvals#approve"
-            post :deny, to: "device_authorization_approvals#deny"
-          end
-        end
-        resources :tokens, only: :create
-        resource :me, only: :show, controller: :me
-        resources :drive_items, only: %i[index show] do
-          member do
-            get :download
-          end
-        end
       end
 
       namespace :admin do

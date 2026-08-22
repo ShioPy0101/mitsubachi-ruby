@@ -30,6 +30,17 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "removed Flower endpoints are not routed" do
+    get "/flower/activate"
+    assert_response :not_found
+
+    post "/api/v1/flower/device_authorizations"
+    assert_response :not_found
+
+    get "/api/v1/flower/drive_items"
+    assert_response :not_found
+  end
+
   test "csrf token endpoint returns a token for same origin frontend" do
     get api_v1_csrf_token_url
 

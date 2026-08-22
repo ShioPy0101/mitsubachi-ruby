@@ -5,6 +5,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   AUTH_REQUEST_EMAIL_PERIOD = 15.minutes
   VERIFY_REQUEST_IP_LIMIT = 60
   VERIFY_REQUEST_IP_PERIOD = 10.minutes
+  LOGIN_REQUEST_MESSAGE = "登録済みの場合は認証リンクを送信しました".freeze
 
   before_action :rate_limit_auth_request!, only: %i[create login]
   before_action :rate_limit_verify_request!, only: %i[verify verify_registration verify_login]
@@ -41,10 +42,12 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
       metadata: { email_identifier: OperationLogs::EmailIdentifier.call(result.email) }
     )
 
-    render json: { message: "認証リンクを送信しました" }, status: :ok
+    render_login_request_response
   rescue Auth::MagicLinks::Failure => error
     record_auth_failure!("auth.login_link_requested", email: normalize_email(params[:email]), error: error)
-    render_error(error)
+    # 公開されたログイン入口でaccountの存在・停止・membership状態を応答差から列挙させない。
+    # 詳細な失敗理由は監査ログにだけ残し、入力欠落以外は成功時と同じ応答へ揃える。
+    error.status == :bad_request ? render_error(error) : render_login_request_response
   end
 
   def verify
@@ -80,7 +83,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   end
 
   def render_verified_user(result)
-    create_authenticated_session!(result.user, client_type: "web")
+    create_authenticated_session!(result.user)
     record_operation!(
       operation_type: result.purpose == "login" ? "auth.login_succeeded" : "auth.registration_verified",
       actor_user: result.user,
@@ -100,6 +103,10 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   def render_error(error)
     render_api_error(error.code, error.message, status: error.status)
+  end
+
+  def render_login_request_response
+    render json: { message: LOGIN_REQUEST_MESSAGE }, status: :ok
   end
 
   def record_auth_failure!(action, email: nil, error:)
