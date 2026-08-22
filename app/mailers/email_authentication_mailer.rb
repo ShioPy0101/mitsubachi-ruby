@@ -1,5 +1,6 @@
 class EmailAuthenticationMailer < ApplicationMailer
   def registration_link
+    @organization = params.fetch(:organization)
     assign_authentication_mail_values
 
     mail(
@@ -20,7 +21,6 @@ class EmailAuthenticationMailer < ApplicationMailer
   private
 
   def assign_authentication_mail_values
-    @organization = params.fetch(:organization)
     @authentication = params.fetch(:authentication)
     @auth_url = authentication_url(authentication_token, @authentication.purpose)
     @issued_at = format_mail_time(@authentication.created_at)

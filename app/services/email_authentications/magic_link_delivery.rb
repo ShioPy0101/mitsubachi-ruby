@@ -11,17 +11,18 @@ module EmailAuthentications
     end
 
     def call
-      mailer = EmailAuthenticationMailer.with(
-        email: email,
-        organization: organization,
-        authentication: authentication
-      )
-
       case authentication.purpose
       when "login"
-        mailer.login_link.deliver_later
+        EmailAuthenticationMailer.with(
+          email: email,
+          authentication: authentication
+        ).login_link.deliver_later
       when "registration"
-        mailer.registration_link.deliver_later
+        EmailAuthenticationMailer.with(
+          email: email,
+          organization: organization,
+          authentication: authentication
+        ).registration_link.deliver_later
       else
         raise ArgumentError, "Unknown email authentication purpose: #{authentication.purpose.inspect}"
       end

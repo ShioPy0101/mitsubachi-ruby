@@ -59,9 +59,8 @@ class EmailAuthenticationMailerTest < ActionMailer::TestCase
     end
   end
 
-  test "login link mail clearly describes login" do
+  test "login link mail does not imply that login targets one organization" do
     travel_to Time.zone.local(2026, 7, 19, 22, 30, 0) do
-      organization = organizations(:two)
       raw_token = "login-mail-token"
       authentication = EmailAuthentication.create!(
         email: "login-mail@example.com",
@@ -73,7 +72,6 @@ class EmailAuthenticationMailerTest < ActionMailer::TestCase
 
       mail = EmailAuthenticationMailer.with(
         email: authentication.email,
-        organization: organization,
         authentication: authentication
       ).login_link
 
@@ -86,7 +84,8 @@ class EmailAuthenticationMailerTest < ActionMailer::TestCase
       assert mail.text_part.present?
       assert mail.html_part.present?
       assert_includes text_body, "Mitsubachiへのログインリクエストを受け付けました。"
-      assert_includes text_body, "対象組織: #{organization.name}"
+      refute_includes text_body, "対象組織:"
+      refute_includes html_body, "対象組織:"
       assert_includes text_body, auth_url
       assert_includes text_body, "発行日時: 2026年7月19日 22:30 JST"
       assert_includes text_body, "有効期限: 2026年7月19日 22:45 JST"
@@ -117,7 +116,6 @@ class EmailAuthenticationMailerTest < ActionMailer::TestCase
       message = EmailAuthenticationMailer.with(
         email: authentication.email,
         token: "queued-login-token",
-        organization: organizations(:one),
         authentication: authentication
       ).login_link.message
 
