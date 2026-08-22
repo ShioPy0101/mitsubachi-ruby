@@ -13,6 +13,14 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal message, error.fetch("message")
   end
 
+  def assert_generic_login_response
+    assert_response :ok
+    assert_equal(
+      { "message" => Api::V1::EmailAuthenticationsController::LOGIN_REQUEST_MESSAGE },
+      response.parsed_body
+    )
+  end
+
   test "should require params for create" do
     post api_v1_auth_create_url
     assert_response :bad_request
@@ -38,7 +46,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
-  test "login rejects provisional invite user" do
+  test "login does not disclose provisional invite user state" do
     user = User.create!(
       organization: organizations(:one),
       email: "pending@example.com",
@@ -65,8 +73,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_response :unauthorized
-    assert_auth_error "メール認証を完了してください", code: :email_verification_required
+    assert_generic_login_response
   end
 
   test "login accepts verified user with multiple memberships and stale registration standby" do
@@ -154,7 +161,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
   end
 
-  test "login rejects user without active organization membership separately from email verification" do
+  test "login does not disclose missing active organization membership" do
     user = User.create!(
       organization: organizations(:one),
       email: "no-membership@example.com",
@@ -165,8 +172,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       post api_v1_auth_login_url, params: { email: user.email }
     end
 
-    assert_response :forbidden
-    assert_auth_error "所属する組織がありません", code: :organization_membership_required
+    assert_generic_login_response
   end
 
   test "create rejects expired invite with dedicated invitation error" do
@@ -187,7 +193,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     assert_auth_error "招待リンクの有効期限が切れています", code: :invitation_expired
   end
 
-  test "login rejects suspended user" do
+  test "login does not disclose suspended user state" do
     user = User.create!(
       organization: organizations(:one),
       email: "suspended-login@example.com",
@@ -199,8 +205,17 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       post api_v1_auth_login_url, params: { email: user.email }
     end
 
-    assert_response :unauthorized
-    assert_auth_error "このユーザーは停止されています", code: :user_suspended
+    assert_generic_login_response
+  end
+
+  test "login does not disclose whether an email is registered" do
+    assert_difference "OperationLog.where(operation_type: 'auth.login_link_requested', result: 'failure').count", 1 do
+      assert_no_difference "EmailAuthentication.count" do
+        post api_v1_auth_login_url, params: { email: "unknown@example.com" }
+      end
+    end
+
+    assert_generic_login_response
   end
 
   test "create reuses stale provisional user" do
