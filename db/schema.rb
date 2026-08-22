@@ -61,12 +61,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
     t.string "trash_batch_id"
     t.bigint "trashed_by_ancestor_id"
     t.datetime "updated_at", null: false
-    t.string "upload_id"
     t.string "upload_ip_address"
     t.index [ "deleted_at" ], name: "index_drive_items_on_deleted_at"
     t.index [ "organization_id", "file_hash" ], name: "index_non_purged_drive_items_on_org_and_hash", where: "(purged_at IS NULL)"
     t.index [ "organization_id", "parent_id", "name", "extension" ], name: "index_active_drive_items_on_org_parent_name_extension", unique: true, where: "((deleted_at IS NULL) AND (purged_at IS NULL))"
-    t.index [ "organization_id", "upload_id" ], name: "index_drive_items_on_org_and_upload_id", unique: true, where: "(upload_id IS NOT NULL)"
     t.index [ "organization_id" ], name: "index_drive_items_on_organization_id"
     t.index [ "owner_user_id" ], name: "index_drive_items_on_owner_user_id"
     t.index [ "parent_id" ], name: "index_drive_items_on_parent_id"
