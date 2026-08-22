@@ -10,6 +10,7 @@ class EmailAuthenticationMailer < ApplicationMailer
   end
 
   def login_link
+    @organizations = params.fetch(:organizations)
     assign_authentication_mail_values
 
     mail(

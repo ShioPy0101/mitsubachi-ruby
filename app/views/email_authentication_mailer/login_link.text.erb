@@ -4,6 +4,12 @@ Mitsubachiへのログインリクエストを受け付けました。
 
 <%= @auth_url %>
 
+<% if @organizations.any? %>
+対象組織:
+<% @organizations.each do |organization| %>
+- <%= organization.name %>
+<% end %>
+<% end %>
 発行日時: <%= @issued_at %>
 有効期限: <%= @expires_at %>
 
