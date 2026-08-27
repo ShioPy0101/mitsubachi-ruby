@@ -3,7 +3,6 @@ require "securerandom"
 require "set"
 
 class Api::V1::DriveItemsController < ApplicationController
-  DuplicateActiveContentError = Class.new(StandardError)
   DuplicateNameError = Class.new(StandardError)
   ReplaceTargetPurgedError = Class.new(StandardError)
 
@@ -123,25 +122,6 @@ class Api::V1::DriveItemsController < ApplicationController
         return if performed?
       end
 
-      if (active_duplicate = active_content_duplicate_item(upload_hash))
-        if active_content_upload_anyway?
-          record_upload_warning!(upload_attempt, :active_content_duplicate, active_duplicate.id)
-        else
-          upload_attempt.transition!(:validation_blocked, reason: :active_content_duplicate)
-          stored_file.cleanup_temporary!
-          render_active_content_duplicate(active_duplicate)
-          return
-        end
-      end
-
-      trash_duplicate = trash_content_duplicate_item(upload_hash)
-      if trash_duplicate.present? && replace_target.blank?
-        upload_attempt.transition!(:validation_blocked, reason: :trash_content_duplicate)
-        stored_file.cleanup_temporary!
-        render_trash_content_duplicate(trash_duplicate)
-        return
-      end
-
       if duplicate_active_item?(parent_id:, name:, extension:)
         upload_attempt.transition!(:validation_blocked, reason: :duplicate_name)
         stored_file.cleanup_temporary!
@@ -159,8 +139,6 @@ class Api::V1::DriveItemsController < ApplicationController
         ActiveRecord::Base.transaction do
           upload_attempt.transition!(:start_commit)
           lock_active_parent!(parent_id)
-          raise_unresolved_active_content_duplicate!(upload_hash)
-          record_active_content_warning_if_needed!(upload_attempt, upload_hash)
           raise DuplicateNameError if duplicate_active_item?(parent_id:, name:, extension:)
 
           @drive_item.storage_key = stored_file.storage_key
@@ -177,9 +155,6 @@ class Api::V1::DriveItemsController < ApplicationController
         upload_attempt.transition!(:publish_succeeded)
         record_drive_item_event!("drive_item.created", @drive_item)
         render json: drive_item_json(@drive_item), status: :created
-      rescue DuplicateActiveContentError
-        transition_if_allowed(upload_attempt, :commit_blocked, reason: :active_content_duplicate)
-        render_active_content_duplicate(active_content_duplicate_item(upload_hash))
       rescue DuplicateNameError
         transition_if_allowed(upload_attempt, :commit_blocked, reason: :duplicate_name)
         render_name_conflict(name, parent_id:, extension:)
@@ -187,7 +162,7 @@ class Api::V1::DriveItemsController < ApplicationController
         transition_if_allowed(upload_attempt, :commit_blocked, reason: :invalid_parent)
         render_api_error(:invalid_parent, "指定された親フォルダが見つかりません", status: :not_found)
       rescue ActiveRecord::RecordNotUnique => error
-        render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_hash:, upload_attempt:)
+        render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_attempt:)
       rescue ActiveRecord::RecordInvalid => error
         transition_if_allowed(upload_attempt, :commit_failed)
         render_validation_failed(error.record)
@@ -244,7 +219,7 @@ class Api::V1::DriveItemsController < ApplicationController
         transition_if_allowed(upload_attempt, :commit_blocked, reason: :invalid_parent)
         render_api_error(:invalid_parent, "指定された親フォルダが見つかりません", status: :not_found)
       rescue ActiveRecord::RecordNotUnique => error
-        render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_hash: nil, upload_attempt:)
+        render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_attempt:)
       rescue ActiveRecord::RecordInvalid => error
         transition_if_allowed(upload_attempt, :commit_failed)
         render_validation_failed(error.record)
@@ -615,10 +590,6 @@ class Api::V1::DriveItemsController < ApplicationController
     @upload_resolution_policy ||= UploadResolutionPolicy.from_params(params, default_item_key: normalized_upload_id)
   end
 
-  def active_content_upload_anyway?
-    upload_resolution_policy.resolution_for(:active_content_duplicate, item_key: normalized_upload_id) == :upload_anyway
-  end
-
   def valid_upload_resolution_policy?(upload_id)
     @upload_resolution_policy = UploadResolutionPolicy.from_params(params, default_item_key: upload_id)
     true
@@ -631,32 +602,6 @@ class Api::V1::DriveItemsController < ApplicationController
     metadata = (attempt.metadata || {}).deep_dup
     metadata.deep_merge!(patch.stringify_keys)
     attempt.update!(metadata:)
-  end
-
-  def record_upload_warning!(attempt, category, drive_item_id)
-    warnings = Array(attempt.metadata&.fetch("warnings", []))
-    warning = {
-      "category" => category.to_s,
-      "resolution" => "upload_anyway",
-      "drive_item_id" => drive_item_id
-    }
-    warnings << warning unless warnings.any? { |entry| entry == warning }
-    merge_upload_attempt_metadata!(attempt, warnings: warnings)
-  end
-
-  def record_active_content_warning_if_needed!(upload_attempt, upload_hash)
-    return unless active_content_upload_anyway?
-
-    active_duplicate = active_content_duplicate_item(upload_hash)
-    record_upload_warning!(upload_attempt, :active_content_duplicate, active_duplicate.id) if active_duplicate
-  end
-
-  def unresolved_active_content_duplicate?(upload_hash)
-    active_content_duplicate_item(upload_hash).present? && !active_content_upload_anyway?
-  end
-
-  def raise_unresolved_active_content_duplicate!(upload_hash)
-    raise DuplicateActiveContentError, upload_hash if unresolved_active_content_duplicate?(upload_hash)
   end
 
   def render_completed_upload_attempt(upload_attempt)
@@ -929,33 +874,7 @@ class Api::V1::DriveItemsController < ApplicationController
     )
   end
 
-  def render_active_content_duplicate(drive_item)
-    render_api_error(
-      :active_content_duplicate,
-      "同じ内容のファイルが、この組織内にすでに存在します。",
-      status: :conflict,
-      details: {
-        duplicate_kind: "same_content",
-        duplicate_files: [ duplicate_content_file_json(drive_item) ],
-        allowed_actions: [ "upload_anyway", "skip", "open_existing", "cancel" ]
-      }
-    )
-  end
-
-  def render_trash_content_duplicate(drive_item)
-    render_api_error(
-      :trash_content_duplicate,
-      "同じ内容のファイルがゴミ箱にあります",
-      status: :conflict,
-      details: {
-        duplicate_kind: "trash_content",
-        duplicate: trash_duplicate_json(drive_item),
-        allowed_actions: [ "restore", "upload_anyway", "cancel" ]
-      }
-    )
-  end
-
-  def render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_hash:, upload_attempt:)
+  def render_upload_unique_conflict(error, name:, parent_id:, extension:, upload_attempt:)
     conflict = UploadAttempt.conflict_for_constraint(unique_constraint_name(error))
     case conflict
     when :active_name
@@ -1062,9 +981,6 @@ class Api::V1::DriveItemsController < ApplicationController
         lock_active_parent_with_items!(@drive_item.parent_id, [ replace_target ])
         validate_replace_target_state!(replace_target, upload_hash)
         raise DuplicateNameError if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension:)
-        raise_unresolved_active_content_duplicate!(upload_hash)
-        record_active_content_warning_if_needed!(upload_attempt, upload_hash)
-
         @drive_item.storage_key = stored_file.storage_key
         @drive_item.extension = extension
         @drive_item.file_hash = stored_file.sha256
@@ -1099,14 +1015,11 @@ class Api::V1::DriveItemsController < ApplicationController
     rescue DuplicateNameError
       transition_if_allowed(upload_attempt, :commit_blocked, reason: :duplicate_name)
       render_name_conflict(@drive_item.name, parent_id: @drive_item.parent_id, extension:)
-    rescue DuplicateActiveContentError
-      transition_if_allowed(upload_attempt, :commit_blocked, reason: :active_content_duplicate)
-      render_active_content_duplicate(active_content_duplicate_item(upload_hash))
     rescue ActiveRecord::RecordNotFound
       transition_if_allowed(upload_attempt, :commit_blocked, reason: :invalid_parent)
       render_api_error(:invalid_parent, "指定された親フォルダが見つかりません", status: :not_found)
     rescue ActiveRecord::RecordNotUnique => error
-      render_upload_unique_conflict(error, name: @drive_item.name, parent_id: @drive_item.parent_id, extension:, upload_hash:, upload_attempt:)
+      render_upload_unique_conflict(error, name: @drive_item.name, parent_id: @drive_item.parent_id, extension:, upload_attempt:)
     rescue ReplaceTargetPurgedError
       commit_new_upload_after_replace_target_gone!(stored_file:, upload_hash:, extension:, upload_attempt:)
     rescue ActiveRecord::RecordInvalid => error
@@ -1144,9 +1057,6 @@ class Api::V1::DriveItemsController < ApplicationController
       upload_attempt.transition!(:start_commit)
       lock_active_parent!(@drive_item.parent_id)
       raise DuplicateNameError if duplicate_active_item?(parent_id: @drive_item.parent_id, name: @drive_item.name, extension:)
-      raise_unresolved_active_content_duplicate!(upload_hash)
-      record_active_content_warning_if_needed!(upload_attempt, upload_hash)
-
       @drive_item.storage_key = stored_file.storage_key
       @drive_item.extension = extension
       @drive_item.file_hash = stored_file.sha256
@@ -1168,14 +1078,11 @@ class Api::V1::DriveItemsController < ApplicationController
   rescue DuplicateNameError
     transition_if_allowed(upload_attempt, :commit_blocked, reason: :duplicate_name)
     render_name_conflict(@drive_item.name, parent_id: @drive_item.parent_id, extension:)
-  rescue DuplicateActiveContentError
-    transition_if_allowed(upload_attempt, :commit_blocked, reason: :active_content_duplicate)
-    render_active_content_duplicate(active_content_duplicate_item(upload_hash))
   rescue ActiveRecord::RecordNotFound
     transition_if_allowed(upload_attempt, :commit_blocked, reason: :invalid_parent)
     render_api_error(:invalid_parent, "指定された親フォルダが見つかりません", status: :not_found)
   rescue ActiveRecord::RecordNotUnique => error
-    render_upload_unique_conflict(error, name: @drive_item.name, parent_id: @drive_item.parent_id, extension:, upload_hash:, upload_attempt:)
+    render_upload_unique_conflict(error, name: @drive_item.name, parent_id: @drive_item.parent_id, extension:, upload_attempt:)
   rescue ActiveRecord::RecordInvalid => error
     transition_if_allowed(upload_attempt, :commit_failed)
     render_validation_failed(error.record)
@@ -1260,129 +1167,6 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def active_duplicate_item(parent_id:, name:, extension:)
     current_organization.drive_items.active.find_by(parent_id:, name:, extension:)
-  end
-
-  def active_content_duplicate_item(upload_hash)
-    current_user
-      .organization
-      .drive_items
-      .active
-      .file
-      .where(file_hash: upload_hash)
-      .includes(:owner_user, :parent)
-      .order(created_at: :desc, id: :desc)
-      .detect { |drive_item| deleted_ancestor(drive_item).nil? }
-  end
-
-  def trash_content_duplicate_item(upload_hash)
-    own_trash_duplicate = current_user
-      .organization
-      .drive_items
-      .trashed
-      .file
-      .where(file_hash: upload_hash)
-      .includes(:owner_user, :parent)
-      .order(deleted_at: :desc, id: :desc)
-      .first
-    return own_trash_duplicate if own_trash_duplicate.present?
-
-    current_user
-      .organization
-      .drive_items
-      .active
-      .file
-      .where(file_hash: upload_hash)
-      .includes(:owner_user, :parent)
-      .order(created_at: :desc, id: :desc)
-      .detect { |drive_item| deleted_ancestor(drive_item).present? }
-  end
-
-  def duplicate_content_file_json(drive_item)
-    {
-      id: drive_item.id,
-      name: drive_item.filename,
-      parent_id: drive_item.parent_id,
-      parent_name: drive_item.parent&.name,
-      owner_display_name: drive_item.owner_user&.safe_display_name,
-      created_at: drive_item.created_at,
-      file_size: drive_item.file_size,
-      deleted: drive_item.deleted_at.present?
-    }
-  end
-
-  def trash_duplicate_json(drive_item)
-    restore_target = restore_target_for(drive_item)
-    {
-      id: drive_item.id,
-      name: drive_item.name,
-      extension: drive_item.extension,
-      display_name: drive_item.filename,
-      file_size: drive_item.file_size,
-      content_type: drive_item.content_type,
-      deleted_at: effective_deleted_at(drive_item)&.iso8601,
-      original_parent: original_parent_json(drive_item.parent),
-      uploaded_by: uploaded_by_json(drive_item.owner_user),
-      restore_target: restore_target_json(restore_target)
-    }
-  end
-
-  def restore_target_json(drive_item)
-    return nil if drive_item.nil?
-
-    {
-      id: drive_item.id,
-      type: drive_item.item_type,
-      display_name: drive_item.filename
-    }
-  end
-
-  def original_parent_json(parent)
-    return nil if parent.nil?
-    return nil if parent.organization_id != current_organization.id
-    {
-      id: parent.id,
-      name: parent.name,
-      path: drive_item_path(parent)
-    }
-  end
-
-  def uploaded_by_json(user)
-    return nil if user.nil?
-
-    {
-      id: user.id,
-      display_name: user.safe_display_name
-    }
-  end
-
-  def drive_item_path(drive_item)
-    names = []
-    current = drive_item
-    while current.present? && current.organization_id == current_organization.id
-      names.unshift(current.name)
-      current = current.parent
-    end
-    "/#{names.join("/")}"
-  end
-
-  def restore_target_for(drive_item)
-    DriveItems::RestoreService.new(drive_item: drive_item).restore_target
-  end
-
-  def effective_deleted_at(drive_item)
-    drive_item.deleted_at || deleted_ancestor(drive_item)&.deleted_at
-  end
-
-  def deleted_ancestor(drive_item)
-    current = drive_item.parent
-    visited_ids = Set.new
-    while current.present? && current.organization_id == current_organization.id
-      return current if current.deleted_at.present? || current.purged_at.present?
-      return if visited_ids.include?(current.id)
-
-      visited_ids << current.id
-      current = current.parent
-    end
   end
 
   def restore_drive_item!(drive_item)

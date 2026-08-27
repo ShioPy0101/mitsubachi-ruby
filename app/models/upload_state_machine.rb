@@ -15,8 +15,6 @@ module UploadStateMachine
   ].freeze
 
   BLOCK_REASONS = %i[
-    active_content_duplicate
-    trash_content_duplicate
     duplicate_name
     invalid_parent
     replace_target_changed
@@ -90,7 +88,7 @@ module UploadStateMachine
       validation_succeeded: { to: :ready },
       validation_blocked: {
         to: :blocked,
-        reasons: %i[active_content_duplicate trash_content_duplicate duplicate_name invalid_parent],
+        reasons: %i[duplicate_name invalid_parent],
         compensation: :cleanup_staging,
         artifacts: { staging_file: :discard, drive_item: :absent, final_file: :absent },
         retry: :restart_upload
@@ -112,7 +110,7 @@ module UploadStateMachine
       start_commit: { to: :committing },
       validation_blocked: {
         to: :blocked,
-        reasons: %i[active_content_duplicate duplicate_name invalid_parent],
+        reasons: %i[duplicate_name invalid_parent],
         compensation: :cleanup_staging,
         artifacts: { staging_file: :discard, drive_item: :absent, final_file: :absent },
         retry: :restart_upload
@@ -143,7 +141,7 @@ module UploadStateMachine
       },
       commit_blocked: {
         to: :blocked,
-        reasons: %i[active_content_duplicate duplicate_name invalid_parent replace_target_changed],
+        reasons: %i[duplicate_name invalid_parent replace_target_changed],
         compensation: :cleanup_staging,
         artifacts: { staging_file: :discard, drive_item: :absent, final_file: :absent },
         retry: :restart_upload
@@ -216,16 +214,6 @@ module UploadStateMachine
   TERMINAL_STATES = %i[completed canceled].freeze
 
   CONFLICTS = {
-    active_content: {
-      block_reason: :active_content_duplicate,
-      status: :conflict,
-      code: :active_content_duplicate
-    },
-    trash_content: {
-      block_reason: :trash_content_duplicate,
-      status: :conflict,
-      code: :trash_content_duplicate
-    },
     active_name: {
       block_reason: :duplicate_name,
       status: :conflict,
