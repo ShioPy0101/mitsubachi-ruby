@@ -1313,6 +1313,41 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, response.parsed_body.dig("meta", "total_count")
   end
 
+  test "アップロード前に同名ファイルの重複を判定できる" do
+    sign_in @user
+    create_named_file(name: "事前確認", extension: "txt", body: "existing", parent: @root)
+
+    assert_no_difference [ "DriveItem.count", "UploadAttempt.count" ] do
+      get check_name_api_v1_drive_items_url, params: {
+        name: "事前確認",
+        item_type: "file",
+        extension: "txt",
+        parent_id: @root.id
+      }
+    end
+
+    assert_response :ok
+    assert_equal false, response.parsed_body.fetch("available")
+    assert_equal "事前確認.txt", response.parsed_body.fetch("filename")
+    assert_equal "事前確認（1）", response.parsed_body.dig("conflict", "suggested_name")
+  end
+
+  test "アップロード前の重複判定は未使用の名前を利用可能として返す" do
+    sign_in @user
+
+    get check_name_api_v1_drive_items_url, params: {
+      name: "空いている名前",
+      item_type: "file",
+      extension: ".PDF",
+      parent_id: @root.id
+    }
+
+    assert_response :ok
+    assert_equal true, response.parsed_body.fetch("available")
+    assert_equal "空いている名前.pdf", response.parsed_body.fetch("filename")
+    assert_nil response.parsed_body.fetch("conflict")
+  end
+
   test "重複名の作成は409と機械判定可能なコードを返す" do
     sign_in @user
 
