@@ -3399,8 +3399,6 @@ components:
             - name_conflict
             - missing_parent
             - name_conflict_and_missing_parent
-            - active_content_duplicate
-            - active_content_duplicate_and_missing_parent
         parent_exists:
           type: boolean
         existing_item_id:

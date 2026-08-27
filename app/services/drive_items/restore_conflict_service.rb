@@ -12,12 +12,7 @@ module DriveItems
     end
 
     def call
-      @restore_items.flat_map do |item|
-        [
-          name_conflict_for(item),
-          content_conflict_for(item)
-        ].compact
-      end
+      @restore_items.filter_map { |item| name_conflict_for(item) }
     end
 
     def as_json
@@ -42,23 +37,6 @@ module DriveItems
       Conflict.new(item, "name_conflict", existing_item, relative_path_for(item))
     end
 
-    def content_conflict_for(item)
-      return unless item.file?
-      return if item.file_hash.blank?
-
-      existing_item = ::DriveItem
-        .active
-        .file
-        .where(organization_id: @organization.id, file_hash: item.file_hash)
-        .where.not(id: @restore_item_ids.to_a)
-        .includes(:parent, :owner_user)
-        .order(created_at: :desc, id: :desc)
-        .detect { |candidate| deleted_ancestor(candidate).nil? }
-      return if existing_item.nil?
-
-      Conflict.new(item, "active_content_duplicate", existing_item, relative_path_for(item))
-    end
-
     def destination_parent_id_for(item)
       return item.parent_id unless @restore_item_ids.include?(item.parent_id)
 
@@ -81,18 +59,6 @@ module DriveItems
       end
 
       names.join("/")
-    end
-
-    def deleted_ancestor(item)
-      current = item.parent
-      visited_ids = Set.new
-      while current.present? && current.organization_id == @organization.id
-        return current if current.deleted_at.present? || current.purged_at.present?
-        return if visited_ids.include?(current.id)
-
-        visited_ids << current.id
-        current = current.parent
-      end
     end
 
     def conflict_json(conflict)

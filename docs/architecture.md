@@ -81,6 +81,7 @@
 - `DriveItems::BulkDownloadService` - 複数 drive_item から ZIP を作成し、directory 配下の active file を再帰的に含める
 - `DriveItems::StoredFileInspector` - アップロードファイルを保存しながらサイズ、SHA-256、Content-Type を算出する
 - `DriveItems::IntegrityChecker` - DB に記録されたサイズ、SHA-256、Content-Type と実ファイルの整合性を検査する
+- SHA-256 は内容重複の拒否には使用せず、保存後の完全性確認と改竄検知のために保持する。同一内容でも名前が競合しなければアップロード・復元を許可する
 
 ## Drive Item Storage
 - 実ファイルは `FILE_STORAGE_ROOT/drive_items/:storage_key` に保存する。未指定時は既存互換のため `storage` を使う

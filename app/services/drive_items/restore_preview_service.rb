@@ -79,18 +79,17 @@ module DriveItems
       resolution = resolution_for(item, parent_exists)
       destination_parent = destination_parent_for(item, parent, restore_item_ids, resolution)
       name_conflict_item = name_conflict_item_for(item, destination_parent, restore_item_ids)
-      content_conflict_item = content_conflict_item_for(item, restore_item_ids)
-      existing_item = name_conflict_item || content_conflict_item
-      conflict_type = conflict_type(parent_exists:, name_conflict_item:, content_conflict_item:)
+      existing_item = name_conflict_item
+      conflict_type = conflict_type(parent_exists:, name_conflict_item:)
       after_name = after_name_for(item, destination_parent, resolution, name_conflict_item)
-      restorable = restorable_after?(resolution, parent_exists, destination_parent, name_conflict_item, content_conflict_item)
+      restorable = restorable_after?(resolution, parent_exists, destination_parent, name_conflict_item)
 
       ResultItem.new(
         item,
         restore_target,
         restore_items,
         conflict_type,
-        before_json(item, parent, parent_exists, name_conflict_item, content_conflict_item),
+        before_json(item, parent, parent_exists, name_conflict_item),
         after_json(item, destination_parent, resolution, after_name, restorable, existing_item),
         existing_item,
         parent_exists,
@@ -143,20 +142,6 @@ module DriveItems
         .first
     end
 
-    def content_conflict_item_for(item, restore_item_ids)
-      return unless item.file?
-      return if item.file_hash.blank?
-
-      ::DriveItem
-        .active
-        .file
-        .where(organization_id: @organization.id, file_hash: item.file_hash)
-        .where.not(id: restore_item_ids.to_a)
-        .includes(:parent, :owner_user)
-        .order(created_at: :desc, id: :desc)
-        .detect { |candidate| deleted_ancestor(candidate).nil? }
-    end
-
     def resolution_for(item, parent_exists)
       requested = @resolutions[item.id]&.fetch(:resolution, nil).to_s
       requested = "trash_existing" if requested == "purge_existing"
@@ -166,20 +151,13 @@ module DriveItems
       "restore"
     end
 
-    def conflict_type(parent_exists:, name_conflict_item:, content_conflict_item:)
-      has_name_conflict = name_conflict_item.present?
-      has_content_conflict = content_conflict_item.present?
-
-      if !parent_exists && has_name_conflict
+    def conflict_type(parent_exists:, name_conflict_item:)
+      if !parent_exists && name_conflict_item.present?
         "name_conflict_and_missing_parent"
-      elsif !parent_exists && has_content_conflict
-        "active_content_duplicate_and_missing_parent"
       elsif !parent_exists
         "missing_parent"
-      elsif has_name_conflict
+      elsif name_conflict_item.present?
         "name_conflict"
-      elsif has_content_conflict
-        "active_content_duplicate"
       else
         "none"
       end
@@ -192,23 +170,22 @@ module DriveItems
       next_available_name(parent_id: destination_parent&.id, name: item.name, extension: item.extension)
     end
 
-    def restorable_after?(resolution, parent_exists, destination_parent, name_conflict_item, content_conflict_item)
+    def restorable_after?(resolution, parent_exists, destination_parent, name_conflict_item)
       return false if resolution == "skip"
-      return false if content_conflict_item.present?
       return false if name_conflict_item.present? && resolution == "restore"
       return destination_parent.present? if resolution == "select_destination"
       return true if resolution == "restore_to_root"
       destination_parent.nil? ? parent_exists : true
     end
 
-    def before_json(item, parent, parent_exists, name_conflict_item, content_conflict_item)
+    def before_json(item, parent, parent_exists, name_conflict_item)
       {
         name: item.filename,
         parent_id: item.parent_id,
         parent_path: parent_path(parent, item.parent_id),
         state: "trashed",
-        restorable: parent_exists && name_conflict_item.blank? && content_conflict_item.blank?,
-        reason: reason_for(parent_exists, name_conflict_item, content_conflict_item)
+        restorable: parent_exists && name_conflict_item.blank?,
+        reason: reason_for(parent_exists, name_conflict_item)
       }
     end
 
@@ -227,17 +204,15 @@ module DriveItems
       }
     end
 
-    def reason_for(parent_exists, name_conflict_item, content_conflict_item)
+    def reason_for(parent_exists, name_conflict_item)
       reasons = []
       reasons << "元の復元先フォルダは削除されています" unless parent_exists
       reasons << "復元先に同名のファイルまたはフォルダーがあります" if name_conflict_item.present?
-      reasons << "組織内に同じ内容のファイルがあります" if content_conflict_item.present?
       reasons.presence&.join(" / ")
     end
 
     def impact_for(resolution, existing_item, restorable)
       return "この項目は復元されません" if resolution == "skip"
-      return "同じ内容の有効なファイルがあるため復元できません" if existing_item.present? && !restorable
       if resolution == "trash_existing" && existing_item.present?
         return existing_item.directory? ? "既存のフォルダーと配下をゴミ箱へ移動します" : "既存の項目をゴミ箱へ移動します"
       end
@@ -317,7 +292,6 @@ module DriveItems
 
     def recommended_resolution(preview)
       return "restore_to_root" unless preview.parent_exists
-      return "skip" if preview.conflict_type.include?("active_content_duplicate")
       return "rename" if preview.existing_item.present?
 
       "restore"
@@ -352,18 +326,6 @@ module DriveItems
         parent_path: parent_path(item.parent, item.parent_id),
         purge_note: item.directory? ? "既存のフォルダーをゴミ箱へ移動すると、配下の項目も移動されます" : "既存の項目はゴミ箱へ移動されます"
       }
-    end
-
-    def deleted_ancestor(item)
-      current = item.parent
-      visited_ids = Set.new
-      while current.present? && current.organization_id == @organization.id
-        return current if current.deleted_at.present? || current.purged_at.present?
-        return if visited_ids.include?(current.id)
-
-        visited_ids << current.id
-        current = current.parent
-      end
     end
 
     def next_available_name(parent_id:, name:, extension:)
