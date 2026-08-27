@@ -1348,6 +1348,22 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_nil response.parsed_body.fetch("conflict")
   end
 
+  test "organization URLでは配下フォルダへのアップロード名を事前確認できる" do
+    sign_in @user
+
+    get check_name_api_v1_organization_drive_items_url(@organization), params: {
+      name: "池田→新得",
+      item_type: "file",
+      extension: "mp3",
+      parent_id: @child_folder.id
+    }
+
+    assert_response :ok
+    assert_equal true, response.parsed_body.fetch("available")
+    assert_equal @child_folder.id, response.parsed_body.fetch("parent_id")
+    assert_equal "池田→新得.mp3", response.parsed_body.fetch("filename")
+  end
+
   test "重複名の作成は409と機械判定可能なコードを返す" do
     sign_in @user
 
