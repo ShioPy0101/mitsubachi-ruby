@@ -46,6 +46,40 @@ class Api::V1::DriveItemsController < ApplicationController
     }
   end
 
+  def check_name
+    name = params[:name].to_s
+    item_type = params[:item_type].to_s
+    parent_id = normalized_parent_id
+
+    unless name.present?
+      render_api_error(:validation_failed, "名前を指定してください", status: :unprocessable_content)
+      return
+    end
+
+    unless valid_item_type?(item_type)
+      render_api_error(:validation_failed, "ファイルタイプは file または directory のいずれかである必要があります", status: :unprocessable_content)
+      return
+    end
+
+    return unless validate_parent_id(
+      parent_id,
+      not_found_message: "指定された親フォルダが見つかりません",
+      invalid_message: "親にはディレクトリを指定してください"
+    )
+
+    extension = item_type == "file" ? normalized_extension : nil
+    duplicate = duplicate_active_item?(parent_id:, name:, extension:)
+
+    render json: {
+      available: !duplicate,
+      name: name,
+      filename: display_filename(name, extension),
+      parent_id: parent_id,
+      extension: extension,
+      conflict: duplicate ? duplicate_name_details(name, parent_id:, extension:).except(:code, :message) : nil
+    }
+  end
+
   def create
     name = params[:name]
     parent_id = normalized_parent_id
@@ -522,6 +556,10 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def get_extension_from_filename(filename)
     File.extname(filename).delete_prefix(".").downcase
+  end
+
+  def normalized_extension
+    params[:extension].to_s.delete_prefix(".").downcase.presence
   end
 
   def normalized_parent_id

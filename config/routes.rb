@@ -135,6 +135,7 @@ Rails.application.routes.draw do
       resources :drive_items do
         collection do
           get :search
+          get :check_name
           get :trash
           post :bulk_move
           post :bulk_delete
@@ -159,6 +160,7 @@ Rails.application.routes.draw do
         resources :drive_items, controller: :drive_items do
           collection do
             get :search
+            get :check_name
             get :trash
             post :bulk_move
             post :bulk_delete

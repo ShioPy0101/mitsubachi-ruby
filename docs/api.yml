@@ -531,6 +531,41 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "409":
           $ref: "#/components/responses/Error"
+  /api/v1/drive_items/check_name:
+    get:
+      operationId: getApiV1DriveItemsCheckName
+      tags: [DriveItems]
+      summary: Check a file or directory name before uploading or creating it.
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: item_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [file, directory]
+        - $ref: "#/components/parameters/ParentId"
+        - name: extension
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Name availability and an optional conflict suggestion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItemNameCheck"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/drive_items/search:
     get:
       operationId: getApiV1DriveItemsSearch
@@ -923,6 +958,43 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "409":
           $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/check_name:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      operationId: getApiV1OrganizationDriveItemsCheckName
+      tags: [DriveItems]
+      summary: Check a file or directory name before uploading or creating it for an organization.
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: item_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [file, directory]
+        - $ref: "#/components/parameters/ParentId"
+        - name: extension
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Name availability and an optional conflict suggestion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveItemNameCheck"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/organizations/{organization_id}/drive_items/search:
     parameters:
       - $ref: "#/components/parameters/OrganizationId"
@@ -3583,6 +3655,36 @@ components:
         file:
           type: string
           format: binary
+    DriveItemNameCheck:
+      type: object
+      required: [available, name, filename, parent_id, extension, conflict]
+      properties:
+        available:
+          type: boolean
+        name:
+          type: string
+        filename:
+          type: string
+        parent_id:
+          type: integer
+          nullable: true
+        extension:
+          type: string
+          nullable: true
+        conflict:
+          type: object
+          nullable: true
+          properties:
+            field:
+              type: string
+            conflicting_name:
+              type: string
+            duplicate_kind:
+              type: string
+            suggested_name:
+              type: string
+            suggested_filename:
+              type: string
     PaginationMeta:
       type: object
       required: [current_page, per_page, total_pages, total_count]
