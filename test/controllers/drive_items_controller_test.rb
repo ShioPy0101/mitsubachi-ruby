@@ -1364,6 +1364,28 @@ class DriveItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "池田→新得.mp3", response.parsed_body.fetch("filename")
   end
 
+  test "organization URLの重複候補は指定organization内の名前から生成する" do
+    selected_organization = organizations(:two)
+    OrganizationMembership.create!(
+      user: @user,
+      organization: selected_organization,
+      role: :member,
+      status: :active,
+      joined_at: Time.current
+    )
+    sign_in @user
+
+    get check_name_api_v1_organization_drive_items_url(selected_organization), params: {
+      name: "sample",
+      item_type: "file",
+      extension: "pdf"
+    }
+
+    assert_response :ok
+    assert_equal false, response.parsed_body.fetch("available")
+    assert_equal "sample（1）", response.parsed_body.dig("conflict", "suggested_name")
+  end
+
   test "重複名の作成は409と機械判定可能なコードを返す" do
     sign_in @user
 
