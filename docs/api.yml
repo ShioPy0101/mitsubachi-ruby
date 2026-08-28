@@ -795,6 +795,24 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+  /api/v1/drive_items/{id}/thumbnail:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1DriveItemThumbnail
+      tags: [DriveItems]
+      summary: Generate or reuse a lightweight media thumbnail and deliver it through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "304":
+          description: Browser cache is fresh for the current DriveItem version.
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
   /api/v1/drive_items/{id}/download:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -1236,6 +1254,25 @@ paths:
         "200":
           $ref: "#/components/responses/AccelRedirect"
         "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/organizations/{organization_id}/drive_items/{id}/thumbnail:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApiV1OrganizationDriveItemThumbnail
+      tags: [DriveItems]
+      summary: Generate or reuse an organization-scoped media thumbnail and deliver it through X-Accel-Redirect.
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "304":
+          description: Browser cache is fresh for the current DriveItem version.
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
@@ -2154,6 +2191,36 @@ paths:
           $ref: "#/components/responses/AccelRedirect"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/public/shares/{token}/items/{drive_item_id}/thumbnail:
+    get:
+      operationId: getApiV1PublicShareItemThumbnail
+      tags: [DriveItems]
+      summary: Deliver a lightweight media thumbnail after public share authorization.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: drive_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/AccelRedirect"
+        "304":
+          description: Browser cache is fresh for the current DriveItem version.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
   /api/v1/public/shares/{token}/items/{drive_item_id}/download:
     get:
       operationId: getApiV1PublicShareItemDownload

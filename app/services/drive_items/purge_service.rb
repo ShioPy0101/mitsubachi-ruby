@@ -114,12 +114,25 @@ module DriveItems
 
     def delete_storage_targets(targets)
       targets.each do |target|
+        delete_preview_cache(target)
         next if referenced_by_not_purged_item?(target)
 
         delete_storage_target(target)
       rescue StandardError => error
         log_storage_failure(target, error)
       end
+    end
+
+    def delete_preview_cache(target)
+      MediaPreviews::CachePath.delete_item_cache(
+        organization_id: @drive_item.organization_id,
+        drive_item_id: target.drive_item_id
+      )
+    rescue StandardError => error
+      Rails.logger.warn(
+        "[drive_items.purge] preview cache deletion failed organization_id=#{@drive_item.organization_id} " \
+        "drive_item_id=#{target.drive_item_id} error=#{error.class}: #{error.message}"
+      )
     end
 
     def referenced_by_not_purged_item?(target)
