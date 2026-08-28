@@ -1,6 +1,5 @@
 require "fileutils"
 require "securerandom"
-require "set"
 
 class Api::V1::DriveItemsController < ApplicationController
   DuplicateNameError = Class.new(StandardError)
@@ -68,15 +67,16 @@ class Api::V1::DriveItemsController < ApplicationController
     )
 
     extension = item_type == "file" ? normalized_extension : nil
-    duplicate = duplicate_active_item?(parent_id:, name:, extension:)
+    conflict = name_conflict(parent_id:, name:, extension:)
+    available = !conflict.conflict?
 
     render json: {
-      available: !duplicate,
+      available: available,
       name: name,
-      filename: display_filename(name, extension),
+      filename: conflict.filename,
       parent_id: parent_id,
       extension: extension,
-      conflict: duplicate ? duplicate_name_details(name, parent_id:, extension:).except(:code, :message) : nil
+      conflict: available ? nil : conflict.details.except(:code, :message)
     }
   end
 
@@ -309,7 +309,12 @@ class Api::V1::DriveItemsController < ApplicationController
       extension: @drive_item.extension,
       excluding_id: @drive_item.id
     )
-      render_duplicate_name(@drive_item.name, parent_id: @drive_item.parent_id, extension: @drive_item.extension)
+      render_duplicate_name(
+        @drive_item.name,
+        organization: destination_organization,
+        parent_id: @drive_item.parent_id,
+        extension: @drive_item.extension
+      )
       return
     end
 
@@ -374,7 +379,12 @@ class Api::V1::DriveItemsController < ApplicationController
         extension: drive_item.extension,
         excluding_id: drive_item.id
       )
-        render_duplicate_name(drive_item.name, parent_id: new_parent_id, extension: drive_item.extension)
+        render_duplicate_name(
+          drive_item.name,
+          organization: destination_organization,
+          parent_id: new_parent_id,
+          extension: drive_item.extension
+        )
         return
       end
     end
@@ -687,12 +697,7 @@ class Api::V1::DriveItemsController < ApplicationController
   end
 
   def duplicate_active_item?(organization: current_organization, parent_id:, name:, extension:, excluding_id: nil)
-    scope = organization
-      .drive_items
-      .active
-      .where(parent_id: parent_id, name: name, extension: extension)
-    scope = scope.where.not(id: excluding_id) if excluding_id.present?
-    scope.exists?
+    name_conflict(organization:, parent_id:, name:, extension:, excluding_id:).conflict?
   end
 
   def active_drive_items_for_bulk
@@ -902,8 +907,8 @@ class Api::V1::DriveItemsController < ApplicationController
     false
   end
 
-  def render_duplicate_name(name, parent_id: nil, extension: nil)
-    details = duplicate_name_details(name, parent_id:, extension:)
+  def render_duplicate_name(name, organization: current_organization, parent_id: nil, extension: nil)
+    details = name_conflict(organization:, parent_id:, name:, extension:).details
     render_api_error(
       details[:code],
       details[:message],
@@ -1190,21 +1195,8 @@ class Api::V1::DriveItemsController < ApplicationController
     value.to_s.downcase.presence if value.to_s.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i)
   end
 
-  def duplicate_name_details(name, parent_id:, extension:)
-    suggested_name = next_available_name(parent_id:, name:, extension:)
-    {
-      code: :duplicate_name,
-      message: "同じ名前のファイルまたはフォルダーが存在します。",
-      field: "name",
-      conflicting_name: display_filename(name, extension),
-      duplicate_kind: "name",
-      suggested_name: suggested_name,
-      suggested_filename: display_filename(suggested_name, extension)
-    }
-  end
-
-  def active_duplicate_item(parent_id:, name:, extension:)
-    current_organization.drive_items.active.find_by(parent_id:, name:, extension:)
+  def name_conflict(organization: current_organization, parent_id:, name:, extension:, excluding_id: nil)
+    DriveItems::NameConflict.new(organization:, parent_id:, name:, extension:, excluding_id:)
   end
 
   def restore_drive_item!(drive_item)
@@ -1236,29 +1228,6 @@ class Api::V1::DriveItemsController < ApplicationController
 
     record_drive_item_event!("drive_item.restored", result.restore_target, changes: { deleted_at: [ before, nil ] })
     result.restore_target.reload
-  end
-
-  def next_available_name(parent_id:, name:, extension:)
-    existing_names = current_user
-      .organization
-      .drive_items
-      .active
-      .where(parent_id:, extension:)
-      .pluck(:name)
-      .to_set
-    return name unless existing_names.include?(name)
-
-    index = 1
-    loop do
-      candidate = "#{name}（#{index}）"
-      return candidate unless existing_names.include?(candidate)
-
-      index += 1
-    end
-  end
-
-  def display_filename(name, extension)
-    extension.present? ? "#{name}.#{extension}" : name
   end
 
   def build_storage_key(extension)
