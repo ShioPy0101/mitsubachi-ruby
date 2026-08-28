@@ -22,7 +22,9 @@ module MediaPreviews
     end
 
     def lock_path
-      verified_path(absolute_path.dirname.join(".generate.lock"))
+      # Original version ごとの最終ファイル名に結び付け、別versionの生成・cleanupが
+      # lock inode を差し替えて同一Previewの排他を破らないようにする。
+      verified_path(absolute_path.dirname.join(".#{absolute_path.basename}.lock"))
     end
 
     def relative_path
