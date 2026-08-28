@@ -87,6 +87,15 @@ class MediaPreviewDeliveryTest < ActionDispatch::IntegrationTest
     assert_nil response.headers["X-Accel-Redirect"]
   end
 
+  test "存在しないitemは取得できない" do
+    sign_in @user
+
+    get thumbnail_path(Struct.new(:id).new(9_999_999_999))
+
+    assert_response :not_found
+    assert_nil response.headers["X-Accel-Redirect"]
+  end
+
   test "trashとpurge済みitemは取得できない" do
     sign_in @user
     @item.update_columns(deleted_at: Time.current)
@@ -118,6 +127,27 @@ class MediaPreviewDeliveryTest < ActionDispatch::IntegrationTest
 
     get "/api/v1/public/shares/#{result.raw_token}/items/#{drive_items(:two).id}/thumbnail"
     assert_response :not_found
+    assert_nil response.headers["X-Accel-Redirect"]
+  end
+
+  test "password保護shareは解除前にthumbnailを返さない" do
+    result = ExternalShares::CreateService.new(
+      user: @user,
+      params: {
+        name: "保護された画像共有",
+        drive_item_ids: [ @item.id ],
+        folder_share_mode: "snapshot",
+        allow_download: true,
+        allow_bulk_download: false,
+        password_protected: true
+      }
+    ).call
+    assert result.success?, result.error_message
+
+    get "/api/v1/public/shares/#{result.raw_token}/items/#{@item.id}/thumbnail"
+
+    assert_response :unauthorized
+    assert_equal({ "password_required" => true }, response.parsed_body)
     assert_nil response.headers["X-Accel-Redirect"]
   end
 
