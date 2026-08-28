@@ -50,3 +50,10 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: アプリケーションが直接指定していない推移依存であり、Rails本体のバージョンを変えなくても個別gemの更新が必要か、lockfileだけからは判断しにくかった。
 - 改善されるとよい点: BundlerやRailsの依存更新支援が、脆弱な推移依存について互換性を保った最小更新候補と、その依存元を一度に提示できるとよい。
 - 今回の回避策: `bundle update mail --conservative` で `mail` のみを修正版の2.9.1へ更新し、`bin/bundler-audit` とリポジトリ全体のチェックで互換性を確認する。
+
+## 2026-08-28: parallel test のDB分離とfilesystem共有
+
+- 状況: DriveItem ID から決定的に算出する Preview cache を追加し、Rails の process 並列テストで purge と生成を検証した。
+- 困った点: Rails は test DB を worker ごとに分離するが filesystem root は自動では分離しないため、別 DB で同じ ID が採番され、ある worker の purge が別 worker の cache を削除した。
+- 改善されるとよい点: Active Storage 以外の filesystem を使う test 向けに、parallel worker ID を含む一時 root と終了時 cleanup を Rails が共通設定として提供するとよい。
+- 今回の回避策: `parallelize_setup` で `media_preview_root` を worker ごとに分離し、production の決定的な cache path は変更せずに filesystem を使うテスト間の干渉を防いだ。

@@ -55,7 +55,8 @@ module MediaPreviews
     end
 
     def self.preview_root
-      DriveItem.storage_root.join("previews").expand_path
+      configured_root = Rails.configuration.x.media_preview_root
+      Pathname.new(configured_root.presence || DriveItem.storage_root.join("previews")).expand_path
     end
 
     private

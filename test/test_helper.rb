@@ -10,6 +10,16 @@ module ActiveSupport
     # Run tests in parallel with specified workers
     parallelize(workers: :number_of_processors)
 
+    # parallel test は DB を worker ごとに分ける一方、filesystem は共有する。
+    # 各 test DB で同じ DriveItem ID が採番されても purge が他workerのcacheを
+    # 消さないよう、Preview の派生cacheだけをworker単位に分離する。
+    parallelize_setup do |worker|
+      Rails.configuration.x.media_preview_root = DriveItem.storage_root.join(
+        "previews",
+        "test-worker-#{worker}"
+      )
+    end
+
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
 

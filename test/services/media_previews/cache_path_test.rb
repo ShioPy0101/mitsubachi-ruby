@@ -6,7 +6,7 @@ class MediaPreviewsCachePathTest < ActiveSupport::TestCase
     path = MediaPreviews::CachePath.new(drive_item: item)
 
     assert path.absolute_path.to_s.start_with?(DriveItem.storage_root.join("previews").to_s)
-    assert_match %r{/previews/organization-#{item.organization_id}/drive-item-#{item.id}/v1/320-[0-9a-f]{16}\.jpg\z}, path.absolute_path.to_s
+    assert_match %r{/previews/(?:test-worker-\d+/)?organization-#{item.organization_id}/drive-item-#{item.id}/v1/320-[0-9a-f]{16}\.jpg\z}, path.absolute_path.to_s
     assert_equal ".#{path.absolute_path.basename}.lock", path.lock_path.basename.to_s
     assert_match %r{\A/internal/previews/organization-#{item.organization_id}/drive-item-#{item.id}/v1/}, path.internal_uri
     refute_includes path.absolute_path.to_s, item.filename
