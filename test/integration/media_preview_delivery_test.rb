@@ -10,7 +10,7 @@ class MediaPreviewDeliveryTest < ActionDispatch::IntegrationTest
       storage_key: @storage_key,
       blob_path: DriveItem.storage_relative_path_for(@storage_key),
       content_type: "image/jpeg",
-      file_hash: Digest::SHA256.hexdigest("thumbnail-original"),
+      file_hash: Digest::SHA256.hexdigest("thumbnail-original-#{SecureRandom.uuid}"),
       file_size: 8,
       deleted_at: nil,
       purged_at: nil
@@ -22,10 +22,7 @@ class MediaPreviewDeliveryTest < ActionDispatch::IntegrationTest
 
   teardown do
     FileUtils.rm_f(@item.absolute_storage_path)
-    MediaPreviews::CachePath.delete_item_cache(
-      organization_id: @item.organization_id,
-      drive_item_id: @item.id
-    )
+    FileUtils.rm_f(MediaPreviews::CachePath.new(drive_item: @item).absolute_path)
   end
 
   test "画像thumbnailはRailsで本文を読まずNginxへ委譲する" do

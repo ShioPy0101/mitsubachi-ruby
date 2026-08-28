@@ -47,6 +47,9 @@ module MediaPreviews
       return unless path.to_s.start_with?("#{root}/") && path.directory?
 
       FileUtils.remove_entry_secure(path)
+    rescue Errno::ENOENT
+      # purge や GC が同じ cache を同時に削除しても、既に消えていれば目的は達成済み。
+      nil
     end
 
     def self.preview_root

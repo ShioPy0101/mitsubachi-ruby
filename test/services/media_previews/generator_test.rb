@@ -41,10 +41,8 @@ class MediaPreviewsGeneratorTest < ActiveSupport::TestCase
 
   teardown do
     FileUtils.rm_f(@item.absolute_storage_path)
-    MediaPreviews::CachePath.delete_item_cache(
-      organization_id: @item.organization_id,
-      drive_item_id: @item.id
-    )
+    FileUtils.rm_f(@cache_path.absolute_path)
+    FileUtils.rm_f(@cache_path.lock_path)
   end
 
   test "画像previewのcache missでは一時fileからatomicに公開する" do

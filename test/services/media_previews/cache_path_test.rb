@@ -22,4 +22,19 @@ class MediaPreviewsCachePathTest < ActiveSupport::TestCase
 
     refute_equal before_values, [ after.absolute_path, after.etag ]
   end
+
+  test "同じitem cacheの反復削除は既に消えていれば成功扱いにする" do
+    item = drive_items(:child_file)
+    path = MediaPreviews::CachePath.new(drive_item: item).absolute_path
+    FileUtils.mkdir_p(path.dirname)
+    File.binwrite(path, "preview")
+    2.times do
+      assert_nothing_raised do
+        MediaPreviews::CachePath.delete_item_cache(
+          organization_id: item.organization_id,
+          drive_item_id: item.id
+        )
+      end
+    end
+  end
 end
