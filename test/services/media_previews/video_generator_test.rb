@@ -40,7 +40,7 @@ class MediaPreviewsVideoGeneratorTest < ActiveSupport::TestCase
   test "全attempt失敗時はstderrを含むGenerationErrorを返す" do
     Dir.mktmpdir do |directory|
       error = assert_raises(MediaPreviews::VideoGenerator::GenerationError) do
-        StubVideoGenerator.new([ false, false ]).call(
+        StubVideoGenerator.new([ false, false, false ]).call(
           input_path: File.join(directory, "input.mp4"),
           output_path: File.join(directory, "preview.jpg")
         )
@@ -48,5 +48,30 @@ class MediaPreviewsVideoGeneratorTest < ActiveSupport::TestCase
 
       assert_includes error.message, "decode failed"
     end
+  end
+
+  test "3秒seekが失敗する短い動画は先頭frameへfallbackする" do
+    Dir.mktmpdir do |directory|
+      output = File.join(directory, "preview.jpg")
+      generator = StubVideoGenerator.new([ false, false, true ])
+
+      generator.call(input_path: File.join(directory, "short.mp4"), output_path: output)
+
+      assert_equal 3, generator.commands.length
+      last = generator.commands.last
+      assert_equal "0", last.fetch(last.index("-ss") + 1)
+      assert_operator last.index("-ss"), :<, last.index("-i")
+    end
+  end
+
+  test "FFmpegが存在しない場合はToolUnavailableを返す" do
+    error = assert_raises(MediaPreviews::VideoGenerator::ToolUnavailable) do
+      MediaPreviews::VideoGenerator.new(ffmpeg_path: "/definitely-missing/ffmpeg").call(
+        input_path: "/tmp/input.mp4",
+        output_path: "/tmp/output.jpg"
+      )
+    end
+
+    assert_includes error.message, "FFmpeg is not available"
   end
 end

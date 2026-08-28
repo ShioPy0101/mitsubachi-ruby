@@ -31,16 +31,17 @@ module MediaPreviews
     private
 
     def attempts(input_path, output_path)
-      common = [
-        "-ss", "3", "-i", input_path.to_s, "-frames:v", "1",
+      output_options = [
+        "-frames:v", "1",
         "-vf", "scale='if(gt(iw,ih),320,-2)':'if(gt(iw,ih),-2,320)':flags=fast_bilinear",
         "-q:v", "6", "-an", "-y", output_path.to_s
       ]
       [
         [ @ffmpeg_path, "-hide_banner", "-loglevel", "error", "-ss", "3", "-skip_frame", "nokey", "-i", input_path.to_s,
-         "-frames:v", "1", "-vf", "scale='if(gt(iw,ih),320,-2)':'if(gt(iw,ih),-2,320)':flags=fast_bilinear",
-         "-q:v", "6", "-an", "-y", output_path.to_s ],
-        [ @ffmpeg_path, "-hide_banner", "-loglevel", "error", *common ]
+         *output_options ],
+        [ @ffmpeg_path, "-hide_banner", "-loglevel", "error", "-ss", "3", "-i", input_path.to_s, *output_options ],
+        # 3秒未満や末尾seekを拒否するcontainerでも、先頭frameなら一覧の識別に使える。
+        [ @ffmpeg_path, "-hide_banner", "-loglevel", "error", "-ss", "0", "-i", input_path.to_s, *output_options ]
       ]
     end
 
