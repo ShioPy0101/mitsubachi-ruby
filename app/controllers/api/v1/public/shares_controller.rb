@@ -99,6 +99,32 @@ class Api::V1::Public::SharesController < ApplicationController
     head result.status
   end
 
+  def thumbnail
+    drive_item = item_scope.find_item(params[:drive_item_id])
+    policy = ExternalShares::AccessPolicy.new(external_share: @external_share)
+    return render_public_not_found unless policy.can_preview?(drive_item)
+
+    service = MediaPreviews::DeliveryService.new(
+      drive_item: drive_item,
+      current_user: nil,
+      request: request,
+      external_share: @external_share
+    )
+    response.headers["ETag"] = %Q("#{service.etag}")
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return head :not_modified if request.fresh?(response)
+
+    result = service.call
+    unless result.success?
+      code = thumbnail_error_code(result.status)
+      render_api_error(code, result.error_message, status: result.status)
+      return
+    end
+
+    result.headers.each { |key, value| response.headers[key] = value }
+    head result.status
+  end
+
   def bulk_download
     rate_limit_download_request!
     policy = ExternalShares::AccessPolicy.new(external_share: @external_share)
@@ -136,6 +162,14 @@ class Api::V1::Public::SharesController < ApplicationController
   end
 
   private
+
+  def thumbnail_error_code(status)
+    code = Rack::Utils.status_code(status)
+    return :unsupported_media_type if code == 415
+    return :internal_error if code >= 500
+
+    :validation_failed
+  end
 
   def set_external_share
     @external_share = ExternalShares::TokenResolver.new(raw_token: params[:token], include_inactive: action_name == "unlock").call

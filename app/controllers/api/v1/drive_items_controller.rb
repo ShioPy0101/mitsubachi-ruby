@@ -11,7 +11,7 @@ class Api::V1::DriveItemsController < ApplicationController
   before_action :set_current_organization, if: :organization_path_scope?
   before_action :set_active_drive_item, only: %i[show update move destroy]
   before_action :set_deleted_drive_item, only: %i[restore restore_preview purge]
-  before_action :set_deliverable_drive_item, only: %i[preview download stream]
+  before_action :set_deliverable_drive_item, only: %i[preview thumbnail download stream]
   around_action :observe_upload_request, only: :create
 
   def index
@@ -474,6 +474,10 @@ class Api::V1::DriveItemsController < ApplicationController
 
   def preview
     deliver_drive_item(:preview)
+  end
+
+  def thumbnail
+    deliver_thumbnail
   end
 
   def download
@@ -1263,6 +1267,27 @@ class Api::V1::DriveItemsController < ApplicationController
       response.headers[key] = value
     end
 
+    head result.status
+  end
+
+  def deliver_thumbnail
+    service = MediaPreviews::DeliveryService.new(
+      drive_item: @drive_item,
+      current_user: current_user,
+      request: request
+    )
+    response.headers["ETag"] = %Q("#{service.etag}")
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return head :not_modified if request.fresh?(response)
+
+    result = service.call
+    unless result.success?
+      code = result.status == :unsupported_media_type ? :unsupported_media_type : error_code_for_status(result.status)
+      render_api_error(code, result.error_message, status: result.status)
+      return
+    end
+
+    result.headers.each { |key, value| response.headers[key] = value }
     head result.status
   end
 
