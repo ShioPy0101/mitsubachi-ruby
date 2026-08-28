@@ -63,14 +63,23 @@ module MediaPreviews
     end
 
     def generate_atomic!(generator)
-      temporary_path = @cache_path.absolute_path.dirname.join(
-        ".#{@cache_path.absolute_path.basename}.tmp-#{SecureRandom.hex(8)}"
+      path = @cache_path.absolute_path
+      extension = path.extname.to_s
+      basename = path.basename(extension).to_s
+
+      temporary_path = path.dirname.join(
+        ".#{basename}.tmp-#{SecureRandom.hex(8)}#{extension}"
+      ).to_s
+
+      generator.call(
+        input_path: @drive_item.absolute_storage_path.to_s,
+        output_path: temporary_path
       )
-      generator.call(input_path: @drive_item.absolute_storage_path, output_path: temporary_path)
+
       raise "generator did not create a preview" unless File.file?(temporary_path) && File.size?(temporary_path)
 
       File.chmod(0o644, temporary_path)
-      File.rename(temporary_path, @cache_path.absolute_path)
+      File.rename(temporary_path, path.to_s)
     ensure
       FileUtils.rm_f(temporary_path) if temporary_path
     end
