@@ -64,3 +64,10 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: `reset_session` 後もWarden内には認証済みUserが残り、通常の `sign_in` が同一Userとして保存を省略すると次のリクエストで未認証になる。
 - 望ましい改善: session再生成とWardenの保存状態を同期する明示的な再認証API。
 - 今回の回避策: `sign_in(user, force: true)` で新sessionに再保存し、連続した再認証とメール変更申請をintegration testで検証した。
+
+## 2026-10-16: Brakeman と固定テーブル名のlock SQL
+
+- 状況: 移行タスクの対象テーブルは定数Hashだけから決めていた。
+- 困った点: そのkeysをjoinしたLOCK TABLE文もSQL injectionとして検出され、最終checkが失敗した。
+- 望ましい改善: 変更不能な定数リテラルに由来する識別子を静的解析で追跡できること。
+- 今回の回避策: 対象4テーブルのLOCK TABLE文を固定文字列にし、ユーザー入力が入らないことをコード上でも明示した。警告のignore追加は行わない。

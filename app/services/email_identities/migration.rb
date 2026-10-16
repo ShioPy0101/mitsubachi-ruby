@@ -51,7 +51,7 @@ module EmailIdentities
     def finalize!
       ApplicationRecord.transaction do
         connection = ApplicationRecord.connection
-        connection.execute("LOCK TABLE #{TABLES.keys.join(', ')} IN ACCESS EXCLUSIVE MODE")
+        connection.execute("LOCK TABLE users, email_authentications, organization_invites, user_email_changes IN ACCESS EXCLUSIVE MODE")
         verify!
         TABLES.each do |table, (source, target, required)|
           connection.change_column_null(table, target, false) if required
