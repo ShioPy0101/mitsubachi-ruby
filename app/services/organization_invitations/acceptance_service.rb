@@ -64,8 +64,9 @@ module OrganizationInvitations
     end
 
     def validate_email!(invite)
-      return if invite.email.blank?
-      return if invite.email == user.email.downcase
+      EmailIdentityKey.verify!
+      return if invite.email_digest.blank?
+      return if invite.email_digest == user.email_digest
 
       raise_failure(:email_mismatch, "招待先メールアドレスとログイン中のアカウントが一致しません", :forbidden)
     end

@@ -24,7 +24,7 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
         organization: organization,
         changes: {
           code: [ nil, invite.code ],
-          email: [ nil, invite.email ],
+          email_digest: [ nil, invite.email_digest ],
           role: [ nil, invite.role ],
           expires_at: [ nil, invite.expires_at ]
         }
@@ -81,7 +81,7 @@ class Api::V1::Admin::OrganizationInvitesController < Api::V1::Admin::BaseContro
       organization_id: invite.organization_id,
       organization_name: invite.organization.name,
       code: invite.code,
-      email: invite.email,
+      email: nil,
       role: invite.role,
       expires_at: invite.expires_at,
       revoked_at: invite.revoked_at,

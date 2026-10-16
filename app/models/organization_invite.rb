@@ -1,4 +1,18 @@
 class OrganizationInvite < ApplicationRecord
+  self.ignored_columns += [ "email" ]
+  attr_reader :email
+
+  def email=(value)
+    EmailIdentityKey.verify!
+    @email = EmailIdentities::Digest.normalize(value).presence
+    self.email_digest = @email && EmailIdentities::Digest.call(@email)
+  end
+
+  def reload(*)
+    @email = nil
+    super
+  end
+
   enum :role, {
     member: 0,
     organization_admin: 1
@@ -17,8 +31,6 @@ class OrganizationInvite < ApplicationRecord
 
   has_many :email_authentications, dependent: :restrict_with_error
 
-  before_validation :normalize_email
-
   validates :code, presence: true, uniqueness: true
   validates :expires_at, presence: true
   validates :role, presence: true
@@ -31,9 +43,4 @@ class OrganizationInvite < ApplicationRecord
     revoked_at.present?
   end
 
-  private
-
-  def normalize_email
-    self.email = email.to_s.strip.downcase.presence if email.present?
-  end
 end
