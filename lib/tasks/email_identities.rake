@@ -12,6 +12,12 @@ namespace :mitsubachi do
       puts "Email digest verification succeeded"
     end
 
+    desc "Redact email addresses in existing structured audit and system logs"
+    task scrub_logs: :environment do
+      EmailIdentities::ScrubLogs.new.call
+      puts "Historical log email redaction succeeded"
+    end
+
     desc "After verification, erase legacy email values (requires stopped writers)"
     task finalize: :environment do
       EmailIdentities::Migration.new.finalize!
