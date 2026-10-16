@@ -17,6 +17,12 @@ class EmailIdentities::DigestTest < ActiveSupport::TestCase
     refute_equal first.last, second.last
   end
 
+  test "refuses a short configured key instead of falling back to secret key base" do
+    with_key("short") do
+      assert_raises(EmailIdentities::Digest::ConfigurationError) { EmailIdentities::Digest.call("test@example.com") }
+    end
+  end
+
   private
 
   def with_key(value)
