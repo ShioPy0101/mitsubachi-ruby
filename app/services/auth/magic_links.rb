@@ -14,7 +14,7 @@ module Auth
       end
     end
 
-    VerificationResult = Data.define(:user, :organization_invite, :purpose)
+    VerificationResult = Data.define(:user, :organization_invite, :purpose, :authentication)
     RequestResult = Data.define(:email, :token, :user, :organization, :organizations, :organization_invite, :authentication)
 
     def self.normalize_email(email)
@@ -36,11 +36,15 @@ module Auth
       build_registration_request!(email:, invite_code:, display_name:)
     end
 
-    def request_login(email:)
+    def request_login(email:, intent: nil)
       email = self.class.normalize_email(email)
       raise Failure.new("email は必須です", :bad_request) if email.blank?
 
-      build_login_request!(email:)
+      unless intent.nil? || intent == "email_change"
+        raise Failure.new("intent が正しくありません", :bad_request)
+      end
+
+      build_login_request!(email:, intent:)
     end
 
     def verify(raw_token, expected_purpose: nil)
@@ -96,7 +100,7 @@ module Auth
       )
     end
 
-    def build_login_request!(email:)
+    def build_login_request!(email:, intent:)
       raw_token = SecureRandom.urlsafe_base64(32)
       hashed_token = Digest::SHA256.hexdigest(raw_token)
       now = Time.current
@@ -116,6 +120,8 @@ module Auth
           token: hashed_token,
           expires_at: now + AUTHENTICATION_TOKEN_TTL,
           purpose: "login",
+          email_change_reauthentication: intent == "email_change",
+          recipient_ciphertext: intent == "email_change" ? EmailIdentities::DeliveryPayload.encrypt(email, purpose: "email_change_reauthentication", expires_at: now + AUTHENTICATION_TOKEN_TTL) : nil,
           delivery_token: raw_token
         )
       end
@@ -180,7 +186,7 @@ module Auth
 
       raise failure if failure
 
-      VerificationResult.new(verified_user, authentication.organization_invite, authentication.purpose)
+      VerificationResult.new(verified_user, authentication.organization_invite, authentication.purpose, authentication)
     end
 
     def validate_invite_for_registration!(invite, now)

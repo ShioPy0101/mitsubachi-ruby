@@ -32,7 +32,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
   end
 
   def login
-    result = auth_magic_links.request_login(email: params[:email])
+    result = auth_magic_links.request_login(email: params[:email], intent: params[:intent])
     deliver_magic_link(result)
     record_operation!(
       operation_type: "auth.login_link_requested",
@@ -85,6 +85,9 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
   def render_verified_user(result)
     create_authenticated_session!(result.user)
+    if result.authentication.email_change_reauthentication?
+      session[:email_change_authentication_id] = result.authentication.id
+    end
     record_operation!(
       operation_type: result.purpose == "login" ? "auth.login_succeeded" : "auth.registration_verified",
       actor_user: result.user,
