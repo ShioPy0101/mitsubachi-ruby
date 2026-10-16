@@ -50,3 +50,10 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: アプリケーションが直接指定していない推移依存であり、Rails本体のバージョンを変えなくても個別gemの更新が必要か、lockfileだけからは判断しにくかった。
 - 改善されるとよい点: BundlerやRailsの依存更新支援が、脆弱な推移依存について互換性を保った最小更新候補と、その依存元を一度に提示できるとよい。
 - 今回の回避策: `bundle update mail --conservative` で `mail` のみを修正版の2.9.1へ更新し、`bin/bundler-audit` とリポジトリ全体のチェックで互換性を確認する。
+
+## 2026-10-16: Devise と不可逆なメールidentity
+
+- 状況: 平文 email カラムをHMACへ移行し、emailを入力時だけ存在する仮想属性にした。
+- 困った点: Devise Validatable は平文カラムへの一意性SQLを生成し、Authenticatable の正規化callbackは未設定の仮想属性にもsetterを呼ぶため、通常のプロフィール更新でdigestを消し得る。
+- 望ましい改善: 入力属性・認証検索キー・永続化属性を分離できる公式の拡張点と、その組み合わせを検証する契約テスト。
+- 今回の回避策: 入力時に既存と同じstrip/downcaseを行い、emailのcallbackだけを迂回。メール検証を置換し、Deviseの共通検索入口でdigestへ変換する。再読込後の更新もテストする。

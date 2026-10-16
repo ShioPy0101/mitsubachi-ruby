@@ -1,4 +1,35 @@
 class User < ApplicationRecord
+  # 移行完了まで旧カラムはDBに残すが、通常の読み書き・serializationから除外する。
+  self.ignored_columns += [ "email" ]
+  attr_reader :email
+
+  def email=(value)
+    EmailIdentityKey.verify!
+    @email = EmailIdentities::Digest.normalize(value)
+    @email_assigned = true
+    self.email_digest = @email.present? ? EmailIdentities::Digest.call(@email) : nil
+  end
+
+  def self.with_email(value)
+    EmailIdentityKey.verify!
+    where(email_digest: EmailIdentities::Digest.call(value))
+  end
+
+  # Devise の認証・Recoverable の両方が通る検索入口で変換する。
+  # 宛先は呼び出し元が入力した値をそのリクエストのメモリ内だけに保持する。
+  def self.find_first_by_auth_conditions(conditions, opts = {})
+    values = conditions.to_h.with_indifferent_access
+    return super unless values.key?(:email)
+
+    email = values.delete(:email)
+    with_email(email).find_by(values.merge(opts)).tap { |user| user.email = email if user }
+  end
+
+  def reload(*)
+    @email = nil
+    @email_assigned = false
+    super
+  end
   enum :role, {
     member: 0,
     organization_admin: 1,
@@ -36,13 +67,18 @@ class User < ApplicationRecord
   devise :database_authenticatable,
          :registerable,
          :recoverable,
-         :rememberable,
-         :validatable
+         :rememberable
 
-  before_validation :normalize_email
   before_validation :normalize_display_name
 
-  validates :email, uniqueness: { case_sensitive: false }
+  # Devise Validatable のemail SQLは平文カラムを前提とするため、同じ入力検証を
+  # 仮想属性に対して行い、永続identityの一意性はHMACとDB UNIQUEで保証する。
+  validates :email_digest, presence: true, format: { with: /\A[0-9a-f]{64}\z/ }
+  validates :email, presence: true, format: { with: Devise.email_regexp }, if: -> { @email_assigned }
+  validate :email_digest_is_unique
+  validates :password, presence: true, if: :password_required?
+  validates :password, confirmation: true
+  validates :password, length: { in: Devise.password_length }, allow_blank: true
   validates :display_name,
             length: { maximum: 100 },
             uniqueness: { scope: :organization_id, allow_blank: true }
@@ -66,8 +102,23 @@ class User < ApplicationRecord
 
   private
 
-  def normalize_email
-    self.email = email.to_s.strip.downcase if email.present?
+  # Devise は保存時にも仮想 email= を呼ぶため、再読込後の nil でdigestを消さない。
+  # email= 自体が同じ正規化を行うので、この属性だけ標準callbackを迂回する。
+  def apply_to_attribute_or_variable(attribute, method)
+    return if attribute.to_sym == :email
+
+    super
+  end
+
+  def password_required?
+    !persisted? || !password.nil? || !password_confirmation.nil?
+  end
+
+  def email_digest_is_unique
+    return if email_digest.blank?
+    return unless self.class.where(email_digest: email_digest).where.not(id: id).exists?
+
+    errors.add(:email, :taken)
   end
 
   def normalize_display_name

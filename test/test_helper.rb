@@ -1,4 +1,5 @@
 ENV["RAILS_ENV"] ||= "test"
+ENV["EMAIL_IDENTITY_HMAC_KEY"] = "test-only-email-hmac-key-never-use-in-production"
 require_relative "../config/environment"
 require "rails/test_help"
 require "devise"

@@ -16,6 +16,7 @@ class EmailIdentities::DigestTest < ActiveSupport::TestCase
     refute_equal first.first, second.first
     refute_equal first.last, second.last
   end
+
   private
 
   def with_key(value)

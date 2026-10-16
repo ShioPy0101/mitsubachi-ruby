@@ -45,7 +45,7 @@ class UserTest < ActiveSupport::TestCase
     User.insert_all!([
       {
         organization_id: organization.id,
-        email: "DbCase@example.com",
+        email_digest: EmailIdentities::Digest.call("DbCase@example.com"),
         encrypted_password: "password",
         created_at: now,
         updated_at: now
@@ -56,13 +56,24 @@ class UserTest < ActiveSupport::TestCase
       User.insert_all!([
         {
           organization_id: organization.id,
-          email: "dbcase@example.com",
+          email_digest: EmailIdentities::Digest.call("dbcase@example.com"),
           encrypted_password: "password",
           created_at: now,
           updated_at: now
         }
       ])
     end
+  end
+
+  test "email exists only in request memory and Devise lookup uses digest" do
+    user = User.create!(organization: organizations(:one), email: " Private@Example.com ", password: "password123")
+    assert_equal EmailIdentities::Digest.call("private@example.com"), user.email_digest
+    assert_nil User.connection.select_value("SELECT email FROM users WHERE id = #{user.id}")
+    assert_nil user.reload.email
+    found = User.find_for_database_authentication(email: " PRIVATE@example.com ")
+    assert_equal user.id, found.id
+    assert_equal "private@example.com", found.email
+    assert_equal user.id, User.find(user.id).tap { |record| record.update!(display_name: "Private") }.id
   end
 
   test "display_name is normalized and unique within organization" do

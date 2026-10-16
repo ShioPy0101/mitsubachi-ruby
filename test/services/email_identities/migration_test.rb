@@ -5,6 +5,9 @@ class EmailIdentities::MigrationTest < ActiveSupport::TestCase
     @previous_key = ENV["EMAIL_IDENTITY_HMAC_KEY"]
     ENV["EMAIL_IDENTITY_HMAC_KEY"] = "migration-test-key-" * 3
     EmailIdentityKey.delete_all
+    User.connection.execute("UPDATE users SET email_digest = NULL")
+    User.connection.execute("UPDATE users SET email = 'test1@example.com' WHERE id = #{users(:one).id}")
+    User.connection.execute("UPDATE users SET email = 'test2@example.com' WHERE id = #{users(:two).id}")
   end
 
   teardown do
