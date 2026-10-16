@@ -18,7 +18,7 @@ module Auth
     RequestResult = Data.define(:email, :token, :user, :organization, :organizations, :organization_invite, :authentication)
 
     def self.normalize_email(email)
-      email.to_s.strip.downcase
+      EmailIdentities::Digest.normalize(email)
     end
 
     def self.normalize_display_name(display_name)
@@ -144,7 +144,8 @@ module Auth
         validate_authentication!(authentication, now)
         validate_authentication_purpose!(authentication, expected_purpose) if expected_purpose.present?
 
-        user = find_user_by_email(authentication.email)
+        EmailIdentityKey.verify!
+        user = User.find_by(email_digest: authentication.email_digest)
         validate_user_presence!(user)
         user.lock!
         user.reload
@@ -269,7 +270,7 @@ module Auth
     def expire_active_login_authentications!(email, now)
       EmailAuthentication.where(purpose: "login", used_at: nil)
                          .where("expires_at > ?", now)
-                         .where("LOWER(email) = ?", email.downcase)
+                         .where(email_digest: EmailIdentities::Digest.call(email))
                          .update_all(used_at: now, updated_at: now)
     end
 
@@ -281,7 +282,7 @@ module Auth
     end
 
     def find_user_by_email(email)
-      User.find_by("LOWER(email) = ?", self.class.normalize_email(email))
+      User.with_email(email).first
     end
 
     def invite_stand_by_active?(invite, now = Time.current)
@@ -297,7 +298,7 @@ module Auth
 
       EmailAuthentication.where(organization_invite: active_invites, purpose: "registration", used_at: nil)
                          .where("expires_at > ?", now)
-                         .where("LOWER(email) = ?", user.email.downcase)
+                         .where(email_digest: user.email_digest)
                          .exists?
     end
 

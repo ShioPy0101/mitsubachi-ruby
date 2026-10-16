@@ -1,13 +1,13 @@
 # Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
 
 one:
-  email: MyString
+  email_digest: <%= EmailIdentities::Digest.call("fixture@example.com") %>
   token: token_one
   expires_at: <%= 1.hour.from_now %>
   used_at:
 
 two:
-  email: MyString
+  email_digest: <%= EmailIdentities::Digest.call("fixture@example.com") %>
   token: token_two
   expires_at: <%= 1.hour.from_now %>
   used_at:

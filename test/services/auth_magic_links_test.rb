@@ -16,7 +16,7 @@ class Auth::MagicLinksTest < ActiveSupport::TestCase
       status: :suspended
     )
 
-    result = Auth::MagicLinks.new.request_login(email: user.email)
+    result = Auth::MagicLinks.new.request_login(email: email_for(user))
 
     expected_organizations = [ organizations(:one), second_organization ].sort_by(&:id)
     assert_equal expected_organizations, result.organizations

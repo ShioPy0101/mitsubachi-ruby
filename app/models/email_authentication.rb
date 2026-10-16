@@ -1,11 +1,20 @@
 class EmailAuthentication < ApplicationRecord
+  self.ignored_columns += [ "email" ]
+  attr_reader :email
+
+  def email=(value)
+    EmailIdentityKey.verify!
+    @email = EmailIdentities::Digest.normalize(value)
+    self.email_digest = @email.present? ? EmailIdentities::Digest.call(@email) : nil
+  end
+
   PURPOSES = %w[registration login].freeze
   DELIVERY_TOKEN_CIPHER = "aes-256-gcm"
   DELIVERY_TOKEN_SALT = "mitsubachi email authentication delivery token"
 
   belongs_to :organization_invite, optional: true
 
-  validates :email, :token, :expires_at, :purpose, presence: true
+  validates :email_digest, :token, :expires_at, :purpose, presence: true
   validates :token, uniqueness: true
   validates :purpose, inclusion: { in: PURPOSES }
 
