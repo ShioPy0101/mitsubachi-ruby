@@ -166,6 +166,15 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "test1@example.com" ], ActionMailer::Base.deliveries.last.to
   end
 
+  test "completed email change invalidates the existing login session" do
+    post email_change_api_v1_me_url, params: { email: "session-change@example.com" }
+    post email_change_approve_api_v1_me_url, params: { token: last_mail_token }
+    post email_change_verify_api_v1_me_url, params: { token: last_mail_token }
+    assert_response :ok
+    get api_v1_me_url
+    assert_response :unauthorized
+  end
+
   test "rejects invalid email change token" do
     post email_change_verify_api_v1_me_url, params: { token: "wrong-token" }
 

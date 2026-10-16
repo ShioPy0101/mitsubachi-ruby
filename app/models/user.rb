@@ -84,6 +84,11 @@ class User < ApplicationRecord
             uniqueness: { scope: :organization_id, allow_blank: true }
   validate :display_name_has_no_control_characters
 
+  # メール変更後に旧identityで発行されたsession / remember cookieを再利用させない。
+  def authenticatable_salt
+    "#{super}:#{email_digest}"
+  end
+
   def safe_display_name
     display_name.presence || name.presence || "未設定ユーザー"
   end
