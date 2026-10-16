@@ -17,7 +17,7 @@ class Deployment::MigrationVerifierTest < ActiveSupport::TestCase
     )
     EmailAuthentication.create!(
       organization_invite: invite,
-      email: user.email,
+      email: email_for(user),
       token: SecureRandom.hex(32),
       purpose: "registration",
       expires_at: 15.minutes.from_now

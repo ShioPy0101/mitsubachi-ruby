@@ -1,12 +1,21 @@
 class UserEmailChangeMailer < ApplicationMailer
+  def approval
+    @user = params.fetch(:user)
+    @email_change = params.fetch(:email_change)
+    @approval_url = "#{ENV.fetch('FRONTEND_URL')}/settings/email-change/approve?#{Rack::Utils.build_query(token: params.fetch(:token))}"
+    @expires_at = format_mail_time(@email_change.expires_at)
+    mail(to: params.fetch(:old_email), subject: "【Mitsubachi】メールアドレス変更の承認")
+  end
+
   def confirmation
     @user = params.fetch(:user)
     @email_change = params.fetch(:email_change)
+    @new_email = params[:new_email] || @email_change.new_email
     @confirmation_url = confirmation_url(params.fetch(:token))
     @expires_at = format_mail_time(@email_change.expires_at)
 
     mail(
-      to: @email_change.new_email,
+      to: params[:new_email] || @email_change.new_email,
       subject: "【Mitsubachi】メールアドレス変更確認"
     )
   end

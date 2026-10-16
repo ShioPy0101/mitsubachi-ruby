@@ -7,7 +7,7 @@ class OrganizationInvitationsControllerTest < ActionDispatch::IntegrationTest
     @invite = OrganizationInvite.create!(
       organization: @organization,
       code: "join-token",
-      email: @user.email,
+      email: email_for(@user),
       role: :organization_admin,
       expires_at: 1.day.from_now,
       invited_by_user: users(:two)
@@ -21,9 +21,9 @@ class OrganizationInvitationsControllerTest < ActionDispatch::IntegrationTest
     invitation = response.parsed_body.fetch("invitation")
     assert_equal @invite.code, invitation.fetch("token")
     assert_equal @organization.name, invitation.dig("organization", "name")
-    assert_equal @user.email, invitation.fetch("email")
+    assert_nil invitation.fetch("email")
     assert_equal "organization_admin", invitation.fetch("role")
-    assert_equal users(:two).email, invitation.dig("invited_by", "email")
+    assert_nil invitation.dig("invited_by", "email")
   end
 
   test "logged in existing user can join another organization" do
@@ -39,6 +39,7 @@ class OrganizationInvitationsControllerTest < ActionDispatch::IntegrationTest
     assert membership.active?
     assert_equal @user, @invite.reload.used_by_user
     assert @invite.used_at.present?
+    assert_nil OrganizationInvite.connection.select_value("SELECT email FROM organization_invites WHERE id = #{@invite.id}")
     assert_equal "組織に参加しました", response.parsed_body.fetch("message")
   end
 

@@ -36,12 +36,12 @@ class UserEmailChangeTest < ActiveSupport::TestCase
 
   test "rejects current email and used email" do
     current = users(:one).user_email_changes.build(
-      new_email: users(:one).email,
+      new_email: email_for(users(:one)),
       token_digest: UserEmailChange.digest_token("current-email-token"),
       expires_at: 30.minutes.from_now
     )
     duplicate = users(:one).user_email_changes.build(
-      new_email: users(:two).email,
+      new_email: email_for(users(:two)),
       token_digest: UserEmailChange.digest_token("duplicate-email-token"),
       expires_at: 30.minutes.from_now
     )

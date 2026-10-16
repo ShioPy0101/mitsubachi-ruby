@@ -1,6 +1,6 @@
 module OperationLogs
   class Sanitizer
-    SENSITIVE_KEY_PATTERN = /(authorization|cookie|session|token|password|secret|api.?key|csrf)/i
+    SENSITIVE_KEY_PATTERN = /(authorization|cookie|session|token|password|secret|api.?key|csrf|(?:\A|_)email\z)/i
 
     def initialize(value)
       @value = value
@@ -22,6 +22,8 @@ module OperationLogs
         end
       when Array
         value.map { |nested_value| sanitize(nested_value) }
+      when String
+        EmailIdentities::Redactor.call(value)
       else
         value
       end

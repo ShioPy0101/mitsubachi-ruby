@@ -3,7 +3,7 @@ class Api::V1::MeController < ApplicationController
   EMAIL_CHANGE_REQUEST_EMAIL_LIMIT = 5
   EMAIL_CHANGE_REQUEST_PERIOD = 15.minutes
 
-  before_action :authenticate_user!, except: :verify_email_change
+  before_action :authenticate_user!, except: %i[approve_email_change verify_email_change]
   before_action :rate_limit_email_change_request!, only: :request_email_change
 
   def show
@@ -35,18 +35,23 @@ class Api::V1::MeController < ApplicationController
   def request_email_change
     result = UserEmailChanges::RequestService.new(
       user: current_user,
-      email: email_change_params.fetch(:email)
+      email: email_change_params.fetch(:email),
+      reauthentication_id: session[:email_change_authentication_id]
     ).call
     record_operation!(
       operation_type: "user.email_change_requested",
       target: current_user,
-      metadata: { email_domain: email_domain(result.email_change.new_email) }
+      metadata: { email_identifier: result.email_change.new_email_digest }
     )
 
     render json: {
-      message: "新しいメールアドレスに確認メールを送信しました",
-      pending_email: result.email_change.new_email
+      message: "現在のメールアドレスに変更承認メールを送信しました",
+      pending_email: nil,
+      email_change_stage: "awaiting_old_email_approval"
     }, status: :ok
+  rescue UserEmailChanges::ConfirmService::Failure => error
+    render_api_error(error.code, error.message, status: error.status,
+                     details: error.code == :reauthentication_required ? { login_path: "/login", intent: "email_change" } : {})
   rescue ActionController::ParameterMissing => error
     render_api_error(:bad_request, "#{error.param} は必須です", status: :bad_request)
   rescue ActiveRecord::RecordInvalid => error
@@ -58,7 +63,18 @@ class Api::V1::MeController < ApplicationController
   rescue StandardError => error
     record_email_change_failure!("確認メールの送信に失敗しました")
     record_mail_delivery_failure!(error, phase: "email_change_request")
-    Rails.logger.error("[me.email_change] delivery failed user_id=#{current_user.id} error=#{error.class}: #{error.message}")
+    Rails.logger.error("[me.email_change] delivery failed user_id=#{current_user.id} error=#{error.class}")
+    render_api_error(:email_delivery_failed, "確認メールの送信に失敗しました", status: :unprocessable_content)
+  end
+
+  def approve_email_change
+    result = UserEmailChanges::ConfirmService.new(token: params[:token]).approve
+    record_operation!(operation_type: "user.email_change_approved", actor_user: result.user, target: result.user)
+    render json: { message: "新しいメールアドレスに確認メールを送信しました", email_change_stage: "awaiting_new_email_confirmation" }
+  rescue UserEmailChanges::ConfirmService::Failure => error
+    render_api_error(error.code, error.message, status: error.status)
+  rescue StandardError => error
+    record_mail_delivery_failure!(error, phase: "email_change_approval")
     render_api_error(:email_delivery_failed, "確認メールの送信に失敗しました", status: :unprocessable_content)
   end
 
@@ -69,12 +85,12 @@ class Api::V1::MeController < ApplicationController
       actor_user: result.user,
       organization: result.user.organization,
       target: result.user,
-      metadata: { email_domain: email_domain(result.user.email) }
+      metadata: { email_identifier: result.user.email_digest }
     )
 
     render json: {
       message: "メールアドレスを変更しました",
-      email: result.user.email
+      email: nil
     }, status: :ok
   rescue UserEmailChanges::ConfirmService::Failure => error
     record_email_change_failure!(error.message)
@@ -82,7 +98,7 @@ class Api::V1::MeController < ApplicationController
   rescue StandardError => error
     record_email_change_failure!("変更完了通知メールの送信に失敗しました")
     record_mail_delivery_failure!(error, phase: "email_change_confirmation")
-    Rails.logger.error("[me.email_change] confirmation failed error=#{error.class}: #{error.message}")
+    Rails.logger.error("[me.email_change] confirmation failed error=#{error.class}")
     render_api_error(:email_delivery_failed, "変更完了通知メールの送信に失敗しました", status: :unprocessable_content)
   end
 
@@ -90,11 +106,14 @@ class Api::V1::MeController < ApplicationController
     email_change = current_user.pending_email_change
 
     if email_change.present?
-      email_change.update!(cancelled_at: Time.current)
+      current_user.with_lock do
+        email_change.lock!
+        email_change.update_columns(cancelled_at: Time.current, delivery_addresses_ciphertext: nil)
+      end
       record_operation!(
         operation_type: "user.email_change_cancelled",
         target: current_user,
-        metadata: { email_domain: email_domain(email_change.new_email) }
+        metadata: { email_identifier: email_change.new_email_digest }
       )
     end
 
@@ -119,8 +138,9 @@ class Api::V1::MeController < ApplicationController
       id: user.id,
       organization_id: user.organization_id,
       organization_name: user.organization.name,
-      email: user.email,
-      pending_email: pending_email_change&.new_email,
+      email: nil,
+      pending_email: nil,
+      email_change_stage: pending_email_change && (pending_email_change.old_email_approved_at ? "awaiting_new_email_confirmation" : "awaiting_old_email_approval"),
       name: user.name,
       display_name: user.display_name,
       role: user.role,
@@ -184,11 +204,7 @@ class Api::V1::MeController < ApplicationController
   end
 
   def normalize_email(email)
-    email.to_s.strip.downcase
-  end
-
-  def email_domain(email)
-    email.to_s.split("@", 2).last
+    EmailIdentities::Digest.normalize(email)
   end
 
   def record_email_change_failure!(reason)

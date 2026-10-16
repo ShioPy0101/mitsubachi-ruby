@@ -5,7 +5,7 @@ class EmailAuthenticationTest < ActiveSupport::TestCase
     authentication = EmailAuthentication.new(purpose: nil)
 
     assert_not authentication.valid?
-    assert_includes authentication.errors[:email], "can't be blank"
+    assert_includes authentication.errors[:email_digest], "can't be blank"
     assert_includes authentication.errors[:token], "can't be blank"
     assert_includes authentication.errors[:expires_at], "can't be blank"
     assert_includes authentication.errors[:purpose], "can't be blank"

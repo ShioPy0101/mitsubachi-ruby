@@ -43,6 +43,9 @@
 - `ApplicationRecord` - Active Record 共通ベース
 
 ## Email Authentication
+- メールidentityは専用鍵のHMAC-SHA256で保存・検索する。入力値だけをstrip/downcaseし、復元や部分一致検索はしない
+- 再認証と二段階メール変更、既存データ移行、鍵管理の手順は [メールidentity移行](email-identity-migration.md) を参照する
+
 - 登録用リンク発行では、OrganizationInvite をトランザクション内でロックし、使用済み、有効期限、stand-by 状態をロック後に再検証する
 - 登録用リンク発行時に作成または再利用する仮ユーザー、invite の stand-by 更新、EmailAuthentication 作成は同一トランザクションで行う
 - メール送信は DB コミット後に Active Job へ投入し、ロールバックされた stand-by 状態のリンクを送らない
@@ -63,7 +66,7 @@
 - `organization_admin` は `current_user.organization_id` を起点にした scope だけを扱える
 - テナント境界外の管理リソースは存在推測を避けるため `404 Not Found` を返す
 - `organization_admin` による `system_admin` 変更、別 organization への user 移動は禁止する
-- `users.email` は複数 organization で共有する login identity のため、organization_admin には変更させず system_admin のみ更新できる
+- `users.email_digest` は複数 organization で共有する login identity のため、organization_admin には変更させず system_admin のみ更新できる
 - 最後の active な `system_admin` の降格・停止は禁止する
 - User 停止は `suspended_at` による論理停止で、Devise 認証時にも停止ユーザーを拒否する
 

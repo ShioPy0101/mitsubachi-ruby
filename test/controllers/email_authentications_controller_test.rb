@@ -60,7 +60,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       stand_by_at: 1.minute.ago
     )
     EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest("pending-registration-token"),
       expires_at: 15.minutes.from_now,
       purpose: "registration",
@@ -101,7 +101,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_difference "EmailAuthentication.count", 1 do
-      post api_v1_auth_login_url, params: { email: user.email }
+      post api_v1_auth_login_url, params: { email: email_for(user) }
     end
 
     assert_response :ok
@@ -121,7 +121,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     user.update_column(:organization_id, nil)
 
     assert_difference "EmailAuthentication.count", 1 do
-      post api_v1_auth_login_url, params: { email: user.email }
+      post api_v1_auth_login_url, params: { email: email_for(user) }
     end
 
     assert_response :ok
@@ -146,7 +146,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       used_by_user: user
     )
     EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest("used-registration-token-before-window"),
       expires_at: 1.minute.ago,
       purpose: "registration",
@@ -155,7 +155,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_difference "EmailAuthentication.count", 1 do
-      post api_v1_auth_login_url, params: { email: user.email }
+      post api_v1_auth_login_url, params: { email: email_for(user) }
     end
 
     assert_response :ok
@@ -169,7 +169,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_no_difference "EmailAuthentication.count" do
-      post api_v1_auth_login_url, params: { email: user.email }
+      post api_v1_auth_login_url, params: { email: email_for(user) }
     end
 
     assert_generic_login_response
@@ -202,7 +202,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
 
     assert_no_difference "EmailAuthentication.count" do
-      post api_v1_auth_login_url, params: { email: user.email }
+      post api_v1_auth_login_url, params: { email: email_for(user) }
     end
 
     assert_generic_login_response
@@ -302,7 +302,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
     raw_token = "join-other-token"
     EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
       purpose: "registration",
@@ -382,7 +382,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
       status: :active
     )
     old_authentication = EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest("old-login-token"),
       expires_at: 15.minutes.from_now
     )
@@ -466,7 +466,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     user.update_column(:organization_id, nil)
     raw_token = "login-token-without-legacy-org"
     authentication = EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now
     )
@@ -483,7 +483,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
   test "verify rejects used token" do
     raw_token = "used-token"
     EmailAuthentication.create!(
-      email: users(:one).email,
+      email: email_for(users(:one)),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
       used_at: Time.current
@@ -498,7 +498,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
   test "verify rejects expired token without marking used" do
     raw_token = "expired-token"
     authentication = EmailAuthentication.create!(
-      email: users(:one).email,
+      email: email_for(users(:one)),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 1.second.ago
     )
@@ -518,7 +518,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
     raw_token = "pre-suspend-token"
     authentication = EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now
     )
@@ -547,7 +547,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
     raw_token = "suspended-registration-token"
     authentication = EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
       purpose: "registration",
@@ -565,7 +565,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
   test "same token cannot be verified twice" do
     raw_token = "single-use-token"
     authentication = EmailAuthentication.create!(
-      email: users(:one).email,
+      email: email_for(users(:one)),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now
     )
@@ -599,7 +599,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
     raw_token = "mismatch-token"
     authentication = EmailAuthentication.create!(
-      email: correct_user.email,
+      email: email_for(correct_user),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
       purpose: "registration",
@@ -616,7 +616,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
   test "registration verify endpoint rejects login token" do
     raw_token = "login-token-on-registration-endpoint"
     EmailAuthentication.create!(
-      email: users(:one).email,
+      email: email_for(users(:one)),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
       purpose: "login"
@@ -643,7 +643,7 @@ class EmailAuthenticationsControllerTest < ActionDispatch::IntegrationTest
     )
     raw_token = "registration-token-on-login-endpoint"
     EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
       purpose: "registration",

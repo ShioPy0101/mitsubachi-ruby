@@ -17,7 +17,7 @@ class GroupsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @organization.description, data.fetch("description")
     members = data.fetch("members")
     assert_includes members.pluck("display_name"), "User One"
-    assert_not_includes response.body, @user.email
+    assert_not_includes response.body, email_for(@user)
     assert_not_includes response.body, users(:two).display_name
   end
 

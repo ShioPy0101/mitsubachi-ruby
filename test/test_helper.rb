@@ -1,4 +1,5 @@
 ENV["RAILS_ENV"] ||= "test"
+ENV["EMAIL_IDENTITY_HMAC_KEY"] = "test-only-email-hmac-key-never-use-in-production"
 require_relative "../config/environment"
 require "rails/test_help"
 require "devise"
@@ -23,7 +24,14 @@ module ActiveSupport
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
 
-    # Add more helper methods to be used by all tests here...
+    # fixtureの入力値はテスト側が知っており、アプリの永続モデルから復元しない。
+    def email_for(user)
+      return user.email if user.email.present?
+      return "test1@example.com" if user.id == users(:one).id
+      return "test2@example.com" if user.id == users(:two).id
+
+      raise "Provide the original input email explicitly in this test"
+    end
   end
 end
 
@@ -33,7 +41,7 @@ class ActionDispatch::IntegrationTest
   def sign_in_with_magic_link(user)
     raw_token = SecureRandom.urlsafe_base64(32)
     EmailAuthentication.create!(
-      email: user.email,
+      email: email_for(user),
       token: Digest::SHA256.hexdigest(raw_token),
       expires_at: 15.minutes.from_now,
       purpose: "login"

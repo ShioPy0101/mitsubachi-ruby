@@ -72,7 +72,8 @@ class ApplicationController < ActionController::API
 
   def create_authenticated_session!(user)
     reset_session
-    sign_in(user)
+    # 再認証ではWarden内に同じUserが残るため、reset_session後も必ず新sessionへ保存する。
+    sign_in(user, force: true)
   end
 
   def destroy_authenticated_session!

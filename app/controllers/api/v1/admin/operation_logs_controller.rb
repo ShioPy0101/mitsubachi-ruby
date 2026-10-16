@@ -49,8 +49,8 @@ class Api::V1::Admin::OperationLogsController < Api::V1::Admin::BaseController
   end
 
   def actor_display_name(log, actor)
-    return log.metadata["actor_display_name"] || log.metadata["actor_email"] if actor.nil?
-    return actor.display_name.presence || actor.email if log.actor_kind == "user"
+    return log.metadata["actor_display_name"] if actor.nil?
+    return actor.safe_display_name if log.actor_kind == "user"
 
     "外部共有 ##{actor.id}"
   end
