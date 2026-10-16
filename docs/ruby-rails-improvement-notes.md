@@ -57,3 +57,10 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: Devise Validatable は平文カラムへの一意性SQLを生成し、Authenticatable の正規化callbackは未設定の仮想属性にもsetterを呼ぶため、通常のプロフィール更新でdigestを消し得る。
 - 望ましい改善: 入力属性・認証検索キー・永続化属性を分離できる公式の拡張点と、その組み合わせを検証する契約テスト。
 - 今回の回避策: 入力時に既存と同じstrip/downcaseを行い、emailのcallbackだけを迂回。メール検証を置換し、Deviseの共通検索入口でdigestへ変換する。再読込後の更新もテストする。
+
+## 2026-10-16: 同一Userの再認証とsession再生成
+
+- 状況: メール変更前のMagic Link再認証で既存sessionを再生成した。
+- 困った点: `reset_session` 後もWarden内には認証済みUserが残り、通常の `sign_in` が同一Userとして保存を省略すると次のリクエストで未認証になる。
+- 望ましい改善: session再生成とWardenの保存状態を同期する明示的な再認証API。
+- 今回の回避策: `sign_in(user, force: true)` で新sessionに再保存し、連続した再認証とメール変更申請をintegration testで検証した。

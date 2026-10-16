@@ -8,7 +8,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     @user = users(:one)
     @frontend_url = ENV["FRONTEND_URL"]
     ENV["FRONTEND_URL"] = "https://front.example"
-    sign_in @user
+    reauthenticate_for_email_change
     Rails.cache.clear
     ActionMailer::Base.deliveries.clear
   end
@@ -19,7 +19,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "requires login to update current user" do
-    sign_out @user
+    delete api_v1_logout_url
 
     patch api_v1_me_url, params: { display_name: "新しい表示名" }
 
@@ -36,7 +36,8 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     get api_v1_me_url
 
     assert_response :ok
-    assert_equal "pending@example.com", response.parsed_body.dig("data", "pending_email")
+    assert_nil response.parsed_body.dig("data", "pending_email")
+    assert_equal "awaiting_old_email_approval", response.parsed_body.dig("data", "email_change_stage")
   end
 
   test "returns active organization memberships" do
@@ -96,16 +97,17 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :ok
-    assert_equal "test1@example.com", @user.reload.email
-    assert_equal "newemail@example.com", @user.pending_email_change.new_email
-    assert_equal "newemail@example.com", response.parsed_body.fetch("pending_email")
+    assert_equal EmailIdentities::Digest.call("test1@example.com"), @user.reload.email_digest
+    assert_equal EmailIdentities::Digest.call("newemail@example.com"), @user.pending_email_change.new_email_digest
+    assert_nil response.parsed_body.fetch("pending_email")
+    assert_equal [ "test1@example.com" ], ActionMailer::Base.deliveries.last.to
     assert_equal 1, ActionMailer::Base.deliveries.size
     refute_includes @user.pending_email_change.token_digest, "NewEmail"
   end
 
   test "rejects duplicate email change request" do
     assert_no_difference "UserEmailChange.count" do
-      post email_change_api_v1_me_url, params: { email: users(:two).email }
+      post email_change_api_v1_me_url, params: { email: email_for(users(:two)) }
     end
 
     assert_response :unprocessable_entity
@@ -130,7 +132,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
   test "does not persist email change request when delivery fails" do
     original_delivery = UserEmailChangeMailer.method(:with)
     failing_message = Object.new
-    failing_message.define_singleton_method(:confirmation) { self }
+    failing_message.define_singleton_method(:approval) { self }
     failing_message.define_singleton_method(:deliver_now) { raise Net::SMTPFatalError, "delivery failed" }
     UserEmailChangeMailer.define_singleton_method(:with) { |**| failing_message }
 
@@ -139,27 +141,28 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :unprocessable_entity
-    assert_equal "test1@example.com", @user.reload.email
+    assert_equal EmailIdentities::Digest.call("test1@example.com"), @user.reload.email_digest
   ensure
     UserEmailChangeMailer.define_singleton_method(:with, original_delivery)
   end
 
   test "verifies email change with valid token and notifies old email" do
-    raw_token = "valid-email-change-token"
-    @user.user_email_changes.create!(
-      new_email: "verified@example.com",
-      token_digest: UserEmailChange.digest_token(raw_token),
-      expires_at: 30.minutes.from_now
-    )
-    sign_out @user
-
-    assert_difference "OperationLog.where(operation_type: 'user.email_changed').count", 1 do
-      post email_change_verify_api_v1_me_url, params: { token: raw_token }
+    post email_change_api_v1_me_url, params: { email: "verified@example.com" }
+    old_token = last_mail_token
+    delete api_v1_logout_url
+    assert_no_changes -> { @user.reload.email_digest } do
+      post email_change_approve_api_v1_me_url, params: { token: old_token }
       assert_response :ok
     end
-
-    assert_equal "verified@example.com", @user.reload.email
+    new_token = last_mail_token
+    assert_equal [ "verified@example.com" ], ActionMailer::Base.deliveries.last.to
+    assert_difference "OperationLog.where(operation_type: 'user.email_changed').count", 1 do
+      post email_change_verify_api_v1_me_url, params: { token: new_token }
+      assert_response :ok
+    end
+    assert_equal EmailIdentities::Digest.call("verified@example.com"), @user.reload.email_digest
     assert @user.user_email_changes.last.used_at.present?
+    assert_nil @user.user_email_changes.last.delivery_addresses_ciphertext
     assert_equal [ "test1@example.com" ], ActionMailer::Base.deliveries.last.to
   end
 
@@ -180,7 +183,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     post email_change_verify_api_v1_me_url, params: { token: raw_token }
 
     assert_response :gone
-    assert_equal "test1@example.com", @user.reload.email
+    assert_equal EmailIdentities::Digest.call("test1@example.com"), @user.reload.email_digest
   end
 
   test "rejects used email change token" do
@@ -214,15 +217,36 @@ class MeControllerTest < ActionDispatch::IntegrationTest
 
   test "rate limits email change requests" do
     5.times do
-      sign_in @user
+      reauthenticate_for_email_change
       post email_change_api_v1_me_url, params: { email: "limited@example.com" }
       assert_response :ok
     end
 
-    sign_in @user
+    reauthenticate_for_email_change
     post email_change_api_v1_me_url, params: { email: "limited@example.com" }
 
     assert_response :too_many_requests
     assert_equal "900", response.headers["Retry-After"]
+  end
+  test "existing login session is insufficient without email change reauthentication" do
+    delete api_v1_logout_url
+    sign_in @user
+    post email_change_api_v1_me_url, params: { email: "new@example.com" }
+    assert_response :unauthorized
+    assert_equal "reauthentication_required", response.parsed_body.dig("error", "code")
+    assert_equal "/login", response.parsed_body.dig("error", "details", "login_path")
+  end
+
+  private
+
+  def reauthenticate_for_email_change
+    result = Auth::MagicLinks.new.request_login(email: "test1@example.com", intent: "email_change")
+    post api_v1_auth_login_verify_url, params: { token: result.token }
+    assert_response :ok
+  end
+
+  def last_mail_token
+    url = ActionMailer::Base.deliveries.last.text_part.decoded.lines.find { |line| line.start_with?("https://") }.strip
+    Rack::Utils.parse_query(URI(url).query).fetch("token")
   end
 end

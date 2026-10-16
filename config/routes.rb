@@ -10,6 +10,7 @@ Rails.application.routes.draw do
       resource :csrf_token, only: :show
       resource :me, only: %i[show update], controller: :me do
         post "email_change", action: :request_email_change
+        post "email_change/approve", action: :approve_email_change
         post "email_change/verify", action: :verify_email_change
         delete "email_change", action: :cancel_email_change
       end
