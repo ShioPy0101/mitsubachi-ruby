@@ -71,3 +71,9 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: そのkeysをjoinしたLOCK TABLE文もSQL injectionとして検出され、最終checkが失敗した。
 - 望ましい改善: 変更不能な定数リテラルに由来する識別子を静的解析で追跡できること。
 - 今回の回避策: 対象4テーブルのLOCK TABLE文を固定文字列にし、ユーザー入力が入らないことをコード上でも明示した。警告のignore追加は行わない。
+## 2026-08-28: parallel test のDB分離とfilesystem共有
+
+- 状況: DriveItem ID から決定的に算出する Preview cache を追加し、Rails の process 並列テストで purge と生成を検証した。
+- 困った点: Rails は test DB を worker ごとに分離するが filesystem root は自動では分離しないため、別 DB で同じ ID が採番され、ある worker の purge が別 worker の cache を削除した。
+- 改善されるとよい点: Active Storage 以外の filesystem を使う test 向けに、parallel worker ID を含む一時 root と終了時 cleanup を Rails が共通設定として提供するとよい。
+- 今回の回避策: `parallelize_setup` で `media_preview_root` を worker ごとに分離し、production の決定的な cache path は変更せずに filesystem を使うテスト間の干渉を防いだ。

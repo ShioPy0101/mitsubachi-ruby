@@ -31,6 +31,7 @@ Rails.application.routes.draw do
         get "shares/:token/items", to: "shares#items"
         get "shares/:token/items/:drive_item_id", to: "shares#item"
         get "shares/:token/items/:drive_item_id/preview", to: "shares#preview"
+        get "shares/:token/items/:drive_item_id/thumbnail", to: "shares#thumbnail"
         get "shares/:token/items/:drive_item_id/download", to: "shares#download"
         post "shares/:token/bulk_download", to: "shares#bulk_download"
       end
@@ -92,6 +93,7 @@ Rails.application.routes.draw do
         resources :drive_items do
           collection do
             get :search
+            get :check_name
             get :trash
             post :bulk_move
             post :bulk_delete
@@ -103,6 +105,7 @@ Rails.application.routes.draw do
 
           member do
             get :preview
+            get :thumbnail
             get :download
             get :stream
             patch :move
@@ -136,6 +139,7 @@ Rails.application.routes.draw do
       resources :drive_items do
         collection do
           get :search
+          get :check_name
           get :trash
           post :bulk_move
           post :bulk_delete
@@ -147,6 +151,7 @@ Rails.application.routes.draw do
 
         member do
           get :preview
+          get :thumbnail
           get :download
           get :stream
           patch :move
@@ -160,6 +165,7 @@ Rails.application.routes.draw do
         resources :drive_items, controller: :drive_items do
           collection do
             get :search
+            get :check_name
             get :trash
             post :bulk_move
             post :bulk_delete
@@ -171,6 +177,7 @@ Rails.application.routes.draw do
 
           member do
             get :preview
+            get :thumbnail
             get :download
             get :stream
             patch :move

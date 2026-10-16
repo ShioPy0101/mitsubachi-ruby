@@ -79,6 +79,35 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
     assert_not File.exist?(path)
   end
 
+  test "trashではpreview cacheを維持しpurgeで削除する" do
+    file = create_file(body: "preview cache")
+    preview_path = write_preview_cache(file)
+
+    trash_result = DriveItems::TrashService.new(drive_items: [ file ]).call
+    assert trash_result.success?
+    assert File.exist?(preview_path)
+
+    purge_result = purge(file.reload)
+
+    assert purge_result.success?
+    assert_not File.exist?(preview_path)
+  end
+
+  test "preview cache削除失敗でもOriginalのpurgeは成功する" do
+    file = create_file(body: "preview failure", deleted_at: Time.current)
+    logger = CapturingLogger.new
+
+    result = with_singleton_method(Rails, :logger, -> { logger }) do
+      with_singleton_method(MediaPreviews::CachePath, :delete_item_cache, ->(**) { raise Errno::EACCES, "denied" }) do
+        purge(file)
+      end
+    end
+
+    assert result.success?
+    assert file.reload.purged_at.present?
+    assert logger.warnings.any? { |message| message.include?("preview cache deletion failed") }
+  end
+
   test "DB更新途中の例外は全件をロールバックして実ファイルを残す" do
     root = create_directory(deleted_at: Time.current)
     first = create_file(parent: root, body: "first")
@@ -224,14 +253,19 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
   private
 
   class CapturingLogger
-    attr_reader :errors
+    attr_reader :errors, :warnings
 
     def initialize
       @errors = []
+      @warnings = []
     end
 
     def error(message)
       @errors << message
+    end
+
+    def warn(message)
+      @warnings << message
     end
   end
 
@@ -274,6 +308,13 @@ class DriveItems::PurgeServiceTest < ActiveSupport::TestCase
 
   def storage_path_for(item)
     DriveItem.storage_root.join(item.blob_path)
+  end
+
+  def write_preview_cache(item)
+    path = MediaPreviews::CachePath.new(drive_item: item).absolute_path
+    FileUtils.mkdir_p(path.dirname)
+    File.binwrite(path, "preview")
+    path
   end
 
   def with_singleton_method(receiver, method_name, implementation)

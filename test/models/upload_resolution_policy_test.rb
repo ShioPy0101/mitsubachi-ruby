@@ -23,22 +23,22 @@ class UploadResolutionPolicyTest < ActiveSupport::TestCase
     policy = UploadResolutionPolicy.from_params(
       ActionController::Parameters.new(
         upload_policy: [
-          { category: "active_content_duplicate", resolution: "skip", scope: "batch" },
-          { category: "active_content_duplicate", resolution: "upload_anyway", scope: "item", itemKey: "task-1" }
+          { category: "duplicate_name", resolution: "skip", scope: "batch" },
+          { category: "duplicate_name", resolution: "auto_rename", scope: "item", itemKey: "task-1" }
         ].to_json
       )
     )
 
-    assert_equal :upload_anyway, policy.resolution_for(:active_content_duplicate, item_key: "task-1")
-    assert_equal :skip, policy.resolution_for(:active_content_duplicate, item_key: "task-2")
-    assert_nil policy.resolution_for(:duplicate_name, item_key: "task-1")
+    assert_equal :auto_rename, policy.resolution_for(:duplicate_name, item_key: "task-1")
+    assert_equal :skip, policy.resolution_for(:duplicate_name, item_key: "task-2")
+    assert_nil policy.resolution_for(:invalid_parent, item_key: "task-1")
   end
 
   test "explicit item policy requires item key" do
     assert_raises(UploadResolutionPolicy::InvalidPolicy) do
       UploadResolutionPolicy.from_params(
         ActionController::Parameters.new(
-          upload_policy: { category: "active_content_duplicate", resolution: "upload_anyway", scope: "item" }.to_json
+          upload_policy: { category: "duplicate_name", resolution: "auto_rename", scope: "item" }.to_json
         )
       )
     end
@@ -64,7 +64,7 @@ class UploadResolutionPolicyTest < ActiveSupport::TestCase
     end
   end
 
-  test "legacy fields normalize to item-scoped rules" do
+  test "legacy name field normalizes to item-scoped rule and content field is ignored" do
     policy = UploadResolutionPolicy.from_params(
       ActionController::Parameters.new(
         allow_duplicate_content: "true",
@@ -73,18 +73,20 @@ class UploadResolutionPolicyTest < ActiveSupport::TestCase
       default_item_key: "task-1"
     )
 
-    assert_equal :upload_anyway, policy.resolution_for(:active_content_duplicate, item_key: "task-1")
     assert_equal :auto_rename, policy.resolution_for(:duplicate_name, item_key: "task-1")
-    assert_nil policy.resolution_for(:trash_content_duplicate, item_key: "task-1")
+    assert_equal 1, policy.rules.size
   end
 
-  test "workflow event matrix is derived from conflict matrix" do
+  test "deprecated content duplicate policies are ignored" do
     policy = UploadResolutionPolicy.from_params(
       ActionController::Parameters.new(
-        upload_policy: { category: "active_content_duplicate", resolution: "upload_anyway", scope: "batch" }.to_json
+        upload_policy: [
+          { category: "active_content_duplicate", resolution: "upload_anyway", scope: "batch" },
+          { category: "trash_content_duplicate", resolution: "restore", scope: "batch" }
+        ].to_json
       )
     )
 
-    assert_equal :continue_with_warning, policy.workflow_event_for(:active_content_duplicate, :upload_anyway)
+    assert_empty policy.rules
   end
 end

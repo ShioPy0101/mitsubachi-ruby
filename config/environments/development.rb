@@ -74,14 +74,22 @@ Rails.application.configure do
   config.action_mailer.delivery_method = :smtp
   config.action_mailer.perform_deliveries = true
 
-  config.action_mailer.smtp_settings = {
-    address: "smtp.resend.com",
-    port: 587,
-    user_name: "resend",
-    password: ENV.fetch("RESEND_API_KEY"),
-    authentication: :plain,
-    enable_starttls_auto: true
+  smtp_authentication = ENV.fetch("SMTP_AUTHENTICATION", "plain")
+  smtp_settings = {
+    address: ENV.fetch("SMTP_ADDRESS", "smtp.resend.com"),
+    port: Integer(ENV.fetch("SMTP_PORT", "587")),
+    authentication: smtp_authentication == "none" ? nil : smtp_authentication.to_sym,
+    enable_starttls_auto: ENV.fetch("SMTP_ENABLE_STARTTLS_AUTO", "true") == "true"
   }
+
+  # Mailpitなど認証なしのローカルSMTPではResendの秘密情報を要求しない。
+  # 認証を使う通常のdevelopment起動は、従来どおりResendを既定値とする。
+  unless smtp_authentication == "none"
+    smtp_settings[:user_name] = ENV.fetch("SMTP_USERNAME", "resend")
+    smtp_settings[:password] = ENV.fetch("SMTP_PASSWORD") { ENV.fetch("RESEND_API_KEY") }
+  end
+
+  config.action_mailer.smtp_settings = smtp_settings
 
   config.action_mailer.default_options = {
     from: ENV.fetch("MAIL_FROM")

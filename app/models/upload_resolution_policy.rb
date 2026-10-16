@@ -6,30 +6,11 @@ require "json"
 class UploadResolutionPolicy
   class InvalidPolicy < StandardError; end
 
+  # 内容一致は競合ではなくなったため、移行期間中は旧クライアントが送るルールを無視する。
+  # 未知のカテゴリは従来どおり拒否し、入力ミスを見逃さない。
+  DEPRECATED_IGNORED_CATEGORIES = %i[active_content_duplicate trash_content_duplicate].freeze
+
   CONFLICT_MATRIX = {
-    active_content_duplicate: {
-      default_resolution: nil,
-      allowed_resolutions: %i[upload_anyway skip use_existing],
-      workflow_events: {
-        upload_anyway: :continue_with_warning,
-        skip: :skip_upload,
-        use_existing: :reuse_existing
-      },
-      http_status: :conflict,
-      error_code: :active_content_duplicate
-    },
-    trash_content_duplicate: {
-      default_resolution: nil,
-      allowed_resolutions: %i[upload_anyway restore replace skip],
-      workflow_events: {
-        upload_anyway: :continue_with_warning,
-        restore: :restore_existing,
-        replace: :replace_existing,
-        skip: :skip_upload
-      },
-      http_status: :conflict,
-      error_code: :trash_content_duplicate
-    },
     duplicate_name: {
       default_resolution: nil,
       allowed_resolutions: %i[auto_rename skip],
@@ -77,15 +58,6 @@ class UploadResolutionPolicy
 
   def self.legacy_rules_from(params, default_item_key:)
     rules = []
-    if truthy?(params[:allow_duplicate_content]) || params[:duplicate_content_action] == "upload_anyway"
-      rules << build_rule(
-        category: :active_content_duplicate,
-        resolution: :upload_anyway,
-        scope: :item,
-        item_key: default_item_key,
-        legacy: true
-      )
-    end
     if params[:name_conflict_action] == "auto_rename"
       rules << build_rule(
         category: :duplicate_name,
@@ -113,8 +85,10 @@ class UploadResolutionPolicy
         raise InvalidPolicy, "upload_policy must be an object or array"
       end
 
-    entries.map do |entry|
+    entries.filter_map do |entry|
       canonical = canonical_hash(entry)
+      next if DEPRECATED_IGNORED_CATEGORIES.include?(canonical["category"].to_s.to_sym)
+
       build_rule(
         category: canonical.fetch("category"),
         resolution: canonical.fetch("resolution"),
@@ -153,10 +127,6 @@ class UploadResolutionPolicy
 
   def self.hash_like?(value)
     value.is_a?(Hash) || value.is_a?(ActionController::Parameters)
-  end
-
-  def self.truthy?(value)
-    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   attr_reader :rules
