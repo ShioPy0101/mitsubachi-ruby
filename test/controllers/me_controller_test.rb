@@ -252,6 +252,7 @@ class MeControllerTest < ActionDispatch::IntegrationTest
     result = Auth::MagicLinks.new.request_login(email: "test1@example.com", intent: "email_change")
     post api_v1_auth_login_verify_url, params: { token: result.token }
     assert_response :ok
+    assert_equal true, response.parsed_body.fetch("email_change_reauthenticated")
   end
 
   def last_mail_token

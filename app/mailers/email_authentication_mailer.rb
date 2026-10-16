@@ -41,7 +41,9 @@ class EmailAuthenticationMailer < ApplicationMailer
   end
 
   def authentication_url(token, purpose)
-    query = Rack::Utils.build_query(token: token, purpose: purpose)
+    values = { token: token, purpose: purpose }
+    values[:intent] = "email_change" if @authentication.email_change_reauthentication?
+    query = Rack::Utils.build_query(values)
 
     "#{ENV.fetch("FRONTEND_URL")}/auth/verify?#{query}"
   end

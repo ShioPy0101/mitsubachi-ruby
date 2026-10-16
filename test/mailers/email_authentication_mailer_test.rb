@@ -155,4 +155,9 @@ class EmailAuthenticationMailerTest < ActionMailer::TestCase
       assert_includes message.text_part.decoded, "queued-registration-token"
     end
   end
+  test "reauthentication link carries the email change intent for the frontend" do
+    authentication = EmailAuthentication.create!(email: "test1@example.com", token: "reauth-mail-token", delivery_token: "raw-reauth-token", purpose: "login", email_change_reauthentication: true, expires_at: 15.minutes.from_now)
+    mail = EmailAuthenticationMailer.with(email: "test1@example.com", authentication: authentication, organizations: [ organizations(:one) ]).login_link
+    assert_includes mail.text_part.decoded, "intent=email_change"
+  end
 end

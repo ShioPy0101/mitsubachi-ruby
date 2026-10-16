@@ -97,6 +97,7 @@ class Api::V1::EmailAuthenticationsController < ApplicationController
 
     render json: {
       message: "ログインに成功しました",
+      email_change_reauthenticated: result.authentication.email_change_reauthentication?,
       user: {
         id: result.user.id,
         email: result.user.email,
