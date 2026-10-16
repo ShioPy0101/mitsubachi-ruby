@@ -35,6 +35,7 @@ class EmailAuthentications::MagicLinkDeliveryTest < ActiveSupport::TestCase
     assert_equal "EmailAuthenticationMailer", enqueued_jobs.last.fetch("arguments").first
     assert_equal "login_link", enqueued_jobs.last.fetch("arguments").second
     refute_includes enqueued_jobs.last.to_s, raw_token
+    refute_includes enqueued_jobs.last.to_s, authentication.email
   end
 
   test "registration purpose enqueues registration_link without raw token job argument" do
@@ -53,6 +54,7 @@ class EmailAuthentications::MagicLinkDeliveryTest < ActiveSupport::TestCase
     assert_equal "EmailAuthenticationMailer", enqueued_jobs.last.fetch("arguments").first
     assert_equal "registration_link", enqueued_jobs.last.fetch("arguments").second
     refute_includes enqueued_jobs.last.to_s, raw_token
+    refute_includes enqueued_jobs.last.to_s, authentication.email
   end
 
   test "unknown purpose fails explicitly" do

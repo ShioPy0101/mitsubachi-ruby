@@ -4,7 +4,7 @@ class EmailAuthenticationMailer < ApplicationMailer
     assign_authentication_mail_values
 
     mail(
-      to: params[:email],
+      to: recipient,
       subject: "【Mitsubachi】アカウント登録のご案内"
     )
   end
@@ -14,7 +14,7 @@ class EmailAuthenticationMailer < ApplicationMailer
     assign_authentication_mail_values
 
     mail(
-      to: params[:email],
+      to: recipient,
       subject: "【Mitsubachi】ログインリンクのご案内"
     )
   end
@@ -26,6 +26,12 @@ class EmailAuthenticationMailer < ApplicationMailer
     @auth_url = authentication_url(authentication_token, @authentication.purpose)
     @issued_at = format_mail_time(@authentication.created_at)
     @expires_at = format_mail_time(@authentication.expires_at)
+  end
+
+  def recipient
+    return params[:email] if params[:email].present?
+
+    EmailIdentities::DeliveryPayload.decrypt(params.fetch(:recipient_ciphertext), purpose: "magic_link")
   end
 
   def authentication_token
