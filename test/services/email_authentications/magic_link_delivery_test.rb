@@ -23,7 +23,7 @@ class EmailAuthentications::MagicLinkDeliveryTest < ActiveSupport::TestCase
     raw_token = "service-login-token"
     authentication = create_authentication(raw_token:, purpose: "login")
 
-    assert_enqueued_jobs 1, only: ActionMailer::MailDeliveryJob do
+    assert_enqueued_jobs 1, only: EmailAuthenticationDeliveryJob do
       EmailAuthentications::MagicLinkDelivery.call(
         email: authentication.email,
         organization: organizations(:one),
@@ -42,7 +42,7 @@ class EmailAuthentications::MagicLinkDeliveryTest < ActiveSupport::TestCase
     raw_token = "service-registration-token"
     authentication = create_authentication(raw_token:, purpose: "registration", organization_invite: organization_invites(:one))
 
-    assert_enqueued_jobs 1, only: ActionMailer::MailDeliveryJob do
+    assert_enqueued_jobs 1, only: EmailAuthenticationDeliveryJob do
       EmailAuthentications::MagicLinkDelivery.call(
         email: authentication.email,
         organization: organizations(:one),

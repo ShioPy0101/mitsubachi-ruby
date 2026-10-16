@@ -1,4 +1,5 @@
 class EmailAuthenticationMailer < ApplicationMailer
+  self.delivery_job = EmailAuthenticationDeliveryJob
   def registration_link
     @organization = params.fetch(:organization)
     assign_authentication_mail_values
