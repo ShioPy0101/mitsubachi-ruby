@@ -18,10 +18,23 @@ class OperationLogs::RecorderTest < ActiveSupport::TestCase
     assert_equal target.filename, log.metadata["target_name"]
     assert log.metadata["target_path"].end_with?(target.filename)
     assert_equal organization.name, log.metadata["organization_name"]
-    assert_equal actor.email, log.metadata["actor_email"]
+    assert_equal actor.email_digest, log.metadata["actor_email_digest"]
+    refute log.metadata.key?("actor_email")
     assert_equal actor.display_name, log.metadata["actor_display_name"]
   end
 
+
+  test "redacts email values even when input user retains its transient address" do
+    actor = User.create!(email: "private@example.com", password: "password123")
+    log = OperationLogs::Recorder.record!(operation_type: "user.updated", actor_user: actor,
+      changes: { email: [ "old@example.com", "private@example.com" ] },
+      metadata: { message: "SMTP rejected private@example.com", nested: { recipient: "private@example.com" } })
+    refute_includes log.attributes.to_json, "@example.com"
+    assert_equal actor.email_digest, log.metadata.fetch("actor_email_digest")
+    error = StandardError.new("SMTP rejected private@example.com")
+    refute_includes SystemEvents::Sanitizer.safe_error_message(error), "@example.com"
+    refute_includes SystemEvents::Sanitizer.new(email: "private@example.com", description: error.message).call.to_json, "@example.com"
+  end
 
   test "canonical snapshots cannot be overwritten by caller metadata" do
     target = drive_items(:one)
