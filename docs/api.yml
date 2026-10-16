@@ -144,7 +144,8 @@ paths:
     post:
       operationId: postApiV1MeEmailChange
       tags: [Session]
-      summary: Request an email address change for the authenticated user.
+      summary: Request an email address change after dedicated reauthentication.
+      description: Requires a login link verified with intent=email_change within five minutes. Sends approval to the old address; does not update the user yet. A 401 reauthentication_required response instructs the frontend to show its login screen.
       requestBody:
         required: true
         content:
@@ -158,7 +159,7 @@ paths:
                   format: email
       responses:
         "200":
-          description: Confirmation mail sent.
+          description: Old address approval mail sent. Response includes email_change_stage=awaiting_old_email_approval and pending_email=null.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
@@ -174,6 +175,29 @@ paths:
           $ref: "#/components/responses/Message"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/me/email_change/approve:
+    post:
+      operationId: postApiV1MeEmailChangeApprove
+      tags: [Session]
+      summary: Approve the email change using the old address token and send confirmation to the new address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "410":
+          $ref: "#/components/responses/ValidationError"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /api/v1/me/email_change/verify:
     post:
       operationId: postApiV1MeEmailChangeVerify
@@ -310,6 +334,10 @@ paths:
                 email:
                   type: string
                   format: email
+                intent:
+                  type: string
+                  enum: [email_change]
+                  description: Request a dedicated login before changing the email address.
       responses:
         "200":
           $ref: "#/components/responses/Message"
@@ -340,12 +368,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [message, data]
+                required: [message, user, email_change_reauthenticated]
                 properties:
                   message:
                     type: string
-                  data:
+                  user:
                     $ref: "#/components/schemas/User"
+                  email_change_reauthenticated:
+                    type: boolean
+                    description: Return to email change settings after this dedicated login.
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -373,12 +404,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [message, data]
+                required: [message, user, email_change_reauthenticated]
                 properties:
                   message:
                     type: string
-                  data:
+                  user:
                     $ref: "#/components/schemas/User"
+                  email_change_reauthenticated:
+                    type: boolean
+                    description: Return to email change settings after this dedicated login.
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -406,12 +440,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [message, data]
+                required: [message, user, email_change_reauthenticated]
                 properties:
                   message:
                     type: string
-                  data:
+                  user:
                     $ref: "#/components/schemas/User"
+                  email_change_reauthenticated:
+                    type: boolean
+                    description: Return to email change settings after this dedicated login.
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -3214,6 +3251,7 @@ components:
         owner_email:
           type: string
           format: email
+          nullable: true
         parent_id:
           type: integer
           nullable: true
@@ -3682,10 +3720,12 @@ components:
             email:
               type: string
               format: email
+              nullable: true
         email:
           type: string
           format: email
           nullable: true
+          description: Always null; the address is stored only as an irreversible HMAC.
         role:
           type: string
           enum: [member, organization_admin]
@@ -3732,10 +3772,17 @@ components:
         email:
           type: string
           format: email
+          nullable: true
+          description: Always null; the address is stored only as an irreversible HMAC.
         pending_email:
           type: string
           format: email
           nullable: true
+          description: Always null; temporary delivery addresses are never returned.
+        email_change_stage:
+          type: string
+          nullable: true
+          enum: [awaiting_old_email_approval, awaiting_new_email_confirmation, null]
         name:
           type: string
         display_name:
