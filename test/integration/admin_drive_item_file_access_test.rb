@@ -112,7 +112,7 @@ class AdminDriveItemFileAccessTest < ActionDispatch::IntegrationTest
     assert_response :ok
     data = response.parsed_body.fetch("data")
     assert_equal @own_file.owner_user_id, data.fetch("owner_user_id")
-    assert_equal @own_file.owner_user.email, data.fetch("owner_email")
+    assert_nil data.fetch("owner_email")
     assert_equal "198.51.100.20", data.fetch("upload_ip_address")
     assert_equal @own_file.created_at.iso8601(3), data.fetch("uploaded_at")
     assert_equal @own_file.file_size, data.fetch("file_size")
