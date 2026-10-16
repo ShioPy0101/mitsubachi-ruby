@@ -8,6 +8,11 @@ class EmailAuthentication < ApplicationRecord
     self.email_digest = @email.present? ? EmailIdentities::Digest.call(@email) : nil
   end
 
+  def reload(*)
+    @email = nil
+    super
+  end
+
   PURPOSES = %w[registration login].freeze
   DELIVERY_TOKEN_CIPHER = "aes-256-gcm"
   DELIVERY_TOKEN_SALT = "mitsubachi email authentication delivery token"
