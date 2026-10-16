@@ -42,5 +42,4 @@ class OrganizationInvite < ApplicationRecord
   def revoked?
     revoked_at.present?
   end
-
 end
