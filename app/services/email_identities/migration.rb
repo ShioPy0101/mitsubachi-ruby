@@ -12,10 +12,13 @@ module EmailIdentities
     def backfill!
       EmailIdentityKey.bind!
       TABLES.each do |table, (source, target, required)|
+        next unless ApplicationRecord.connection.column_exists?(table, source)
+
         model(table).find_each do |row|
           row.with_lock do
             next if row[source].blank? && !required
             next if row[source].nil? && row[target].present?
+            raise "Missing legacy email: #{table} id=#{row.id}" if required && row[source].blank?
 
             expected = Digest.call(row[source])
             if row[target].present? && row[target] != expected
@@ -32,7 +35,10 @@ module EmailIdentities
       EmailIdentityKey.verify!
       TABLES.each do |table, (source, target, required)|
         model(table).find_each do |row|
-          if (required && row[target].blank?) || (row[source].present? && row[target] != Digest.call(row[source]))
+          source_value = row.has_attribute?(source) ? row[source] : nil
+          if (required && row[target].blank?) ||
+              (row[target].present? && !row[target].match?(/\A[0-9a-f]{64}\z/)) ||
+              (source_value.present? && row[target] != Digest.call(source_value))
             raise "Email digest verification failed: #{table} id=#{row.id}"
           end
         end
@@ -41,19 +47,15 @@ module EmailIdentities
     end
 
     # 全テーブルを排他ロックし、検証と削除の間に旧workerが書き込む競合を防ぐ。
-    # 元データは全件検証に成功したtransactionでのみ消去し、以後DB制約でも平文保存を拒否する。
+    # 元データは全件検証に成功したtransactionでのみ消去し、旧カラムとそのindexも削除する。
     def finalize!
       ApplicationRecord.transaction do
         connection = ApplicationRecord.connection
         connection.execute("LOCK TABLE #{TABLES.keys.join(', ')} IN ACCESS EXCLUSIVE MODE")
         verify!
         TABLES.each do |table, (source, target, required)|
-          model(table).where.not(source => nil).update_all(source => nil)
           connection.change_column_null(table, target, false) if required
-          name = "#{table}_legacy_email_cleared"
-          unless connection.check_constraint_exists?(table, name: name)
-            connection.add_check_constraint(table, "#{source} IS NULL", name: name)
-          end
+          connection.remove_column(table, source) if connection.column_exists?(table, source)
         end
       end
     end

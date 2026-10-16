@@ -31,6 +31,22 @@ class EmailIdentities::MigrationTest < ActiveSupport::TestCase
     assert_equal original, users(:one).reload.email_digest
   end
 
+  test "migrated outstanding magic link still authenticates after source columns are removed" do
+    raw = "legacy-valid-token"
+    token_digest = Digest::SHA256.hexdigest(raw)
+    EmailAuthentication.connection.execute("INSERT INTO email_authentications (email, token, purpose, expires_at, created_at, updated_at) VALUES ('test1@example.com', '#{token_digest}', 'login', CURRENT_TIMESTAMP + INTERVAL '10 minutes', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)")
+    migration = EmailIdentities::Migration.new
+    migration.backfill!
+    migration.finalize!
+    assert_equal users(:one).id, Auth::MagicLinks.new.verify(raw).user.id
+  end
+
+  test "missing source and digest stops migration without manufacturing an identity" do
+    User.connection.execute("UPDATE users SET email = NULL")
+    assert_raises(RuntimeError) { EmailIdentities::Migration.new.backfill! }
+    assert_nil users(:one).reload.email_digest
+  end
+
   test "mismatch blocks source deletion" do
     migration = EmailIdentities::Migration.new
     migration.backfill!
@@ -43,8 +59,9 @@ class EmailIdentities::MigrationTest < ActiveSupport::TestCase
     migration = EmailIdentities::Migration.new
     migration.backfill!
     migration.finalize!
-    assert_nil User.connection.select_value("SELECT email FROM users LIMIT 1")
+    assert_not User.connection.column_exists?(:users, :email)
     assert migration.verify!
+    migration.finalize!
     assert_raises(ActiveRecord::StatementInvalid) do
       ApplicationRecord.transaction(requires_new: true) do
         User.connection.execute("UPDATE users SET email = 'forbidden@example.com'")
