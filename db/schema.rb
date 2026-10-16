@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -88,15 +88,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
     t.datetime "created_at", null: false
     t.text "delivery_token_ciphertext"
     t.string "email"
+    t.string "email_digest", limit: 64
     t.datetime "expires_at"
     t.bigint "organization_invite_id"
     t.string "purpose", default: "login", null: false
     t.string "token"
     t.datetime "updated_at", null: false
     t.datetime "used_at"
+    t.index [ "email_digest" ], name: "index_email_authentications_on_email_digest"
     t.index [ "organization_invite_id" ], name: "index_email_authentications_on_organization_invite_id"
     t.index [ "purpose" ], name: "index_email_authentications_on_purpose"
     t.index [ "token" ], name: "index_email_authentications_on_token", unique: true
+  end
+
+  create_table "email_identity_keys", force: :cascade do |t|
+    t.string "fingerprint", null: false
   end
 
   create_table "external_share_items", force: :cascade do |t|
@@ -162,6 +168,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
     t.string "code", null: false
     t.datetime "created_at", null: false
     t.string "email"
+    t.string "email_digest", limit: 64
     t.datetime "expires_at", null: false
     t.bigint "invited_by_user_id"
     t.bigint "organization_id", null: false
@@ -174,6 +181,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
     t.bigint "used_by_user_id"
     t.index "lower((email)::text)", name: "index_organization_invites_on_lower_email"
     t.index [ "code" ], name: "index_organization_invites_on_code", unique: true
+    t.index [ "email_digest" ], name: "index_organization_invites_on_email_digest"
     t.index [ "invited_by_user_id" ], name: "index_organization_invites_on_invited_by_user_id"
     t.index [ "organization_id" ], name: "index_organization_invites_on_organization_id"
     t.index [ "revoked_at" ], name: "index_organization_invites_on_revoked_at"
@@ -309,12 +317,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
     t.datetime "cancelled_at"
     t.datetime "created_at", null: false
     t.datetime "expires_at", null: false
-    t.string "new_email", null: false
+    t.string "new_email"
+    t.string "new_email_digest", limit: 64
     t.string "token_digest", null: false
     t.datetime "updated_at", null: false
     t.datetime "used_at"
     t.bigint "user_id", null: false
     t.index "lower((new_email)::text)", name: "index_active_email_changes_on_lower_new_email", unique: true, where: "((used_at IS NULL) AND (cancelled_at IS NULL))"
+    t.index [ "new_email_digest" ], name: "index_active_email_changes_on_new_email_digest", unique: true, where: "((used_at IS NULL) AND (cancelled_at IS NULL))"
     t.index [ "token_digest" ], name: "index_user_email_changes_on_token_digest", unique: true
     t.index [ "user_id" ], name: "index_active_email_changes_on_user_id", unique: true, where: "((used_at IS NULL) AND (cancelled_at IS NULL))"
     t.index [ "user_id" ], name: "index_user_email_changes_on_user_id"
@@ -323,7 +333,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
   create_table "users", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "display_name"
-    t.string "email", null: false
+    t.string "email"
+    t.string "email_digest", limit: 64
     t.string "encrypted_password", default: "", null: false
     t.datetime "last_sign_in_at"
     t.string "name"
@@ -335,6 +346,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_090000) do
     t.datetime "suspended_at"
     t.datetime "updated_at", null: false
     t.index "lower((email)::text)", name: "index_users_on_lower_email_unique", unique: true
+    t.index [ "email_digest" ], name: "index_users_on_email_digest", unique: true
     t.index [ "last_sign_in_at" ], name: "index_users_on_last_sign_in_at"
     t.index [ "organization_id", "display_name" ], name: "index_users_on_org_id_and_display_name", unique: true, where: "(display_name IS NOT NULL)"
     t.index [ "organization_id" ], name: "index_users_on_organization_id"
