@@ -2,6 +2,7 @@
 # 合成データ以外へのアクセス経路を持たないため通常 API の Controller は継承しない。
 class Api::V1::DemoController < ActionController::API
   before_action :require_demo_runtime!
+  before_action :rate_limit_login!, only: :login
   before_action :authenticate_demo!, only: %i[items transfer]
 
   def login
@@ -33,6 +34,16 @@ class Api::V1::DemoController < ActionController::API
 
     # Cookie を使わない公開デモでも、第三者サイトからのリンク大量発行を拒否する。
     head :forbidden
+  end
+
+  def rate_limit_login!
+    result = Security::RateLimiter.new(
+      namespace: "demo-login-ip", key: request.remote_ip, limit: 20, period: 10.minutes
+    ).call
+    return if result.allowed?
+
+    response.headers["Retry-After"] = result.retry_after.to_s
+    render_error("rate_limited", "しばらく待ってから再試行してください", :too_many_requests)
   end
 
   def authenticate_demo!

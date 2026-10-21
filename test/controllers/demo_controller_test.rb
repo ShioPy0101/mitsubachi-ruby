@@ -26,6 +26,21 @@ class DemoControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
   end
 
+  test "demo CORS allows only the dedicated frontend and bearer authorization" do
+    app = ApiCors.new(->(_env) { [ 200, {}, [] ] })
+    _, headers, = app.call({ "HTTP_ORIGIN" => Demo::Access::FRONTEND_ORIGIN, "REQUEST_METHOD" => "OPTIONS" })
+    assert_equal Demo::Access::FRONTEND_ORIGIN, headers["Access-Control-Allow-Origin"]
+    assert_includes headers["Access-Control-Allow-Headers"], "Authorization"
+    _, headers, = app.call({ "HTTP_ORIGIN" => "https://mitsubachi.shiosalt.com", "REQUEST_METHOD" => "OPTIONS" })
+    assert_nil headers["Access-Control-Allow-Origin"]
+  end
+
+  test "limits login email preview requests" do
+    20.times { post "/api/v1/demo/login", params: { email: Demo::Access::EMAIL }, headers: @headers }
+    post "/api/v1/demo/login", params: { email: Demo::Access::EMAIL }, headers: @headers
+    assert_response :too_many_requests
+  end
+
   test "requires demo host runtime and feature flag" do
     ENV["FEATURE_DEMO_TENANT"] = "false"
     post "/api/v1/demo/login", params: { email: Demo::Access::EMAIL }, headers: @headers

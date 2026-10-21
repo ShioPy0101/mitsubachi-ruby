@@ -74,7 +74,7 @@ paths:
       tags: [Demo]
       summary: List synthetic demo items without storage objects.
       description: Requires DEMO_MODE, FEATURE_DEMO_TENANT and the dedicated demo API host. POST requires the demo frontend Origin.
-      security: 
+      security:
         - demoBearer: []
       responses:
         "200":
@@ -91,7 +91,7 @@ paths:
       tags: [Demo]
       summary: Always reject uploads in the demo tenant.
       description: Requires DEMO_MODE, FEATURE_DEMO_TENANT and the dedicated demo API host. POST requires the demo frontend Origin.
-      security: 
+      security:
         - demoBearer: []
       responses:
         "200":
@@ -108,7 +108,7 @@ paths:
       tags: [Demo]
       summary: Always reject downloads in the demo tenant.
       description: Requires DEMO_MODE, FEATURE_DEMO_TENANT and the dedicated demo API host. POST requires the demo frontend Origin.
-      security: 
+      security:
         - demoBearer: []
       responses:
         "200":
