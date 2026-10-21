@@ -57,3 +57,10 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: Rails は test DB を worker ごとに分離するが filesystem root は自動では分離しないため、別 DB で同じ ID が採番され、ある worker の purge が別 worker の cache を削除した。
 - 改善されるとよい点: Active Storage 以外の filesystem を使う test 向けに、parallel worker ID を含む一時 root と終了時 cleanup を Rails が共通設定として提供するとよい。
 - 今回の回避策: `parallelize_setup` で `media_preview_root` を worker ごとに分離し、production の決定的な cache path は変更せずに filesystem を使うテスト間の干渉を防いだ。
+
+### 2026-10-21: API-only Controller からのメール文面プレビュー
+
+- 状況: デモ用ログインで実送信せず、既存の認証メールの text template を表示する処理を追加した。
+- 困った点: `ActionController::API` を継承した `ApplicationController.renderer` に template を渡しても本文が描画されず、プレビュー生成に流用できなかった。
+- 望ましい改善: API-only Controller が対応しない描画オプションを受け取った場合、非対応であることを明確に通知してほしい。
+- 今回の回避策: `ActionView::Base` の view paths と assigns を明示し、既存メール template を直接描画する。URL が本文に含まれることをテストする。
