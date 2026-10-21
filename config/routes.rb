@@ -7,6 +7,11 @@ Rails.application.routes.draw do
     get "health/ready", to: "health#ready"
 
     namespace :v1 do
+      post "demo/login", to: "demo#login"
+      post "demo/verify", to: "demo#verify"
+      get "demo/items", to: "demo#items"
+      post "demo/upload", to: "demo#transfer"
+      post "demo/download", to: "demo#transfer"
       resource :csrf_token, only: :show
       resource :me, only: %i[show update], controller: :me do
         post "email_change", action: :request_email_change
