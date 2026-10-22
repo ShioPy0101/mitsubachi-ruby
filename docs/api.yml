@@ -1501,6 +1501,7 @@ paths:
       operationId: getApiV1AdminDashboard
       tags: [Admin]
       summary: Return administrative dashboard aggregates.
+      description: Includes build_info with backend component, environment, commit, built_at and deployed_at. Unrecorded values are null.
       responses:
         "200":
           description: Dashboard data.
@@ -2816,6 +2817,7 @@ paths:
       operationId: getApiV1OrganizationAdminDashboard
       tags: [Admin]
       summary: Return admin dashboard for an explicit organization.
+      description: Includes the same backend build_info as the system admin dashboard.
       responses:
         "200":
           description: Dashboard.
