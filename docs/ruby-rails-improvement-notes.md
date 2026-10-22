@@ -64,3 +64,17 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 困った点: `ActionController::API` を継承した `ApplicationController.renderer` に template を渡しても本文が描画されず、プレビュー生成に流用できなかった。
 - 望ましい改善: API-only Controller が対応しない描画オプションを受け取った場合、非対応であることを明確に通知してほしい。
 - 今回の回避策: `ActionView::Base` の view paths と assigns を明示し、既存メール template を直接描画する。URL が本文に含まれることをテストする。
+
+### 2026-10-23: 複数リポジトリの作業で Ruby の選択が変わる
+
+- 状況: Rails と連携する infra の一時 worktree で同じテストコマンドを実行した。
+- 困った点: Rails 側の `.ruby-version` の適用範囲を離れると macOS 標準の Ruby 2.6 が選ばれ、既存コードの `filter_map` 等が利用できず多数の失敗となった。
+- 望ましい改善: 複数 checkout をまたぐツールでも、必要な Ruby バージョンを実行前に明示・検証できる仕組みが望ましい。
+- 今回の回避策: infra 側の検証は `RBENV_VERSION=3.4.9 rbenv exec ruby` で実行し、環境起因の失敗と実装の回帰を区別する。
+
+### 2026-10-23: Minitest 6 の nil 比較ルール
+
+- 状況: 有効・無効の両方を検証する feature flag テストで、期待値を条件式で `nil` に切り替えた。
+- 困った点: Minitest 6 では `assert_equal nil, actual` が非推奨扱いからテスト失敗となり、値が一致していても意図を表せない。
+- 望ましい改善: 期待値が条件式で決まる場合にも、適切な assertion を明確に案内する診断が維持されるとよい。
+- 今回の回避策: `nil` を期待する分岐では `assert_nil` を明示する。

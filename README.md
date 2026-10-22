@@ -154,3 +154,5 @@ with its resolved commit before activating the release; each release keeps its
 own metadata for rollback. Docker builds accept `--build-arg GIT_COMMIT_SHA=<full SHA>`.
 The admin dashboard API exposes only these fields and the Rails environment;
 unrecorded values are `null` rather than the process start time.
+
+Demo API and isolation: see [docs/demo-tenant.md](docs/demo-tenant.md).
