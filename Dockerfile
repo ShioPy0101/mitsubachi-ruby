@@ -47,6 +47,9 @@ RUN bundle install && \
 # Copy application code
 COPY . .
 
+ARG GIT_COMMIT_SHA
+RUN GIT_COMMIT_SHA="$GIT_COMMIT_SHA" bin/write-build-info
+
 # Precompile bootsnap code for faster boot times.
 # -j 1 disable parallel compilation to avoid a QEMU bug: https://github.com/rails/bootsnap/issues/495
 RUN bundle exec bootsnap precompile -j 1 app/ lib/
