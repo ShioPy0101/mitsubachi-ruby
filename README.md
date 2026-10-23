@@ -144,3 +144,15 @@ Back up PostgreSQL and `FILE_STORAGE_ROOT`. They must be restored together to ke
 ## Logs
 
 Production logs go to STDOUT and include Rails request IDs. Do not log passwords, cookies, authorization headers, CSRF tokens, magic link tokens, or file contents.
+
+## Build metadata
+
+`bin/write-build-info` creates an ignored `build-info.json` artifact. It records
+`GIT_COMMIT_SHA` (or the checkout HEAD), `BUILD_TIMESTAMP` (UTC build time by
+default), and optional `DEPLOYED_AT`. Release deployment must run this script
+with its resolved commit before activating the release; each release keeps its
+own metadata for rollback. Docker builds accept `--build-arg GIT_COMMIT_SHA=<full SHA>`.
+The admin dashboard API exposes only these fields and the Rails environment;
+unrecorded values are `null` rather than the process start time.
+
+Demo API and isolation: see [docs/demo-tenant.md](docs/demo-tenant.md).

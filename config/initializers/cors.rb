@@ -28,6 +28,9 @@ class ApiCors
   private
 
   def configured_origins
+    # デモ API のブラウザ接続先は専用 frontend だけに固定する。
+    return [ "https://demo.mitsubachi.shiosalt.com" ] if ENV["DEMO_MODE"] == "true"
+
     ENV.fetch("FRONTEND_ORIGIN", default_origins.join(","))
        .split(",")
        .map(&:strip)
@@ -49,7 +52,7 @@ class ApiCors
       "Access-Control-Allow-Methods" =>
         "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
       "Access-Control-Allow-Headers" =>
-        "Origin, Content-Type, Accept, X-CSRF-Token, X-Requested-With, X-Upload-Session-ID, X-Upload-ID",
+        "Authorization, Origin, Content-Type, Accept, X-CSRF-Token, X-Requested-With, X-Upload-Session-ID, X-Upload-ID",
       # フロントエンドのXHRがApiErrorへrequest_idを載せられるよう、
       # ブラウザから読み取るレスポンスヘッダーを明示的に公開する。
       "Access-Control-Expose-Headers" => "Content-Disposition, X-Request-ID",

@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "open3"
+require "time"
+
+# Git を持たない本番 release でも、ビルドされた commit と時刻を追跡できるよう成果物に固定する。
+root = File.expand_path("..", __dir__)
+commit = ENV["GIT_COMMIT_SHA"]
+if commit.to_s.empty?
+  output, _error, status = Open3.capture3("git", "rev-parse", "HEAD", chdir: root)
+  commit = status.success? ? output.strip : nil
+end
+abort "GIT_COMMIT_SHA must be a full commit hash" if commit && !commit.match?(/\A[0-9a-f]{40,64}\z/)
+
+info = { commit: commit, built_at: ENV.fetch("BUILD_TIMESTAMP") { Time.now.utc.iso8601 } }
+info[:deployed_at] = ENV["DEPLOYED_AT"] if ENV["DEPLOYED_AT"]
+File.write(File.join(root, "build-info.json"), JSON.pretty_generate(info) + "\n")

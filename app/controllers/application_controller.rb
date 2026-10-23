@@ -5,9 +5,19 @@ class ApplicationController < ActionController::API
   protect_from_forgery with: :exception, unless: -> { !Rails.configuration.action_controller.allow_forgery_protection }
   rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
   rescue_from ActionController::InvalidAuthenticityToken, with: :render_invalid_authenticity_token
+  before_action :reject_demo_runtime!
   before_action :reject_suspended_user!
 
   private
+
+  # デモ用プロセスでは通常 API への直接アクセスも閉じる。
+  # UI の制限や Cookie の有無に依存せず、実テナントの処理へ到達させない。
+  def reject_demo_runtime!
+    return unless FeatureFlags.demo_mode?
+    return if controller_path == "api/health"
+
+    head :not_found
+  end
 
   def authenticate_user!(_options = {})
     return if user_signed_in?
