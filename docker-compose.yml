@@ -14,7 +14,7 @@ services:
       retries: 5
 
   app:
-    image: ruby:3.4.9
+    image: ruby:3.4.12
     working_dir: /rails
     command: >
       bash -lc "apt-get update -qq &&
