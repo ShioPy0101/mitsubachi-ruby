@@ -14,11 +14,11 @@ module Auth
       end
     end
 
-    VerificationResult = Data.define(:user, :organization_invite, :purpose)
+    VerificationResult = Data.define(:user, :organization_invite, :purpose, :authentication)
     RequestResult = Data.define(:email, :token, :user, :organization, :organizations, :organization_invite, :authentication)
 
     def self.normalize_email(email)
-      email.to_s.strip.downcase
+      EmailIdentities::Digest.normalize(email)
     end
 
     def self.normalize_display_name(display_name)
@@ -36,11 +36,15 @@ module Auth
       build_registration_request!(email:, invite_code:, display_name:)
     end
 
-    def request_login(email:)
+    def request_login(email:, intent: nil)
       email = self.class.normalize_email(email)
       raise Failure.new("email は必須です", :bad_request) if email.blank?
 
-      build_login_request!(email:)
+      unless intent.nil? || intent == "email_change"
+        raise Failure.new("intent が正しくありません", :bad_request)
+      end
+
+      build_login_request!(email:, intent:)
     end
 
     def verify(raw_token, expected_purpose: nil)
@@ -96,7 +100,7 @@ module Auth
       )
     end
 
-    def build_login_request!(email:)
+    def build_login_request!(email:, intent:)
       raw_token = SecureRandom.urlsafe_base64(32)
       hashed_token = Digest::SHA256.hexdigest(raw_token)
       now = Time.current
@@ -116,6 +120,8 @@ module Auth
           token: hashed_token,
           expires_at: now + AUTHENTICATION_TOKEN_TTL,
           purpose: "login",
+          email_change_reauthentication: intent == "email_change",
+          recipient_ciphertext: intent == "email_change" ? EmailIdentities::DeliveryPayload.encrypt(email, purpose: "email_change_reauthentication", expires_at: now + AUTHENTICATION_TOKEN_TTL) : nil,
           delivery_token: raw_token
         )
       end
@@ -144,7 +150,8 @@ module Auth
         validate_authentication!(authentication, now)
         validate_authentication_purpose!(authentication, expected_purpose) if expected_purpose.present?
 
-        user = find_user_by_email(authentication.email)
+        EmailIdentityKey.verify!
+        user = User.find_by(email_digest: authentication.email_digest)
         validate_user_presence!(user)
         user.lock!
         user.reload
@@ -179,7 +186,7 @@ module Auth
 
       raise failure if failure
 
-      VerificationResult.new(verified_user, authentication.organization_invite, authentication.purpose)
+      VerificationResult.new(verified_user, authentication.organization_invite, authentication.purpose, authentication)
     end
 
     def validate_invite_for_registration!(invite, now)
@@ -269,7 +276,7 @@ module Auth
     def expire_active_login_authentications!(email, now)
       EmailAuthentication.where(purpose: "login", used_at: nil)
                          .where("expires_at > ?", now)
-                         .where("LOWER(email) = ?", email.downcase)
+                         .where(email_digest: EmailIdentities::Digest.call(email))
                          .update_all(used_at: now, updated_at: now)
     end
 
@@ -281,7 +288,7 @@ module Auth
     end
 
     def find_user_by_email(email)
-      User.find_by("LOWER(email) = ?", self.class.normalize_email(email))
+      User.with_email(email).first
     end
 
     def invite_stand_by_active?(invite, now = Time.current)
@@ -297,7 +304,7 @@ module Auth
 
       EmailAuthentication.where(organization_invite: active_invites, purpose: "registration", used_at: nil)
                          .where("expires_at > ?", now)
-                         .where("LOWER(email) = ?", user.email.downcase)
+                         .where(email_digest: user.email_digest)
                          .exists?
     end
 

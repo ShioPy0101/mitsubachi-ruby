@@ -1,0 +1,3 @@
+primary:
+  id: 1
+  fingerprint: <%= EmailIdentities::Digest.fingerprint %>

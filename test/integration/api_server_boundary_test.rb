@@ -61,6 +61,7 @@ class ApiServerBoundaryTest < ActionDispatch::IntegrationTest
         "organization_name" => @user.organization.name,
         "email" => @user.email,
         "pending_email" => nil,
+        "email_change_stage" => nil,
         "name" => @user.name,
         "display_name" => @user.display_name,
         "role" => @user.role,

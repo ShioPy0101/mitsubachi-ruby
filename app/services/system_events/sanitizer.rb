@@ -3,7 +3,7 @@ module SystemEvents
     FILTERED = "[FILTERED]"
     SENSITIVE_KEY_PATTERN = %r{
       authorization|cookie|session|token|access[_-]?token|refresh[_-]?token|password|secret|
-      api[_-]?key|smtp|database[_-]?url|magic[_-]?link|csrf
+      api[_-]?key|smtp|database[_-]?url|magic[_-]?link|csrf|(?:\A|_)email\z
     }ix
     ABSOLUTE_PATH_PATTERN = %r{(?:/Users|/home|/private|/var|/tmp)/[^\s:,;]+}
 
@@ -16,7 +16,7 @@ module SystemEvents
     end
 
     def self.safe_error_message(error)
-      error.message.to_s.gsub(ABSOLUTE_PATH_PATTERN, "[FILTERED_PATH]").first(500)
+      EmailIdentities::Redactor.call(error.message).gsub(ABSOLUTE_PATH_PATTERN, "[FILTERED_PATH]").first(500)
     end
 
     private
@@ -30,7 +30,7 @@ module SystemEvents
       when Array
         value.map { |nested_value| sanitize(nested_value) }
       when String
-        value.gsub(ABSOLUTE_PATH_PATTERN, "[FILTERED_PATH]").first(2_000)
+        EmailIdentities::Redactor.call(value).gsub(ABSOLUTE_PATH_PATTERN, "[FILTERED_PATH]").first(2_000)
       else
         value
       end

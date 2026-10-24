@@ -51,6 +51,26 @@ Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検�
 - 改善されるとよい点: BundlerやRailsの依存更新支援が、脆弱な推移依存について互換性を保った最小更新候補と、その依存元を一度に提示できるとよい。
 - 今回の回避策: `bundle update mail --conservative` で `mail` のみを修正版の2.9.1へ更新し、`bin/bundler-audit` とリポジトリ全体のチェックで互換性を確認する。
 
+## 2026-10-16: Devise と不可逆なメールidentity
+
+- 状況: 平文 email カラムをHMACへ移行し、emailを入力時だけ存在する仮想属性にした。
+- 困った点: Devise Validatable は平文カラムへの一意性SQLを生成し、Authenticatable の正規化callbackは未設定の仮想属性にもsetterを呼ぶため、通常のプロフィール更新でdigestを消し得る。
+- 望ましい改善: 入力属性・認証検索キー・永続化属性を分離できる公式の拡張点と、その組み合わせを検証する契約テスト。
+- 今回の回避策: 入力時に既存と同じstrip/downcaseを行い、emailのcallbackだけを迂回。メール検証を置換し、Deviseの共通検索入口でdigestへ変換する。再読込後の更新もテストする。
+
+## 2026-10-16: 同一Userの再認証とsession再生成
+
+- 状況: メール変更前のMagic Link再認証で既存sessionを再生成した。
+- 困った点: `reset_session` 後もWarden内には認証済みUserが残り、通常の `sign_in` が同一Userとして保存を省略すると次のリクエストで未認証になる。
+- 望ましい改善: session再生成とWardenの保存状態を同期する明示的な再認証API。
+- 今回の回避策: `sign_in(user, force: true)` で新sessionに再保存し、連続した再認証とメール変更申請をintegration testで検証した。
+
+## 2026-10-16: Brakeman と固定テーブル名のlock SQL
+
+- 状況: 移行タスクの対象テーブルは定数Hashだけから決めていた。
+- 困った点: そのkeysをjoinしたLOCK TABLE文もSQL injectionとして検出され、最終checkが失敗した。
+- 望ましい改善: 変更不能な定数リテラルに由来する識別子を静的解析で追跡できること。
+- 今回の回避策: 対象4テーブルのLOCK TABLE文を固定文字列にし、ユーザー入力が入らないことをコード上でも明示した。警告のignore追加は行わない。
 ## 2026-08-28: parallel test のDB分離とfilesystem共有
 
 - 状況: DriveItem ID から決定的に算出する Preview cache を追加し、Rails の process 並列テストで purge と生成を検証した。

@@ -29,7 +29,7 @@ module Deployment
 
     def prepare_user!(name, organization:, memberships:, system_admin: false)
       email = "mitsubachi-smoke-#{name}@#{EMAIL_DOMAIN}"
-      user = User.find_or_initialize_by(email:)
+      user = User.with_email(email).first || User.new(email:)
       user.organization = organization
       user.display_name = "Smoke #{name.tr('-', ' ').titleize}"
       user.role = system_admin ? :system_admin : :member

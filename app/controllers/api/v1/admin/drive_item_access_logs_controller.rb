@@ -42,7 +42,7 @@ class Api::V1::Admin::DriveItemAccessLogsController < Api::V1::Admin::BaseContro
 
   def actor_json(log)
     actor = log.user || log.external_share
-    display_name = log.user&.display_name.presence || log.user&.email
+    display_name = log.user&.safe_display_name
     display_name ||= "外部共有 ##{log.external_share_id}" if log.external_share_id
     display_name ||= log.metadata["actor_display_name"]
     { kind: log.actor_kind, id: actor&.id, display_name: display_name }

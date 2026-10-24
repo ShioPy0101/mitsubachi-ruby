@@ -271,7 +271,7 @@ class AdminApiTest < ActionDispatch::IntegrationTest
       role: :member,
       status: :active
     )
-    original_email = @managed_user.email
+    original_email = @managed_user.email_digest
     sign_in @organization_admin
 
     patch api_v1_organization_admin_user_url(@organization, @managed_user), params: {
@@ -280,7 +280,7 @@ class AdminApiTest < ActionDispatch::IntegrationTest
 
     assert_response :forbidden
     assert_equal "forbidden", response.parsed_body.dig("error", "code")
-    assert_equal original_email, @managed_user.reload.email
+    assert_equal original_email, @managed_user.reload.email_digest
     assert @managed_user.active_membership_for(@other_organization).present?
   end
 
@@ -369,6 +369,14 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     assert_equal 1, response.parsed_body.fetch("data").size
     assert_equal 1, response.parsed_body.dig("meta", "per_page")
     assert_operator response.parsed_body.dig("meta", "total_count"), :>=, 1
+  end
+
+  test "email search uses normalized digest exact match and never exposes the input" do
+    sign_in @system_admin
+    get api_v1_admin_users_url, params: { q: " MANAGED@EXAMPLE.COM " }
+    assert_response :ok
+    assert_equal [ @managed_user.id ], response.parsed_body.fetch("data").map { |user| user.fetch("id") }
+    assert_nil response.parsed_body.fetch("data").first.fetch("email")
   end
 
   test "不正なsortパラメータは安全に既定値へフォールバックする" do
@@ -534,7 +542,7 @@ class AdminApiTest < ActionDispatch::IntegrationTest
 
     serialized_other_event = response.parsed_body.fetch("data").find { |event| event.fetch("id") == other_event.id }
     assert_equal @other_org_user.id, serialized_other_event.dig("actor", "id")
-    assert_equal @other_org_user.email, serialized_other_event.dig("actor", "display_name")
+    assert_equal @other_org_user.safe_display_name, serialized_other_event.dig("actor", "display_name")
   end
 
   test "system_admin の全般操作履歴は明示した実行者だけで絞り込める" do

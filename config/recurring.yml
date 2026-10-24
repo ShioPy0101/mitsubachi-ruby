@@ -17,3 +17,7 @@ production:
     class: UploadMetrics::MaintenanceJob
     queue: default
     schedule: every hour at minute 20
+  clear_temporary_email_recipients:
+    class: EmailIdentities::CleanupJob
+    queue: maintenance
+    schedule: every minute

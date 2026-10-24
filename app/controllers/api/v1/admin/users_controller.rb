@@ -2,7 +2,6 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   SORT_COLUMNS = {
     "created_at" => :created_at,
     "last_sign_in_at" => :last_sign_in_at,
-    "email" => :email,
     "name" => :name
   }.freeze
 
@@ -28,12 +27,12 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
 
     attributes = permitted_user_attributes(user)
     membership = membership_for(user)
-    before = user.slice("name", "email", "role", "organization_id").merge("membership_role" => membership&.role)
+    before = user.slice("name", "email_digest", "role", "organization_id").merge("membership_role" => membership&.role)
 
     return unless validate_user_update!(user, attributes)
 
     if update_user_and_membership!(user, membership, attributes)
-      after = user.slice("name", "email", "role", "organization_id").merge("membership_role" => membership&.reload&.role)
+      after = user.slice("name", "email_digest", "role", "organization_id").merge("membership_role" => membership&.reload&.role)
       action = before["membership_role"] != after["membership_role"] || before["role"] != user.role ? "organization.membership_role_changed" : "user.updated"
       record_admin_operation!(
         operation_type: action,
@@ -84,7 +83,9 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   def apply_filters(scope)
     if params[:q].present?
       query = "%#{ActiveRecord::Base.sanitize_sql_like(params[:q].to_s)}%"
-      scope = scope.where("users.name ILIKE :query OR users.email ILIKE :query", query: query)
+      # 不可逆identityには部分一致・辞書順がないため、メール検索は正規化後の完全一致だけ許可する。
+      EmailIdentityKey.verify!
+      scope = scope.where("users.name ILIKE :query OR users.email_digest = :digest", query: query, digest: EmailIdentities::Digest.call(params[:q]))
     end
 
     scope = scope.where(role: params[:role]) if params[:role].present? && User.roles.key?(params[:role]) && !OrganizationMembership.roles.key?(params[:role])
@@ -195,7 +196,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
       id: user.id,
       organization_id: user.organization_id,
       organization_name: user.organization.name,
-      email: user.email,
+      email: nil,
       name: user.name,
       role: membership_for(user)&.role || user.role,
       system_admin: user.system_admin?,

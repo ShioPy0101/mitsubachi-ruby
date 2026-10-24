@@ -1,10 +1,11 @@
 class EmailAuthenticationMailer < ApplicationMailer
+  self.delivery_job = EmailAuthenticationDeliveryJob
   def registration_link
     @organization = params.fetch(:organization)
     assign_authentication_mail_values
 
     mail(
-      to: params[:email],
+      to: recipient,
       subject: "【Mitsubachi】アカウント登録のご案内"
     )
   end
@@ -14,7 +15,7 @@ class EmailAuthenticationMailer < ApplicationMailer
     assign_authentication_mail_values
 
     mail(
-      to: params[:email],
+      to: recipient,
       subject: "【Mitsubachi】ログインリンクのご案内"
     )
   end
@@ -28,13 +29,21 @@ class EmailAuthenticationMailer < ApplicationMailer
     @expires_at = format_mail_time(@authentication.expires_at)
   end
 
+  def recipient
+    return params[:email] if params[:email].present?
+
+    EmailIdentities::DeliveryPayload.decrypt(params.fetch(:recipient_ciphertext), purpose: "magic_link")
+  end
+
   def authentication_token
     params[:token].presence || params.fetch(:authentication).delivery_token.presence ||
       raise(ArgumentError, "Email authentication delivery token is unavailable")
   end
 
   def authentication_url(token, purpose)
-    query = Rack::Utils.build_query(token: token, purpose: purpose)
+    values = { token: token, purpose: purpose }
+    values[:intent] = "email_change" if @authentication.email_change_reauthentication?
+    query = Rack::Utils.build_query(values)
 
     "#{ENV.fetch("FRONTEND_URL")}/auth/verify?#{query}"
   end

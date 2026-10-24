@@ -6,7 +6,8 @@ module OperationLogs
       normalized = Auth::MagicLinks.normalize_email(email)
       return if normalized.blank?
 
-      OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, normalized)
+      EmailIdentityKey.verify!
+      EmailIdentities::Digest.call(normalized)
     end
   end
 end

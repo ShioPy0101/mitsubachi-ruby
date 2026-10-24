@@ -44,9 +44,9 @@ class Api::V1::OrganizationInvitationsController < ApplicationController
       invited_by: invite.invited_by_user && {
         id: invite.invited_by_user.id,
         display_name: invite.invited_by_user.safe_display_name,
-        email: invite.invited_by_user.email
+        email: nil
       },
-      email: invite.email,
+      email: nil,
       role: invite.role,
       expires_at: invite.expires_at,
       accepted_at: invite.used_at,

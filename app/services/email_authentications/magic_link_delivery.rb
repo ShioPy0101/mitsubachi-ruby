@@ -15,13 +15,13 @@ module EmailAuthentications
       case authentication.purpose
       when "login"
         EmailAuthenticationMailer.with(
-          email: email,
+          recipient_ciphertext: recipient_ciphertext,
           organizations: organizations,
           authentication: authentication
         ).login_link.deliver_later
       when "registration"
         EmailAuthenticationMailer.with(
-          email: email,
+          recipient_ciphertext: recipient_ciphertext,
           organization: organization,
           authentication: authentication
         ).registration_link.deliver_later
@@ -31,6 +31,10 @@ module EmailAuthentications
     end
 
     private
+
+    def recipient_ciphertext
+      EmailIdentities::DeliveryPayload.encrypt(email, purpose: "magic_link", expires_at: authentication.expires_at)
+    end
 
     attr_reader :email, :organization, :organizations, :authentication
   end

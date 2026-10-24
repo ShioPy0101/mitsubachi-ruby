@@ -37,7 +37,7 @@ module OperationLogs
     rescue StandardError => error
       Rails.logger.error(
         "[operation_logs.recorder] failed operation_type=#{@operation_type} result=#{@result} " \
-        "error=#{error.class}: #{error.message}"
+        "error=#{error.class}"
       )
       nil
     end
@@ -62,7 +62,7 @@ module OperationLogs
         target_name: target_name,
         target_path: target_path,
         organization_name: @organization&.name,
-        actor_email: @actor_user&.email,
+        actor_email_digest: @actor_user&.email_digest,
         actor_display_name: @actor_user&.display_name
       }.compact
     end
