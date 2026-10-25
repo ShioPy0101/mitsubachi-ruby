@@ -28,6 +28,10 @@ class Api::V1::Admin::BaseController < ApplicationController
     Organization.where(id: administrable_organization_ids)
   end
 
+  def all_drive_error_sample
+    DriveItem.find(params[:id])
+  end
+
   def scoped_users
     return current_organization.users if organization_path_scope?
     return User.all if system_admin?
