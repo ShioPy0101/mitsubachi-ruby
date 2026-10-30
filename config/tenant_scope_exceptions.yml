@@ -1,0 +1,55 @@
+# 既存の横断クエリのみ。追加・変更時は認可と必要性をレビューする。
+---
+- path: app/controllers/api/v1/admin/base_controller.rb
+  source: DriveItem.all
+  reason: system_admin? 判定後の管理画面用全件スコープ。一般管理者は organization_id で限定する。
+- path: app/controllers/api/v1/drive_items_controller.rb
+  source: 'DriveItem.active.directory.find_by(id: parent_id)'
+  reason: 組織間移動の候補探索。取得後 can_access_organization? で移動先組織へのアクセスを検証する。
+- path: app/controllers/api/v1/drive_items_controller.rb
+  source: 'DriveItem.active.find_by(id: parent_id)'
+  reason: 移動時の循環判定専用。祖先 ID を比較し、対象データをレスポンスに含めない。
+- path: app/controllers/api/v1/drive_items_controller.rb
+  source: |-
+    DriveItem
+              .where(id: descendants.map(&:id))
+              .update_all(organization_id: destination_organization.id, updated_at: Time.current)
+  reason: 組織間移動で認可済み root 配下の TreeCollector が組織境界を確認した descendants のみを移動する。
+- path: app/controllers/api/v1/drive_items_controller.rb
+  source: 'DriveItem.where(id: replace_trashed_drive_item_id).where.not(organization_id:
+    current_organization.id).exists?'
+  reason: 他組織の置換対象 ID を拒否して 404 を返すための存在確認。
+- path: app/controllers/api/v1/drive_items_controller.rb
+  source: 'DriveItem.not_purged.where(storage_key: storage_key).where.not(id: purged_drive_item_id).exists?'
+  reason: 共有ストレージの物理削除前に全組織の残存参照を確認し、他組織が利用中の実体を保護する。
+- path: app/controllers/api/v1/drive_items_controller.rb
+  source: 'DriveItem.not_purged.where(blob_path: DriveItem.storage_relative_path_for(storage_key)).where.not(id:
+    purged_drive_item_id).exists?'
+  reason: 共有ストレージの物理削除前に全組織の残存参照を確認し、他組織が利用中の実体を保護する。
+- path: app/controllers/api/v1/external_shares_controller.rb
+  source: 'DriveItem.active.where(id: drive_item_ids)'
+  reason: 共有作成候補の探索。system_admin 以外は後続で active な organization_memberships に限定する。
+- path: app/services/drive_items/bulk_purge_service.rb
+  source: "::DriveItem.not_purged"
+  reason: 共有ストレージの物理削除前に全組織の残存参照を確認し、他組織が利用中の実体を保護する。
+- path: app/services/drive_items/purge_service.rb
+  source: "::DriveItem.where(parent_id: parent_ids)"
+  reason: purge のツリー整合性検査。取得後に別組織の子を検出して OrganizationBoundaryError で中止する。
+- path: app/services/drive_items/purge_service.rb
+  source: "::DriveItem.not_purged"
+  reason: 共有ストレージの物理削除前に全組織の残存参照を確認し、他組織が利用中の実体を保護する。
+- path: app/services/drive_items/tree_collector.rb
+  source: "::DriveItem.where(parent_id: parent_ids, purged_at: nil).order(:id).to_a"
+  reason: ツリー整合性検査。組織境界違反の子を除外せず検知し OrganizationBoundaryError で中止する。
+- path: lib/tasks/deployment.rake
+  source: DriveItem.count
+  reason: デプロイ smoke check 用の全組織件数。公開 API の検索ではない。
+- path: lib/tasks/drive_items_repair.rake
+  source: |-
+    DriveItem
+          .directory
+          .where.not(deleted_at: nil)
+          .where(purged_at: nil)
+          .order(:organization_id, :id)
+          .find_each
+  reason: 運用者による全組織修復タスク。各 root の TreeCollector が組織境界を検証する。
