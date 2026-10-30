@@ -14,6 +14,18 @@ class AdminApiTest < ActionDispatch::IntegrationTest
     @other_drive_item = drive_items(:two)
   end
 
+  test "dashboard includes backend build metadata only for administrators" do
+    sign_in @system_admin
+    get api_v1_admin_dashboard_url
+    assert_response :ok
+    info = response.parsed_body.dig("data", "build_info")
+    assert_equal "backend", info.fetch("component")
+    assert_equal "test", info.fetch("environment")
+    assert info.key?("built_at")
+    assert info.key?("commit")
+    assert info.key?("deployed_at")
+  end
+
   test "旧ログAPIと旧モデル・テーブルが存在しない" do
     sign_in @system_admin
 

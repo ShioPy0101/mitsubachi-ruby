@@ -16,6 +16,109 @@ tags:
   - name: DriveItems
   - name: Admin
 paths:
+  /api/v1/demo/login:
+    post:
+      operationId: requestDemoLogin
+      tags: [Demo]
+      summary: Return the unsent demo authentication email.
+      description: Requires DEMO_MODE, FEATURE_DEMO_TENANT and the dedicated demo API host. POST requires the demo frontend Origin.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+      responses:
+        "200":
+          description: Demo response (email preview, bearer token, or sample catalog).
+        "401":
+          description: Demo authentication is invalid or expired.
+        "403":
+          description: Origin is forbidden or this demo operation is restricted.
+        "404":
+          description: Demo feature, runtime, or host is unavailable.
+  /api/v1/demo/verify:
+    post:
+      operationId: verifyDemoLogin
+      tags: [Demo]
+      summary: Consume a demo login link and return a demo-only bearer token.
+      description: Requires DEMO_MODE, FEATURE_DEMO_TENANT and the dedicated demo API host. POST requires the demo frontend Origin.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Demo response (email preview, bearer token, or sample catalog).
+        "401":
+          description: Demo authentication is invalid or expired.
+        "403":
+          description: Origin is forbidden or this demo operation is restricted.
+        "404":
+          description: Demo feature, runtime, or host is unavailable.
+  /api/v1/demo/items:
+    get:
+      operationId: listDemoItems
+      tags: [Demo]
+      summary: List synthetic demo items without storage objects.
+      description: Requires DEMO_MODE, FEATURE_DEMO_TENANT and the dedicated demo API host. POST requires the demo frontend Origin.
+      security:
+        - demoBearer: []
+      responses:
+        "200":
+          description: Demo response (email preview, bearer token, or sample catalog).
+        "401":
+          description: Demo authentication is invalid or expired.
+        "403":
+          description: Origin is forbidden or this demo operation is restricted.
+        "404":
+          description: Demo feature, runtime, or host is unavailable.
+  /api/v1/demo/upload:
+    post:
+      operationId: rejectDemoUpload
+      tags: [Demo]
+      summary: Always reject uploads in the demo tenant.
+      description: Requires DEMO_MODE, FEATURE_DEMO_TENANT and the dedicated demo API host. POST requires the demo frontend Origin.
+      security:
+        - demoBearer: []
+      responses:
+        "200":
+          description: Demo response (email preview, bearer token, or sample catalog).
+        "401":
+          description: Demo authentication is invalid or expired.
+        "403":
+          description: Origin is forbidden or this demo operation is restricted.
+        "404":
+          description: Demo feature, runtime, or host is unavailable.
+  /api/v1/demo/download:
+    post:
+      operationId: rejectDemoDownload
+      tags: [Demo]
+      summary: Always reject downloads in the demo tenant.
+      description: Requires DEMO_MODE, FEATURE_DEMO_TENANT and the dedicated demo API host. POST requires the demo frontend Origin.
+      security:
+        - demoBearer: []
+      responses:
+        "200":
+          description: Demo response (email preview, bearer token, or sample catalog).
+        "401":
+          description: Demo authentication is invalid or expired.
+        "403":
+          description: Origin is forbidden or this demo operation is restricted.
+        "404":
+          description: Demo feature, runtime, or host is unavailable.
   /api/health:
     get:
       operationId: getApiHealth
@@ -1398,6 +1501,7 @@ paths:
       operationId: getApiV1AdminDashboard
       tags: [Admin]
       summary: Return administrative dashboard aggregates.
+      description: Includes build_info with backend component, environment, commit, built_at and deployed_at. Unrecorded values are null.
       responses:
         "200":
           description: Dashboard data.
@@ -2713,6 +2817,7 @@ paths:
       operationId: getApiV1OrganizationAdminDashboard
       tags: [Admin]
       summary: Return admin dashboard for an explicit organization.
+      description: Includes the same backend build_info as the system admin dashboard.
       responses:
         "200":
           description: Dashboard.
@@ -3013,6 +3118,9 @@ paths:
 
 components:
   securitySchemes:
+    demoBearer:
+      type: http
+      scheme: bearer
     cookieSession:
       type: apiKey
       in: cookie

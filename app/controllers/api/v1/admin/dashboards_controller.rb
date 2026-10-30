@@ -5,6 +5,7 @@ class Api::V1::Admin::DashboardsController < Api::V1::Admin::BaseController
 
     render json: {
       data: {
+        build_info: Deployment::BuildInfo.read,
         organizations_count: scoped_organizations.count,
         users_count: users.count,
         active_users_count: users.active.count,
