@@ -55,6 +55,16 @@ class TenantScopeCheckerTest < Minitest::Test
     refute_empty check("DriveItem.find(\n").errors
   end
 
+  def test_bind_parameters_and_overwritten_hash_keys_are_not_tenant_filters
+    [
+      "DriveItem.where('name = :organization_id', organization_id: name)",
+      "DriveItem.where(organization_id: org.id, **filters)",
+      "DriveItem.where(organization_id: org.id, organization_id: nil)"
+    ].each do |source|
+      refute_empty check(source).findings, source
+    end
+  end
+
   private
 
   def check(source)

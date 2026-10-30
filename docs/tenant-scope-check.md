@@ -11,7 +11,8 @@ PR #37 の狙いを参考にした独立実装で、アプリケーションの�
 - 未知のクラスメソッドも scope の可能性があるため検査する。非 DB 操作の既知メソッドだけを除外する。
 - 同じ呼び出し鎖で、実行前の `where`、`find_by`、`find_by!`、`exists?` に
   `organization_id:` / `organization:` の肯定的な Hash 条件があれば許可する。
-- `where.not`、SQL 文字列、入れ子の Hash、`nil` は組織制約として認めない。
+- `where.not`、SQL 文字列（名前付き bind を含む）、入れ子の Hash、`nil`、
+  キーを上書きし得る `**filters` は組織制約として認めない。
   `unscoped`、`unscope`、`rewhere`、`except`、`only`、`or`、`find_by_sql` を含む鎖は
   条件を保持すると保証できないため、組織条件があっても要レビューとする。
 - `organization.drive_items` の関連経由の検索や `DriveItem.none` は許可する。

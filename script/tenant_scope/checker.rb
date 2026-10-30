@@ -68,13 +68,17 @@ module TenantScope
     def organization_filter?(call)
       return false unless %i[where find_by find_by! exists?].include?(call.method_name)
 
-      call.arguments.any? do |argument|
-        argument.hash_type? && argument.pairs.any? do |pair|
-          key = pair.key
-          (key.sym_type? || key.str_type?) && %w[organization organization_id].include?(key.value.to_s) &&
-            !pair.value.nil_type?
-        end
+      # SQL の名前付き bind は属性条件ではない。また **filters による
+      # organization_id の上書きは値を静的に証明できないため許可しない。
+      argument = call.arguments.first
+      return false unless call.arguments.one? && argument&.hash_type?
+      return false if argument.children.any?(&:kwsplat_type?)
+
+      filters = argument.pairs.select do |pair|
+        key = pair.key
+        (key.sym_type? || key.str_type?) && %w[organization organization_id].include?(key.value.to_s)
       end
+      filters.any? && filters.none? { |pair| pair.value.nil_type? }
     end
   end
 end
