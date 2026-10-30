@@ -2,6 +2,13 @@
 
 Ruby 言語、Rails、Rails 周辺ツールに起因して実装・保守・検証が難しくなった点を記録する。新しい気づきがあれば、該当作業のコミットに含める。
 
+## 2026-10-30: 推移依存の脆弱性と通常チェックの範囲
+
+- 状況: テナント検査追加のローカル `bin/check` は成功したが、CI の `bin/bundler-audit` が crass と net-ssh の脆弱性を検出した。
+- 困った点: crass は HTML sanitizer、net-ssh は Kamal / SSHKit 経由の推移依存であり、通常のテスト・Lint・Brakeman だけでは advisory DB に基づく脆弱性を検出できない。
+- 望ましい改善: 検証コマンドごとの検査範囲と advisory DB の更新日時を共通の結果として提示し、ローカルと CI の検査範囲の違いを把握しやすくすること。
+- 今回の回避策: `bundle update crass net-ssh --conservative --patch` で対象二つのみを更新し、全体チェックに加えて advisory DB を更新した `bin/bundler-audit` を実行する。
+
 ## 2026-10-30: Active Record の動的な Relation と静的テナント検査
 
 - 状況: DriveItem のテナント条件を AST で検査し、既存の組織横断処理も CI の対象にした。
