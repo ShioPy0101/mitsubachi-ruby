@@ -15,6 +15,7 @@ fi
 
 bin/ai-lint-changed
 bin/check-api-spec
+bin/check-tenant-scope
 
 mapfile -t targets < <(ai_list_target_tests "$FRAMEWORK")
 bin/ai-test "${targets[@]}"

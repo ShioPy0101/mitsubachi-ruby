@@ -12,6 +12,10 @@ echo "== API Spec =="
 bin/check-api-spec
 
 echo
+echo "== Tenant Scope =="
+bin/check-tenant-scope
+
+echo
 echo "== RuboCop =="
 bin/rubocop
 

@@ -50,6 +50,26 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+  tenant_scope:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Test tenant scope analyzer without a database
+        run: |
+          bundle exec ruby test/lib/tenant_scope_checker_test.rb
+          bundle exec ruby test/lib/tenant_scope_runner_test.rb
+
+      - name: Check tenant-scoped DriveItem queries
+        run: bin/check-tenant-scope
+
   test:
     runs-on: ubuntu-latest
 
